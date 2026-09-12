@@ -32,7 +32,7 @@ export default function TopBar() {
       {/* Left: favicon + app name */}
       <div className="flex items-center gap-2" style={{ padding: '0 10px', flexShrink: 0, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         <img
-          src={`${import.meta.env.BASE_URL}strata-sync.svg`}
+          src={`${import.meta.env.BASE_URL}strata-sync-icon.svg`}
           alt=""
           width={16}
           height={16}
