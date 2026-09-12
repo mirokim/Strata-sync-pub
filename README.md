@@ -288,6 +288,31 @@ cd bot && pytest      # Bot
 
 ---
 
+## 팀 동기화 (Cloudflare)
+
+여러 PC의 볼트를 하나로 합칩니다. 원본은 Cloudflare R2에 있고, 각 PC의 볼트 폴더는 그 복제본입니다. 서버 코드는 `cloud/`(Wrangler 프로젝트)에 있습니다.
+
+**서버 한 번 배포 (팀당 1회)**
+```bash
+cd cloud && npm install
+npx wrangler d1 create strata-sync-db          # 출력된 database_id를 wrangler.toml에 붙여넣기
+npx wrangler r2 bucket create strata-vault
+npx wrangler secret put TEAM_TOKEN             # 팀이 공유할 긴 임의 문자열
+npx wrangler d1 migrations apply strata-sync-db --remote
+npx wrangler deploy                             # → https://strata-sync-cloud.<account>.workers.dev
+```
+
+**각 PC에서** Settings → Vault → Team Sync에 서버 URL, 팀 토큰, 이름을 넣고 켭니다. 토큰은 OS 키체인으로 암호화해 이 PC에만 저장됩니다.
+
+**동작 방식**
+- 저장 후 2초 뒤 업로드, 30초마다 다른 사람의 변경을 내려받습니다. 오프라인이면 큐에 쌓아두고 다시 시도합니다.
+- 같은 파일을 둘이 고치면 서버 버전이 원래 이름을 갖고, 내 버전은 옆에 `이름 (conflict 내이름 날짜 시각).md`로 남습니다. 이 사본도 동기화되므로 팀 전체가 충돌을 봅니다. 아무것도 덮어쓰지 않습니다.
+- 누가 지운 파일을 내가 고치고 있었다면 내 파일은 남고 다시 올라갑니다.
+- `.md`와 이미지(`png/jpg/gif/webp/svg/pdf`), `.canvas`만 동기화합니다. 점(`.`)으로 시작하는 폴더·파일(`.obsidian`, `.strata-sync`, 캐시)은 이 PC에만 있습니다. 파일 하나 최대 10MB.
+- 프로토콜: `GET /v1/manifest?since=<seq>`, `GET/PUT/DELETE /v1/file?path=` — sha256 ETag와 `If-Match`로 충돌을 잡습니다. 자세한 건 `cloud/src/sync.ts`.
+
+**아직 안 되는 것**: Obsidian의 Remotely Save로 R2에 직접 쓴 파일은 서버 색인(D1)에 반영되지 않습니다. 팀원 모두 Strata Sync 앱으로 동기화하세요. R2 이벤트 → D1 브릿지는 3단계에서.
+
 ## 자동화 (크론)
 
 Electron 메인 프로세스의 스케줄러(`electron/cronScheduler.cjs`, node-cron)가 두 가지 작업을 돌립니다.
@@ -746,6 +771,31 @@ Launch app → "Open Vault" → select Obsidian vault folder → knowledge graph
 - Auto image attachment: If selected doc has `![[...]]` images, they're sent automatically
 
 ---
+
+## Team sync (Cloudflare)
+
+Merges the vaults on several machines into one. The source of truth lives in Cloudflare R2; each machine's vault folder is a replica. The server is the Wrangler project in `cloud/`.
+
+**Deploy the server once per team**
+```bash
+cd cloud && npm install
+npx wrangler d1 create strata-sync-db          # paste the database_id into wrangler.toml
+npx wrangler r2 bucket create strata-vault
+npx wrangler secret put TEAM_TOKEN             # any long random string the team shares
+npx wrangler d1 migrations apply strata-sync-db --remote
+npx wrangler deploy                             # → https://strata-sync-cloud.<account>.workers.dev
+```
+
+**On each machine** open Settings → Vault → Team Sync, enter the server URL, the team token and your name, and turn it on. The token is encrypted with the OS keychain and stored on that machine only.
+
+**How it behaves**
+- Edits upload two seconds after you save; other people's changes are pulled every 30 seconds. Offline edits are queued and retried.
+- If two people change the same file, the server version keeps the file name and yours is kept next to it as `name (conflict you date time).md`. The copy is synced too, so the whole team sees the disagreement. Nothing is overwritten.
+- A file someone else deleted while you were editing it stays on your machine and is re-published.
+- Only `.md`, images (`png/jpg/gif/webp/svg/pdf`) and `.canvas` are synced. Dot-folders and dot-files (`.obsidian`, `.strata-sync`, caches) stay local. One file is capped at 10 MB.
+- Protocol: `GET /v1/manifest?since=<seq>`, `GET/PUT/DELETE /v1/file?path=` with sha256 ETags and `If-Match` preconditions. See `cloud/src/sync.ts`.
+
+**Not yet**: files written straight to R2 by Obsidian's Remotely Save are not reflected in the server index (D1). Have everyone sync through the Strata Sync app for now; the R2-event → D1 bridge is Phase 3 work.
 
 ## Automation (cron)
 
