@@ -34,6 +34,8 @@ export default function MainLayout() {
   } = useUIStore()
   const isFast = useSettingsStore(s => s.paragraphRenderQuality === 'fast')
 
+  // Panels appear in place (no entry animation): while the 3D graph is building, frames are slow
+  // enough that a spring driven by framer-motion's clamped frame delta would crawl for a minute.
   const panelTransition   = isFast ? NO_TRANSITION : PANEL_SPRING
   const overlayTransition = isFast ? NO_TRANSITION : OVERLAY_TRANSITION
   const collapseTransition = isFast ? NO_TRANSITION : COLLAPSE_TRANSITION
@@ -85,7 +87,7 @@ export default function MainLayout() {
       >
         {/* TopBar — flush top, full width */}
         <motion.div
-          initial={isFast ? false : { y: -40, opacity: 0 }}
+          initial={false}
           animate={{ y: 0, opacity: 1 }}
           transition={panelTransition}
           style={{
@@ -103,7 +105,7 @@ export default function MainLayout() {
 
           {/* Left panel — File tree */}
           <motion.div
-            initial={isFast ? false : { x: -leftWidth, opacity: 0 }}
+            initial={false}
             animate={{
               x: 0,
               opacity: leftPanelCollapsed ? 0 : 1,
@@ -151,7 +153,7 @@ export default function MainLayout() {
             {(centerTab === 'editor' || centerTab === 'settings' || centerTab === 'slack-logs') && (
               <motion.div
                 key={centerTab === 'settings' ? 'settings' : centerTab === 'slack-logs' ? 'slack-logs' : (editingDocId ?? 'converter')}
-                initial={isFast ? false : { opacity: 0 }}
+                initial={false}
                 animate={{ opacity: 1 }}
                 transition={overlayTransition}
                 style={{
