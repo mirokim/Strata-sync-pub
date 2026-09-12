@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { putFile, type SyncDeps } from '../src/sync.js'
+import { putFile, deleteFile, type SyncDeps } from '../src/sync.js'
 import { canSee, personalRoot, toPersonalPath, splitPersonal, setVisibility, PERSONAL_PREFIX } from '../src/personal.js'
 import { callTool, type McpDeps } from '../src/mcp.js'
 import { invalidateVaultView } from '../src/vaultIndex.js'
@@ -131,5 +131,110 @@ describe('nightly batch', () => {
     expect(embedded.some(id => id.includes('rethink'))).toBe(false)
     const report = [...blobs.objects.entries()].find(([k]) => k.startsWith('_reports/'))
     expect(report && dec(report[1])).not.toContain('rethink')
+  })
+})
+
+describe('setVisibility edge cases', () => {
+  const asKim = { sub: '1001' }
+
+  it('refuses non-documents, no-op directions, other people\'s paths and the team token', async () => {
+    await putFile(deps, { path: 'assets/logo.png', body: enc('PNG'), mtime: 1, author: 'kim' })
+    const png = await setVisibility(deps, { path: 'assets/logo.png', personal: true, viewer: asKim, author: 'kim' })
+    expect(png.status).toBe(400)
+    expect((png.body as { error: string }).error).toMatch(/only documents/)
+    // Already where it is asked to go
+    const alreadyPersonal = await setVisibility(deps, { path: `${KIM}design/Stamina rethink.md`, personal: true, viewer: asKim, author: 'kim' })
+    expect(alreadyPersonal).toMatchObject({ status: 400, body: { error: 'already personal' } })
+    const alreadyTeam = await setVisibility(deps, { path: 'design/Stamina.md', personal: false, viewer: asKim, author: 'kim' })
+    expect(alreadyTeam).toMatchObject({ status: 400, body: { error: 'already a team document' } })
+    // Someone else's personal document does not exist from kim's point of view
+    await putFile(deps, { path: `${PERSONAL_PREFIX}2002/design/Lee.md`, body: enc('# Lee'), mtime: 1, author: 'lee' })
+    expect((await setVisibility(deps, { path: `${PERSONAL_PREFIX}2002/design/Lee.md`, personal: false, viewer: asKim, author: 'kim' })).status).toBe(404)
+    // The team token has no personal space; an invalid path is rejected before any lookup
+    expect((await setVisibility(deps, { path: 'design/Stamina.md', personal: true, viewer: { sub: 'service', service: true }, author: 'svc' })).status).toBe(400)
+    expect((await setVisibility(deps, { path: '../x.md', personal: true, viewer: asKim, author: 'kim' })).status).toBe(400)
+    // Nothing moved
+    expect(meta.rows.get('assets/logo.png')!.deleted).toBe(false)
+    expect(meta.rows.has(`${KIM}assets/logo.png`)).toBe(false)
+  })
+
+  it('404s on tombstones and on rows whose bytes are gone', async () => {
+    await putFile(deps, { path: 'design/Gone.md', body: enc('# Gone'), mtime: 1, author: 'kim' })
+    const row = await meta.get('design/Gone.md')
+    await deleteFile(deps, 'design/Gone.md', row!.etag, 'kim')
+    expect((await setVisibility(deps, { path: 'design/Gone.md', personal: true, viewer: asKim, author: 'kim' })).status).toBe(404)
+    expect((await setVisibility(deps, { path: 'design/Missing.md', personal: true, viewer: asKim, author: 'kim' })).status).toBe(404)
+    await putFile(deps, { path: 'design/Hollow.md', body: enc('# Hollow'), mtime: 1, author: 'kim' })
+    blobs.objects.delete('design/Hollow.md')
+    const hollow = await setVisibility(deps, { path: 'design/Hollow.md', personal: true, viewer: asKim, author: 'kim' })
+    expect(hollow).toMatchObject({ status: 404, body: { error: 'content missing' } })
+    expect(meta.rows.get('design/Hollow.md')!.deleted).toBe(false)     // the row is left alone
+  })
+
+  it('a colleague\'s save in the history blocks withdrawal even when the last save is the owner\'s', async () => {
+    await putFile({ ...deps, now: () => 1_000 }, { path: 'design/Shared.md', body: enc('v1'), mtime: 1, author: 'kim' })
+    await putFile({ ...deps, now: () => 2_000 }, { path: 'design/Shared.md', body: enc('v2 by lee'), mtime: 2, author: 'lee' })
+    await putFile({ ...deps, now: () => 3_000 }, { path: 'design/Shared.md', body: enc('v3 by kim'), mtime: 3, author: 'kim' })
+    expect(meta.rows.get('design/Shared.md')!.author).toBe('kim')
+    const r = await setVisibility(deps, { path: 'design/Shared.md', personal: true, viewer: asKim, author: 'kim' })
+    expect(r.status).toBe(403)
+    expect((r.body as { error: string }).error).toContain('lee')
+    expect((r.body as { error: string }).error).not.toContain('kim')
+    expect(meta.rows.get('design/Shared.md')!.deleted).toBe(false)
+  })
+
+  it('a tombstone at the destination does not block the move; a live document does and is reported', async () => {
+    // Tombstone: kim once had a personal copy at this path and deleted it
+    await putFile(deps, { path: `${KIM}design/Stamina.md`, body: enc('# old shadow'), mtime: 1, author: 'kim' })
+    await deleteFile(deps, `${KIM}design/Stamina.md`, (await meta.get(`${KIM}design/Stamina.md`))!.etag, 'kim')
+    await putFile({ ...deps, now: () => 1_000 }, { path: 'design/Mine.md', body: enc('# Mine'), mtime: 7, author: 'kim' })
+    const moved = await setVisibility(deps, { path: 'design/Mine.md', personal: true, viewer: asKim, author: 'kim' })
+    expect(moved.status).toBe(200)
+    const body = moved.body as { from: string; path: string; row: { mtime: number; author: string }; personal: boolean }
+    expect(body).toMatchObject({ from: 'design/Mine.md', path: `${KIM}design/Mine.md`, personal: true })
+    expect(body.row.mtime).toBe(7)                                            // the client's mtime travels with the document
+    expect(meta.rows.get('design/Mine.md')!.deleted).toBe(true)
+    expect(dec(blobs.objects.get(`${KIM}design/Mine.md`)!)).toBe('# Mine')
+    // Live destination: kim's personal Stamina cannot be published over lee's team Stamina
+    await putFile(deps, { path: `${KIM}design/Stamina.md`, body: enc('# new shadow'), mtime: 2, author: 'kim' })
+    const blocked = await setVisibility(deps, { path: `${KIM}design/Stamina.md`, personal: false, viewer: asKim, author: 'kim' })
+    expect(blocked.status).toBe(409)
+    expect((blocked.body as { current?: { path: string } }).current?.path).toBe('design/Stamina.md')
+    expect(meta.rows.get(`${KIM}design/Stamina.md`)!.deleted).toBe(false)
+  })
+
+  it('an OAuth sub with unsafe characters is sanitised consistently on both sides of the move', async () => {
+    const odd = { sub: 'google|a b/c@d' }
+    await putFile(deps, { path: 'design/Odd.md', body: enc('# Odd'), mtime: 1, author: 'odd' })
+    const r = await setVisibility(deps, { path: 'design/Odd.md', personal: true, viewer: odd, author: 'odd' })
+    expect(r.status).toBe(200)
+    const dest = (r.body as { path: string }).path
+    expect(dest).toBe(`${PERSONAL_PREFIX}google-a-b-c-d/design/Odd.md`)
+    expect(canSee(dest, odd)).toBe(true)
+    expect(canSee(dest, { sub: 'google-a-b-c-d' })).toBe(true)              // the sanitised segment is the identity the path carries
+    expect(canSee(dest, { sub: 'google|a-b/c@d' })).toBe(true)              // …so two subs that sanitise alike share one space (see report)
+    const back = await setVisibility(deps, { path: dest, personal: false, viewer: odd, author: 'odd' })
+    expect(back.status).toBe(200)
+    expect((back.body as { path: string }).path).toBe('design/Odd.md')
+  })
+
+  it('MCP vault_visibility fires the write hook only when a document is published', async () => {
+    const written: string[] = []
+    const hooked = (id: Identity): McpDeps => ({ ...mcp(id), onWrite: row => { written.push(row.path) } })
+    await callTool(hooked(kim), 'vault_visibility', { path: `${KIM}design/Stamina rethink.md`, personal: false })
+    expect(written).toEqual(['design/Stamina rethink.md'])
+    await callTool(hooked(kim), 'vault_visibility', { path: 'design/Stamina rethink.md', personal: true })
+    expect(written).toEqual(['design/Stamina rethink.md'])                    // withdrawing is nobody else's business
+    expect((await callTool({ ...deps, author: 'x' }, 'vault_visibility', { path: 'design/Stamina.md', personal: true })).isError).toBe(true)  // no viewer at all
+  })
+
+  it('MCP vault_read hides other people\'s personal images too', async () => {
+    await putFile(deps, { path: `${KIM}attachments/secret.png`, body: enc('PNG'), mtime: 1, author: 'kim' })
+    expect((await callTool(mcp(lee), 'vault_read', { path: `${KIM}attachments/secret.png` })).isError).toBe(true)
+    expect((await callTool(service(), 'vault_read', { path: `${KIM}attachments/secret.png` })).isError).toBe(true)
+    const mine = await callTool(mcp(kim), 'vault_read', { path: `${KIM}attachments/secret.png` })
+    expect(mine.isError).toBeUndefined()
+    expect(mine.content[0]).toMatchObject({ type: 'image', mimeType: 'image/png' })
+    expect((mine.content[1] as { text: string }).text).toContain(`${KIM}attachments/secret.md`)
   })
 })

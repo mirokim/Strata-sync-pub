@@ -455,6 +455,18 @@ describe('personal documents', () => {
     await expect(makeVault().setPersonal(A('active/Combat System.md'), true)).rejects.toThrow(/Sign in/)
   })
 
+  // BUG (src/web/personal.ts PersonalMapper.physicalOf): with a personal copy shadowing a team
+  // document of the same path, every app operation on the team path is redirected to the personal
+  // copy — the team document is shown in the tree but reads return the shadow and saves land in it.
+  it.fails('a team document that shares its path with a personal copy is still the one the app reads and saves', async () => {
+    const v = signedIn()
+    await v.api.loadFiles(v.vaultPath)
+    expect(await v.api.readFile(A('active/Stamina.md'))).toBe('# Stamina\n\nRegen.')
+    await v.api.saveFile(A('active/Stamina.md'), '# Stamina\n\nTeam edit.')
+    expect(new TextDecoder().decode(server.blobs.get('active/Stamina.md')!)).toContain('Team edit')
+    expect(new TextDecoder().decode(server.blobs.get('_personal/1001/active/Stamina.md')!)).toBe('# my shadow stamina')
+  })
+
   it('images pasted into a personal document stay personal', async () => {
     const v = signedIn()
     await v.api.loadFiles(v.vaultPath)

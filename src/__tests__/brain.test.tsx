@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import type { LoadedDocument } from '@/types'
-import { around, activityHeat, heatColor, remarkBody, normalizeLinkTarget, buildLinkIndex } from '@/lib/brain'
+import { around, activityHeat, heatColor, remarkBody, normalizeLinkTarget, buildLinkIndex, remarksFor } from '@/lib/brain'
 import { buildNodeColorMap, getNodeColor, HEAT_COLD_COLOR } from '@/lib/nodeColors'
 
 const DAY = 86_400_000
@@ -99,5 +99,68 @@ describe('BrainPanel', () => {
     await waitFor(() => expect(client.historyDiff).toHaveBeenCalledWith('design/Stamina.md', 'a'.repeat(64)))
     expect(await screen.findByText('+ regen 5/s')).toBeInTheDocument()
     expect(screen.getByText(/vs now: \+1 −1/)).toBeInTheDocument()
+  })
+})
+
+describe('brain edge cases', () => {
+  it('heatColor interpolates between the three stops and clamps out-of-range input', () => {
+    expect(heatColor(0.0625)).toBe('#986f2b')                     // sqrt → 0.25: halfway from slate to amber
+    expect(heatColor(0.5625)).toBe('#f27128')                     // sqrt → 0.75: halfway from amber to red
+    expect(heatColor(-1)).toBe(heatColor(0))
+    expect(heatColor(2)).toBe(heatColor(1))
+    expect(heatColor(0.01) > heatColor(0)).toBe(true)              // sqrt: a sliver of activity is already visible
+    expect(heatColor(0.01)).not.toBe(heatColor(0))
+    for (const h of [0, 0.1, 0.33, 0.5, 0.9, 1]) expect(heatColor(h)).toMatch(/^#[0-9a-f]{6}$/)
+  })
+
+  it('activityHeat ignores mtimes from the future beyond clock skew, and returns an empty map when nothing was touched', () => {
+    const future = doc({ filename: 'Future.md', folderPath: 'design', body: '# Future', mtime: now + 5 * DAY })
+    const skewed = doc({ filename: 'Skewed.md', folderPath: 'design', body: '# Skewed', mtime: now + 30_000 })
+    const old = doc({ filename: 'Old.md', folderPath: 'design', body: '# Old', mtime: now - 14 * DAY })
+    const heat = activityHeat([future, skewed, old], now)
+    expect(heat.has(future.id)).toBe(false)                        // a file dated next week is not "attention this week"
+    expect(heat.get(skewed.id)).toBe(1)                            // 30 s ahead is clock skew: counts, and is the hottest
+    expect(heat.get(old.id)).toBeCloseTo(0.25, 4)                  // two half-lives → a quarter of the hottest
+    expect(activityHeat([future, menu], now).size).toBe(0)         // nothing touched → nothing to colour
+    const lone = activityHeat([old], now)
+    expect(lone.get(old.id)).toBe(1)                               // normalised against itself
+  })
+
+  it('remarksFor accepts backslash folder paths and ignores memory notes and remarks about other documents', () => {
+    const winRemark = doc({ filename: 'Stamina.md', folderPath: '_members\\Designer\\design', mtime: now - 3 * DAY, body: '---\nmember: designer\n---\n# Designer on [[Stamina]]\n\n### One question\n- colour?' })
+    const otherDoc = doc({ filename: 'Stamina.md', folderPath: '_members/Librarian/lore', body: '# about lore/Stamina' })
+    const winTarget = doc({ filename: 'Stamina.md', folderPath: 'design', body: '# S' })
+    const remarks = remarksFor([winTarget, winRemark, remark, otherDoc, memory], winTarget)
+    expect(remarks.map(r => r.member)).toEqual(['Librarian', 'Designer'])   // newest first
+    expect(remarks[1].body).toBe('### One question\n- colour?')
+    expect(remarksFor([winTarget, winRemark, remark, otherDoc, memory], memory)).toEqual([])
+  })
+
+  it('buildLinkIndex recomputes for a new array and resolves nothing for a missing target', () => {
+    const idx = buildLinkIndex(docs)
+    const dangling = doc({ filename: 'Loose.md', folderPath: 'design', body: '# Loose\n\n[[Nowhere]] and [[Stamina]] and [[https://x.example/a]]' })
+    const more = [...docs, dangling]
+    const idx2 = buildLinkIndex(more)
+    expect(idx2).not.toBe(idx)
+    expect(idx2.out.get(dangling.id)).toEqual(new Set([stamina.id]))          // unresolved and URL-like links are dropped
+    expect(idx2.in.get(stamina.id)!.has(dangling.id)).toBe(true)
+    expect(idx.in.get(stamina.id)!.has(dangling.id)).toBe(false)              // the old index is untouched
+    expect(buildLinkIndex(more)).toBe(idx2)
+  })
+
+  it('around(): a document without links or tags has no neighbourhood; similarLimit trims the list', () => {
+    const a = around(docs, menu)
+    expect(a.similar).toEqual([])
+    expect(a.linkedFrom).toEqual([])
+    expect(a.linksTo).toEqual([])
+    expect(a.proposals).toEqual([])
+    expect(around(docs, stamina, 1).similar).toHaveLength(1)
+    expect(around(docs, stamina, 0).similar).toEqual([])
+    // A self-link does not make a document its own neighbour
+    const selfish = doc({ filename: 'Selfish.md', folderPath: 'design', body: '# Selfish\n\n[[Selfish]]', tags: ['combat'] })
+    const s = around([...docs, selfish], selfish)
+    expect(s.linksTo).toEqual([])
+    expect(s.similar.map(x => x.doc.filename).sort()).toEqual(['Combat Loop.md', 'Dodge.md', 'Stamina.md'])   // shares #combat only
+    expect(s.similar.every(x => x.shared === 1)).toBe(true)
   })
 })
