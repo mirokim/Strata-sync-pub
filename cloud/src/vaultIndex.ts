@@ -32,6 +32,7 @@ export async function loadVaultView(deps: SyncDeps, force = false): Promise<Vaul
   const rows = await listLiveRows(deps.meta)
   const docs = new Map<string, ParsedVaultDoc>()
   const rowMap = new Map<string, FileRow>()
+  const toRead: FileRow[] = []
   for (const row of rows) {
     rowMap.set(row.path, row)
     if (!row.path.toLowerCase().endsWith('.md')) continue
@@ -39,9 +40,16 @@ export async function loadVaultView(deps: SyncDeps, force = false): Promise<Vaul
     const prev = _cache?.view.rows.get(row.path)
     const prevDoc = _cache?.view.docs.get(row.path)
     if (prev && prevDoc && prev.etag === row.etag) { docs.set(row.path, prevDoc); continue }
-    const bytes = await deps.blobs.get(row.path)
-    if (!bytes) continue
-    docs.set(row.path, parseVaultDoc(row.path, dec.decode(bytes), row.mtime))
+    toRead.push(row)
+  }
+  // R2 reads in parallel batches — a cold isolate on a large vault would otherwise take seconds
+  const BATCH = 25
+  for (let i = 0; i < toRead.length; i += BATCH) {
+    const part = await Promise.all(toRead.slice(i, i + BATCH).map(async row => {
+      const bytes = await deps.blobs.get(row.path)
+      return bytes ? [row, parseVaultDoc(row.path, dec.decode(bytes), row.mtime)] as const : null
+    }))
+    for (const entry of part) if (entry) docs.set(entry[0].path, entry[1])
   }
   let index: Bm25 | null = null
   const view: VaultView = { head, docs, rows: rowMap, bm25: () => (index ??= new Bm25(docs)) }

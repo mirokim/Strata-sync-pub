@@ -59,6 +59,9 @@ export function useVaultWatcher(): void {
             // parseMarkdownFile does not go through pushWithUniqueId, so it reverts a
             // collision-resolved id (`_2`) to the raw id. Keep the existing id when a document at the same path exists.
             const existing = loadedDocuments?.find(d => d.absolutePath === absolutePath)
+            // Electron's fs.watch also fires for the editor's own save; the store already holds
+            // that text, so there is nothing to update (and no "changed" banner to show).
+            if (existing && existing.rawContent === content) return
             const updatedDoc = existing ? { ...parsedDoc, id: existing.id } : parsedDoc
 
             // Diff calculation — compare with previous rawContent

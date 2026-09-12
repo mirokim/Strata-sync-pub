@@ -30,6 +30,12 @@ export class D1MetaStore implements MetaStore {
     return r?.value ?? 0
   }
 
+  async generation(): Promise<number> {
+    const r = await this.db.prepare("SELECT value FROM counters WHERE name = 'generation'").first<{ value: number }>()
+    // 0 = database predates migration 0002; clients treat it like any other stable value
+    return r?.value ?? 0
+  }
+
   /**
    * seq allocation and the row write happen in one D1 batch, which D1 runs as a transaction, so
    * two concurrent writers cannot end up with the same seq or a row whose seq was never handed out.

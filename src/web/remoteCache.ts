@@ -20,6 +20,8 @@ export interface CachedRow {
 
 export interface CacheSnapshot {
   cursor: number
+  /** Server generation the cursor belongs to; null until the server reports one. */
+  generation: number | null
   rows: CachedRow[]
   /** Folders created in the UI that have no file yet (the server has no folder objects). */
   emptyFolders: string[]
@@ -28,6 +30,7 @@ export interface CacheSnapshot {
 /** What changed since the last write; `rows` are upserts, `removed` are deleted paths. */
 export interface CacheDelta {
   cursor: number
+  generation: number | null
   emptyFolders: string[]
   rows: CachedRow[]
   removed: string[]
@@ -43,17 +46,18 @@ export interface CacheBackend {
 export class MemoryCacheBackend implements CacheBackend {
   private rows = new Map<string, CachedRow>()
   private cursor: number | null = null
+  private generation: number | null = null
   private emptyFolders: string[] = []
   async load(): Promise<CacheSnapshot | null> {
     if (this.cursor === null) return null
-    return structuredCloneSafe({ cursor: this.cursor, rows: [...this.rows.values()], emptyFolders: this.emptyFolders })
+    return structuredCloneSafe({ cursor: this.cursor, generation: this.generation, rows: [...this.rows.values()], emptyFolders: this.emptyFolders })
   }
   async write(d: CacheDelta) {
     for (const p of d.removed) this.rows.delete(p)
     for (const r of d.rows) this.rows.set(r.path, structuredCloneSafe(r))
-    this.cursor = d.cursor; this.emptyFolders = [...d.emptyFolders]
+    this.cursor = d.cursor; this.generation = d.generation; this.emptyFolders = [...d.emptyFolders]
   }
-  async clear() { this.rows.clear(); this.cursor = null; this.emptyFolders = [] }
+  async clear() { this.rows.clear(); this.cursor = null; this.generation = null; this.emptyFolders = [] }
 }
 
 function structuredCloneSafe<T>(v: T): T {
@@ -86,11 +90,17 @@ export class IndexedDbCacheBackend implements CacheBackend {
         const tx = db.transaction(['rows', 'meta'], 'readonly')
         const rowsReq = tx.objectStore('rows').getAll()
         const cursorReq = tx.objectStore('meta').get('cursor')
+        const genReq = tx.objectStore('meta').get('generation')
         const foldersReq = tx.objectStore('meta').get('emptyFolders')
         tx.oncomplete = () => {
           const cursor = typeof cursorReq.result === 'number' ? cursorReq.result : null
           if (cursor === null) return resolve(null)
-          resolve({ cursor, rows: rowsReq.result as CachedRow[], emptyFolders: Array.isArray(foldersReq.result) ? foldersReq.result : [] })
+          resolve({
+            cursor,
+            generation: typeof genReq.result === 'number' ? genReq.result : null,
+            rows: rowsReq.result as CachedRow[],
+            emptyFolders: Array.isArray(foldersReq.result) ? foldersReq.result : [],
+          })
         }
         tx.onerror = () => reject(tx.error)
       })
@@ -108,6 +118,7 @@ export class IndexedDbCacheBackend implements CacheBackend {
         for (const p of delta.removed) rows.delete(p)
         for (const r of delta.rows) rows.put(r)
         tx.objectStore('meta').put(delta.cursor, 'cursor')
+        tx.objectStore('meta').put(delta.generation, 'generation')
         tx.objectStore('meta').put(delta.emptyFolders, 'emptyFolders')
         tx.oncomplete = () => resolve()
         tx.onerror = () => reject(tx.error)
@@ -118,9 +129,11 @@ export class IndexedDbCacheBackend implements CacheBackend {
   }
 
   async clear(): Promise<void> {
+    // Not resolved on `blocked`: every operation closes its connection, so the delete goes
+    // through once in-flight work finishes — resolving early would let a queued write revive old rows.
     await new Promise<void>((resolve) => {
       const req = indexedDB.deleteDatabase(this.dbName)
-      req.onsuccess = req.onerror = req.onblocked = () => resolve()
+      req.onsuccess = req.onerror = () => resolve()
     })
   }
 }
@@ -136,6 +149,7 @@ export function defaultCacheBackend(host: string): CacheBackend {
 export class RemoteCache {
   rows = new Map<string, CachedRow>()
   cursor = 0
+  generation: number | null = null
   emptyFolders = new Set<string>()
   private saveTimer: ReturnType<typeof setTimeout> | null = null
   private saving: Promise<void> = Promise.resolve()
@@ -148,6 +162,7 @@ export class RemoteCache {
     const snap = await this.backend.load().catch(() => null)
     if (!snap) return
     this.cursor = snap.cursor
+    this.generation = snap.generation
     this.rows = new Map(snap.rows.map(r => [r.path, r]))
     this.emptyFolders = new Set(snap.emptyFolders)
   }
@@ -184,8 +199,9 @@ export class RemoteCache {
 
   /** Forget everything (server sequence reset or disconnect). */
   async reset(): Promise<void> {
-    this.rows.clear(); this.cursor = 0; this.emptyFolders.clear(); this.dirty.clear()
+    this.rows.clear(); this.cursor = 0; this.generation = null; this.emptyFolders.clear(); this.dirty.clear()
     if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = null }
+    await this.saving // a queued flush must not land in the fresh store
     await this.backend.clear().catch(() => {})
   }
 
@@ -208,7 +224,7 @@ export class RemoteCache {
     if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = null }
     const touched = [...this.dirty]; this.dirty.clear()
     const delta: CacheDelta = {
-      cursor: this.cursor, emptyFolders: [...this.emptyFolders],
+      cursor: this.cursor, generation: this.generation, emptyFolders: [...this.emptyFolders],
       rows: touched.map(p => this.rows.get(p)).filter((r): r is CachedRow => Boolean(r)),
       removed: touched.filter(p => !this.rows.has(p)),
     }

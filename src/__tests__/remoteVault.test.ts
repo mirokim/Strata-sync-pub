@@ -14,9 +14,11 @@ class FakeWorker {
   rows = new Map<string, Row>()
   blobs = new Map<string, Uint8Array>()
   seq = 0
+  generation = 11
   token = 'tok'
   requests: string[] = []
   failNext: number | null = null
+  searchDown = false
 
   private etagOf(bytes: Uint8Array): string {
     let h = 2166136261
@@ -37,7 +39,7 @@ class FakeWorker {
     this.rows.set(path, { ...cur, deleted: true, seq: ++this.seq })
     this.blobs.delete(path)
   }
-  reset(): void { this.rows.clear(); this.blobs.clear(); this.seq = 0 }
+  reset(): void { this.rows.clear(); this.blobs.clear(); this.seq = 0; this.generation += 1 }
 
   fetch = async (input: string, init: RequestInit = {}): Promise<Response> => {
     const url = new URL(input)
@@ -55,17 +57,17 @@ class FakeWorker {
       const limit = Number(url.searchParams.get('limit') ?? 200)
       const rows = [...this.rows.values()].filter(r => r.seq > after).sort((a, b) => a.seq - b.seq).slice(0, limit)
       const docs = rows.map(r => ({ ...r, content: !r.deleted && r.path.endsWith('.md') ? new TextDecoder().decode(this.blobs.get(r.path)!) : null }))
-      return json(200, { head: this.seq, next: rows.length === limit ? rows[rows.length - 1].seq : null, docs })
+      return json(200, { head: this.seq, generation: this.generation, next: rows.length === limit ? rows[rows.length - 1].seq : null, docs })
     }
     if (url.pathname === '/v1/manifest') {
       const since = Number(url.searchParams.get('since') ?? 0)
       const files = [...this.rows.values()].filter(r => r.seq > since)
       return json(200, { head: this.seq, next: null, files })
     }
-    if (url.pathname === '/v1/search') return json(200, { hits: [{ path: 'a.md', docId: 'a', heading: 'A', score: 0.9 }] })
+    if (url.pathname === '/v1/search') return this.searchDown ? json(503, { error: 'semantic search not configured' }) : json(200, { hits: [{ path: 'a.md', docId: 'a', heading: 'A', score: 0.9 }] })
     if (url.pathname === '/v1/file') {
       const path = url.searchParams.get('path')!
-      if (path.startsWith('.strata-sync/')) return json(400, { error: 'invalid path' })
+      if (path.split('/').some(s => s.startsWith('.'))) return json(400, { error: 'invalid path' })
       const cur = this.rows.get(path)
       const live = cur && !cur.deleted ? cur : null
       if (method === 'GET') {
@@ -213,6 +215,16 @@ describe('loadFiles / scanMetadata', () => {
     const r = await vault.api.loadFiles(vault.vaultPath)
     expect(r.files.map(f => f.relativePath)).toEqual(['fresh/Only.md'])
   })
+
+  it('drops the mirror when the server generation changed even though the head is higher', async () => {
+    await vault.api.loadFiles(vault.vaultPath) // cursor 3
+    server.reset()
+    for (let i = 1; i <= 5; i++) server.put(`re/Doc ${i}.md`, `# ${i}`) // head 5 ≥ 3 — cursor alone would miss docs 1..3
+    const r = await vault.api.loadFiles(vault.vaultPath)
+    expect(r.files.map(f => f.relativePath).sort()).toEqual(['re/Doc 1.md', 're/Doc 2.md', 're/Doc 3.md', 're/Doc 4.md', 're/Doc 5.md'])
+    expect(r.files.some(f => f.relativePath.startsWith('active/'))).toBe(false)
+    expect(vault.cache.generation).toBe(server.generation)
+  })
 })
 
 describe('saveFile', () => {
@@ -245,7 +257,7 @@ describe('saveFile', () => {
     expect(vault.status.conflicts).toHaveLength(1)
     expect(vault.status.conflicts[0]).toMatchObject({ path: 'active/Stamina.md', keptAs: copy, remoteAuthor: 'bob' })
     expect(notices[0]).toContain('bob')
-    expect(changes).toEqual([undefined]) // full reload requested
+    expect(changes).toEqual(['active/Stamina.md']) // the UI is told to re-read this file
   })
 
   it("never skips a teammate's row that landed just before our own write", async () => {
@@ -263,11 +275,40 @@ describe('saveFile', () => {
     await vault.api.loadFiles(vault.vaultPath)
     server.put('active/Stamina.md', 'theirs 1', 'bob')
     const first = await vault.api.saveFile(A('active/Stamina.md'), 'ours 1')
-    server.put('active/Stamina.md', 'theirs 2', 'bob')
+    await vault.api.readFile(A('active/Stamina.md')) // the app adopted bob's version…
+    server.put('active/Stamina.md', 'theirs 2', 'bob') // …and loses a second race in the same minute
     const second = await vault.api.saveFile(A('active/Stamina.md'), 'ours 2')
     expect(first.path).toBe(A('active/Stamina (conflict 미로 2026-09-12 1030).md'))
     expect(second.path).toBe(A('active/Stamina (conflict 미로 2026-09-12 1030)-2.md'))
     expect(new TextDecoder().decode(server.blobs.get('active/Stamina (conflict 미로 2026-09-12 1030)-2.md'))).toBe('ours 2')
+  })
+
+  it("after a conflict, further saves go to the copy — never over the teammate's version — until the app re-reads", async () => {
+    await vault.api.loadFiles(vault.vaultPath)
+    server.put('active/Stamina.md', 'theirs', 'bob')
+    const first = await vault.api.saveFile(A('active/Stamina.md'), 'ours 1')
+    const copy = vault.rel(first.path)
+    // the editor still holds our text and autosaves again
+    const second = await vault.api.saveFile(A('active/Stamina.md'), 'ours 2')
+    expect(second.path).toBe(A(copy))
+    expect(new TextDecoder().decode(server.blobs.get('active/Stamina.md'))).toBe('theirs')
+    expect(new TextDecoder().decode(server.blobs.get(copy))).toBe('ours 2')
+    expect(vault.status.conflicts).toHaveLength(1)
+    // a poll in between does not lift the guard either (the app has not looked at the file)
+    await vault.poll()
+    expect((await vault.api.saveFile(A('active/Stamina.md'), 'ours 3')).path).toBe(A(copy))
+    // once the app reads the file it is editing the server version → saves go through again
+    expect(await vault.api.readFile(A('active/Stamina.md'))).toBe('theirs')
+    const r = await vault.api.saveFile(A('active/Stamina.md'), 'theirs + mine')
+    expect(r.path).toBe(A('active/Stamina.md'))
+    expect(new TextDecoder().decode(server.blobs.get('active/Stamina.md'))).toBe('theirs + mine')
+  })
+
+  it('keeps every dot-path in the browser only, not just .strata-sync/', async () => {
+    await vault.api.saveFile(A('.vector_cache_v6.json'), '{}')
+    await vault.api.saveFile(A('.obsidian/workspace.json'), '{}')
+    expect(server.rows.size).toBe(3)
+    expect(await vault.api.readFile(A('.obsidian/workspace.json'))).toBe('{}')
   })
 
   it('keeps .strata-sync/ files in the browser only', async () => {
@@ -335,6 +376,10 @@ describe('images', () => {
     expect(await vault.api.findImageByName!('LOGO.png')).toBe(url)
     expect(await vault.api.findImageByName!('nope.png')).toBeNull()
     expect(await vault.api.readImage(A('assets/missing.png'))).toBeNull()
+    // replaced on the server → next read fetches the new bytes
+    server.put('assets/logo.png', 'PNGDATA-v2')
+    await vault.poll()
+    expect(await vault.api.readImage(A('assets/logo.png'))).not.toBe(url)
   })
 })
 
@@ -388,11 +433,21 @@ describe('syncAPI shim', () => {
     expect(await testConnection('https://strata.example', 'wrong', server.fetch)).toMatchObject({ ok: false, error: 'team token rejected' })
   })
 
-  it('updateConfig persists the author', async () => {
+  it('updateConfig persists the author and the next write carries it', async () => {
     clearWebConfig()
+    await vault.api.loadFiles(vault.vaultPath)
     await vault.sync.updateConfig({ author: 'Kim' })
     expect(loadWebConfig()).toMatchObject({ author: 'Kim', url: CONFIG.url, token: CONFIG.token })
+    await vault.api.saveFile(A('active/ByKim.md'), 'x')
+    expect(server.rows.get('active/ByKim.md')!.author).toBe('Kim')
     clearWebConfig()
+  })
+
+  it('reports the server\'s own 503 reason for team search', async () => {
+    server.searchDown = true
+    const r = await vault.sync.search('a')
+    expect(r.ok).toBe(false)
+    expect(r.reason).toBe('semantic search not configured')
   })
 })
 

@@ -296,7 +296,7 @@ cd bot && pytest      # Bot
 **배포**
 1. Worker를 먼저 배포합니다(아래 "팀 동기화"의 서버 배포 명령). `wrangler.toml`의 `ALLOWED_ORIGINS`에 Vercel 주소를 넣으면 다른 사이트의 브라우저는 API를 못 부릅니다(`*`는 토큰만으로 막는 상태).
 2. Vercel에서 이 저장소를 import 합니다. `vercel.json`이 빌드(`npm run build:web`)와 SPA 라우팅을 담고 있어 설정할 게 없습니다. main에 push 하면 자동 배포.
-3. Worker는 GitHub Actions가 배포합니다(`.github/workflows/ci.yml`의 `deploy-worker`): main push → 테스트 통과 → D1 마이그레이션 → `wrangler deploy`. 저장소 시크릿 `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`가 필요합니다.
+3. Worker는 GitHub Actions가 배포합니다(`.github/workflows/ci.yml`의 `deploy-worker`): main push → 테스트 통과 → D1 마이그레이션 → `wrangler deploy`. 저장소 시크릿 `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_D1_ID`(`wrangler d1 create`가 출력한 database_id — `wrangler.toml`에는 자리표시자만 커밋)가 필요합니다.
 
 **사용** — 첫 화면에서 서버 주소, 팀 토큰, 이름을 넣으면 끝. 토큰은 이 브라우저의 localStorage에만 저장됩니다. 문서 사본은 IndexedDB에 두고 15초마다 바뀐 것만 내려받습니다(`GET /v1/docs?after=<seq>`). 저장은 `If-Match`로 잠그고, 같은 파일을 둘이 고쳤으면 데스크톱과 같은 규칙으로 `이름 (conflict 내이름 날짜 시각).md` 사본을 남깁니다. Settings → Server에서 상태·충돌·이름 변경·연결 해제.
 
@@ -841,7 +841,7 @@ Use the team vault from a browser, nothing to install. Vercel serves the React a
 **Deploy**
 1. Deploy the Worker first (server commands under "Team sync" below). Put the Vercel origin in `ALLOWED_ORIGINS` in `wrangler.toml` so browsers on other sites cannot call the API (`*` relies on the token alone).
 2. Import this repository in Vercel. `vercel.json` carries the build (`npm run build:web`) and the SPA rewrite; pushes to main deploy automatically.
-3. The Worker is deployed by GitHub Actions (`deploy-worker` in `.github/workflows/ci.yml`): push to main → tests pass → D1 migrations → `wrangler deploy`. Needs the repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+3. The Worker is deployed by GitHub Actions (`deploy-worker` in `.github/workflows/ci.yml`): push to main → tests pass → D1 migrations → `wrangler deploy`. Needs the repository secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_D1_ID` (the database_id printed by `wrangler d1 create`; only a placeholder is committed in `wrangler.toml`).
 
 **Use** — the first screen asks for the server URL, the team token and your name. The token stays in this browser's localStorage. Documents are mirrored in IndexedDB and only changes are pulled, every 15 s (`GET /v1/docs?after=<seq>`). Saves are locked with `If-Match`; when two people edit the same file, the desktop rule applies: your text is kept as `<name> (conflict <you> <date> <time>).md`. Settings → Server shows status, conflicts, your name and disconnect.
 

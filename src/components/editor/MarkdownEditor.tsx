@@ -30,6 +30,8 @@ import { updateDocInWorker } from '@/lib/bm25WorkerClient'
 import { buildAdjacencyMap } from '@/lib/graphRAG'
 import { invalidateTfIdfCache } from '@/lib/tfidfCache'
 import { MOCK_DOCUMENTS } from '@/data/mockDocuments'
+import { conflictName } from '@/lib/conflictCopy'
+import { loadWebConfig } from '@/web/config'
 import { showToast } from '@/stores/toastStore'
 import ProposalBanner from './ProposalBanner'
 import type { LoadedDocument } from '@/types'
@@ -183,6 +185,8 @@ export default function MarkdownEditor() {
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isDirty = useRef(false)
+  /** Text of the last successful save (or the last external version adopted) — our own echo. */
+  const lastSavedRef = useRef<string | null>(null)
 
   const editorMountRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -279,7 +283,18 @@ export default function MarkdownEditor() {
 
     setSaveStatus('saving')
     try {
-      await window.vaultAPI!.saveFile(path, text)
+      const result = await window.vaultAPI!.saveFile(path, text)
+      lastSavedRef.current = text
+
+      // The adapter/engine lost a race and stored our text as a conflict copy: the document under
+      // this name is now someone else's version. Leave the store alone — the vault watcher brings
+      // the server version in and the effect below swaps it into the buffer.
+      if (result?.path && result.path.replace(/\\/g, '/') !== path.replace(/\\/g, '/')) {
+        setSaveStatus('saved')
+        isDirty.current = false
+        setTimeout(() => setSaveStatus('idle'), 2000)
+        return
+      }
 
       const currentDoc = docRef.current as LoadedDocument
       if (loadedDocsRef.current && currentDoc?.absolutePath) {
@@ -349,6 +364,42 @@ export default function MarkdownEditor() {
 
   const doSaveRef = useRef(doSave)
   doSaveRef.current = doSave
+
+  // ── External changes to the open document ──────────────────────────────────
+  // The vault watcher (fs.watch, desktop sync pull, web poll) replaces the document in the store
+  // while it is open here. Adopt the new text so the next autosave does not write stale content
+  // over a teammate's version. Unsaved local edits are never dropped: they go to a conflict copy.
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view || !doc) return
+    const incoming = doc.rawContent ?? ''
+    const current = view.state.doc.toString()
+    if (incoming === current || incoming === lastSavedRef.current) return
+
+    const adopt = () => {
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: incoming } })
+      lastSavedRef.current = incoming
+      isDirty.current = false
+      if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null }
+      setSaveStatus('idle')
+    }
+
+    if (!isDirty.current) { adopt(); return }
+
+    // Dirty buffer vs external change: keep ours as a conflict copy, then show theirs
+    const vaultRoot = useVaultStore.getState().vaultPath
+    const rel = doc.folderPath ? `${doc.folderPath}/${doc.filename}` : doc.filename
+    const copyRel = conflictName(rel, loadWebConfig()?.author || 'local', Date.now())
+    const sep = doc.absolutePath.includes('\\') ? '\\' : '/'
+    const copyAbs = vaultRoot ? `${vaultRoot}${sep}${copyRel.replace(/\//g, sep)}` : null
+    if (copyAbs && window.vaultAPI) {
+      window.vaultAPI.saveFile(copyAbs, current)
+        .then(() => showToast(`${doc.filename} was changed elsewhere — your unsaved edits are kept as "${copyRel.split('/').pop()}"`, 'warn', 6000))
+        .catch(e => showToast(`Could not keep your edits as a conflict copy: ${e instanceof Error ? e.message : String(e)}`, 'error'))
+    }
+    adopt()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc?.rawContent])
 
   const handleManualSave = useCallback(() => {
     if (!viewRef.current) return

@@ -87,7 +87,10 @@ jobs:
   # by Vercel's own Git integration (import the repo in Vercel; vercel.json carries the build).
   #
   # Repository secrets needed: CLOUDFLARE_API_TOKEN (Workers Scripts:Edit, D1:Edit, Workers R2
-  # Storage:Edit, Vectorize:Edit, Queues:Edit), CLOUDFLARE_ACCOUNT_ID.
+  # Storage:Edit, Vectorize:Edit, Queues:Edit), CLOUDFLARE_ACCOUNT_ID, and CLOUDFLARE_D1_ID (the
+  # database_id printed by `wrangler d1 create strata-sync-db`; wrangler.toml carries a placeholder
+  # so the real id is never committed). The R2 bucket, Vectorize index and both queues must exist
+  # (README "Team sync" commands) or `wrangler deploy` fails binding validation.
   # Worker secrets (TEAM_TOKEN, ANTHROPIC_API_KEY) are set once with `wrangler secret put`, not here.
   deploy-worker:
     name: Deploy Worker
@@ -108,6 +111,14 @@ jobs:
           cache-dependency-path: cloud/package-lock.json
       - name: Install
         run: npm ci --no-audit --no-fund --prefix cloud
+      - name: Inject the D1 database id
+        working-directory: cloud
+        run: |
+          if [ -z "$D1_ID" ]; then echo "::error::CLOUDFLARE_D1_ID secret is not set" && exit 1; fi
+          sed -i "s/REPLACE_WITH_D1_ID/$D1_ID/" wrangler.toml
+          grep -q "REPLACE_WITH_D1_ID" wrangler.toml && { echo "::error::placeholder still present"; exit 1; } || true
+        env:
+          D1_ID: ${{ secrets.CLOUDFLARE_D1_ID }}
       - name: Apply D1 migrations
         working-directory: cloud
         run: npx wrangler d1 migrations apply strata-sync-db --remote

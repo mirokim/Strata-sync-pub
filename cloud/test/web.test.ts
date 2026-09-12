@@ -240,6 +240,7 @@ describe('callTool', () => {
     expect(meta.rows.get('active/Notes.md')!.author).toBe('tester')
     expect((await callTool(mdeps, 'vault_write', { path: 'active/x.png', content: 'v' })).isError).toBe(true)
     expect((await callTool(mdeps, 'vault_write', { path: '.strata-sync/x.md', content: 'v' })).isError).toBe(true)
+    expect((await callTool(mdeps, 'vault_write', { path: 'notes/.draft.md', content: 'v' })).isError).toBe(true)
   })
 
   it('vault_write and vault_promote report written rows through onWrite (review queue hook)', async () => {
@@ -322,8 +323,9 @@ describe('routes', () => {
   })
 
   it('GET /v1/docs pages by sequence, includes markdown content and omits binary content', async () => {
-    const p1 = await (await call('/v1/docs?limit=2')).json() as { head: number; next: number | null; docs: { path: string; seq: number; content: string | null }[] }
+    const p1 = await (await call('/v1/docs?limit=2')).json() as { head: number; generation: number; next: number | null; docs: { path: string; seq: number; content: string | null }[] }
     expect(p1.head).toBe(4)
+    expect(p1.generation).toBe(1)
     expect(p1.docs.map(d => d.path)).toEqual(['active/Combat System.md', 'active/Enemy AI.md'])
     expect(p1.docs[0].content).toContain('# Combat System')
     expect(p1.next).toBe(2)

@@ -14,13 +14,15 @@
 import { remoteVaultPath, saveWebConfig, type WebConfig } from './config'
 import { RemoteClient, RemoteError, type FetchLike } from './remoteClient'
 import { RemoteCache, defaultCacheBackend, type CacheBackend, type CachedRow } from './remoteCache'
+import { conflictName, numberedName } from '@/lib/conflictCopy'
+
+export { conflictName }
 
 type VaultAPI = NonNullable<Window['vaultAPI']>
 type SyncAPI = NonNullable<Window['syncAPI']>
 type ChangeListener = Parameters<VaultAPI['onChanged']>[0]
 
 const IMAGE_EXT = /\.(png|jpg|jpeg|gif|webp|svg|bmp|avif|tiff?|heic)$/i
-const PRIVATE_PREFIX = '.strata-sync/'
 const PRIVATE_KEY = 'strata-sync-web-private'
 const IMAGE_CACHE_MAX = 48
 
@@ -49,18 +51,6 @@ export interface RemoteVaultStatus {
 const enc = new TextEncoder()
 const dec = new TextDecoder()
 
-export function conflictName(relPath: string, author: string, when: number): string {
-  const slash = relPath.lastIndexOf('/')
-  const dot = relPath.lastIndexOf('.')
-  const ext = dot > slash ? relPath.slice(dot) : ''
-  const base = relPath.slice(0, relPath.length - ext.length)
-  const d = new Date(when)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}${pad(d.getMinutes())}`
-  const who = (author || 'web').replace(/[\\/:*?"<>|]/g, '_')
-  return `${base} (conflict ${who} ${stamp})${ext}`
-}
-
 export class RemoteVault {
   readonly vaultPath: string
   readonly client: RemoteClient
@@ -76,11 +66,17 @@ export class RemoteVault {
   private pollTimer: unknown = null
   private imageCache = new Map<string, string>()
   private authWarned = false
+  /**
+   * Files whose server version changed under the app (a lost save race) and which the app has
+   * not re-read since. Saves to them keep going to the conflict copy — never over the teammate's
+   * version — until loadFiles/readFile hands the app the current content.
+   */
+  private staleAfterConflict = new Map<string, string>()
   private readonly now: () => number
   private readonly fetchImpl?: FetchLike
   private readonly opts: Required<Pick<RemoteVaultOptions, 'pollIntervalMs' | 'setTimer' | 'clearTimer' | 'notify'>>
 
-  constructor(private config: WebConfig, options: RemoteVaultOptions = {}) {
+  constructor(private readonly config: WebConfig, options: RemoteVaultOptions = {}) {
     this.vaultPath = remoteVaultPath(config.url)
     this.fetchImpl = options.fetchImpl
     this.client = new RemoteClient(config, options.fetchImpl)
@@ -108,7 +104,8 @@ export class RemoteVault {
     return p.replace(/^\/+/, '').replace(/\/+$/, '')
   }
 
-  private isPrivate(rel: string): boolean { return rel.startsWith(PRIVATE_PREFIX) || rel === PRIVATE_PREFIX.slice(0, -1) }
+  /** Dot-folders and dot-files (`.strata-sync/`, `.obsidian/`, caches) never leave the browser — same rule as the desktop engine and the server. */
+  private isPrivate(rel: string): boolean { return rel.split('/').some(seg => seg.startsWith('.')) }
 
   // ── Sync core ──────────────────────────────────────────────────────────────
 
@@ -135,17 +132,20 @@ export class RemoteVault {
       let after = this.cache.cursor
       for (;;) {
         const page = await this.client.docs(after)
-        if (page.head < this.cache.cursor) {
-          // The server was reset (new deployment / restored bucket): our cursor is meaningless
+        const otherServer = typeof page.generation === 'number' && this.cache.generation !== null && page.generation !== this.cache.generation
+        if (page.head < this.cache.cursor || otherServer) {
+          // The server was wiped or re-imported: our cursor (and every row) is meaningless
           await this.cache.reset()
           after = 0
           continue
         }
+        if (typeof page.generation === 'number') this.cache.generation = page.generation
         const r = this.cache.apply(page.docs)
         changed.push(...r.changed); removed.push(...r.removed)
         if (page.next === null) break
         after = page.next
       }
+      for (const p of [...changed, ...removed]) this.imageCache.delete(p)
       this.setStatus({ inFlight: false, lastSyncAt: this.now(), lastSeq: this.cache.cursor, lastError: null })
       return { changed, removed }
     } catch (e) {
@@ -194,30 +194,38 @@ export class RemoteVault {
 
   /** Save markdown text; on a lost race keep both versions (conflict copy). */
   private async saveText(rel: string, content: string): Promise<string> {
+    // The app is still editing a version the server has moved past: keep feeding the copy
+    const existingCopy = this.staleAfterConflict.get(rel)
+    if (existingCopy) {
+      await this.write(existingCopy, enc.encode(content))
+      return existingCopy
+    }
     try {
       await this.write(rel, enc.encode(content))
       return rel
     } catch (e) {
       if (!(e instanceof RemoteError) || e.status !== 409) throw e
       // Someone else changed the file since we loaded it. Take theirs as the canonical file,
-      // keep ours next to it, and let the UI reload.
+      // keep ours next to it, and hand the UI the server version.
       const remote = await this.client.getFile(rel)
       if (remote) {
         this.cache.setRow({ path: rel, etag: remote.etag, size: remote.bytes.byteLength, mtime: remote.mtime, author: e.current?.author ?? '', seq: e.current?.seq ?? this.cache.cursor, content: dec.decode(remote.bytes) })
       } else {
         this.cache.removeRow(rel)
       }
-      let copy = conflictName(rel, this.config.author, this.now())
+      const base = conflictName(rel, this.config.author, this.now())
+      let copy = base
       for (let n = 2; ; n++) {
         try { await this.write(copy, enc.encode(content), { createOnly: true }); break }
         catch (e2) {
           if (!(e2 instanceof RemoteError) || e2.status !== 409 || n > 20) throw e2
-          copy = conflictName(rel, this.config.author, this.now()).replace(/(\.[^.]*)?$/, `-${n}$1`)
+          copy = numberedName(base, n)
         }
       }
+      this.staleAfterConflict.set(rel, copy)
       this.setStatus({ conflicts: [...this.status.conflicts.slice(-19), { path: rel, keptAs: copy, at: this.now(), remoteAuthor: e.current?.author ?? 'unknown' }] })
       this.opts.notify(`${rel} was changed by ${e.current?.author || 'someone else'} — your version is kept as "${copy}"`, 'warn')
-      this.emitChanged()
+      this.emitChanged(rel)
       return copy
     }
   }
@@ -285,6 +293,7 @@ export class RemoteVault {
 
       loadFiles: async () => {
         await this.pull()
+        this.staleAfterConflict.clear() // the app is about to receive every current version
         return {
           files: mdRows().map(r => ({ relativePath: r.path, absolutePath: this.abs(r.path), content: r.content!, mtime: r.mtime })),
           folders: this.cache.folders(),
@@ -352,6 +361,7 @@ export class RemoteVault {
         const rel = this.rel(filePath)
         if (!rel) return null
         if (this.isPrivate(rel)) return this.privateRead(rel)
+        this.staleAfterConflict.delete(rel) // the app now sees the server version
         const idx = this.cache.rows.get(rel)
         if (idx?.content != null) return idx.content
         const remote = await this.client.getFile(rel).catch(() => null)
@@ -419,11 +429,12 @@ export class RemoteVault {
       getState: async () => this.state(),
       updateConfig: async (patch) => {
         // URL/token changes take effect after a reload (the mirror is bound to one server)
-        this.config = {
+        // In place: RemoteClient holds the same object, so the next request carries the new author
+        Object.assign(this.config, {
           url: typeof patch.url === 'string' && patch.url ? patch.url : this.config.url,
           token: patch.clearToken ? '' : (typeof patch.token === 'string' && patch.token ? patch.token : this.config.token),
           author: typeof patch.author === 'string' ? patch.author : this.config.author,
-        }
+        })
         saveWebConfig(this.config)
         return this.state()
       },

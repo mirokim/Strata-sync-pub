@@ -15,6 +15,14 @@ export interface RemoteRow {
   updatedAt: number
 }
 
+export interface DocsPage {
+  head: number
+  /** Server instance identity; a different value than last time means the vault was re-created. */
+  generation?: number
+  next: number | null
+  docs: RemoteDoc[]
+}
+
 export interface RemoteDoc extends RemoteRow {
   /** Markdown content; null for tombstones and binaries. */
   content: string | null
@@ -44,7 +52,10 @@ export class RemoteClient {
   private async request(path: string, init: RequestInit & { headers?: Record<string, string> } = {}): Promise<Response> {
     const res = await this.fetchImpl(`${this.config.url}${path}`, { ...init, headers: this.headers(init.headers) })
     if (res.status === 401) throw new RemoteError(401, 'team token rejected')
-    if (res.status === 503) throw new RemoteError(503, 'server not configured')
+    if (res.status === 503) {
+      const body = await res.clone().json().catch(() => ({})) as { error?: string }
+      throw new RemoteError(503, body.error || 'server unavailable')
+    }
     return res
   }
 
@@ -54,7 +65,7 @@ export class RemoteClient {
   }
 
   /** Documents changed after `after`, oldest first. */
-  async docs(after: number, limit = 500): Promise<{ head: number; next: number | null; docs: RemoteDoc[] }> {
+  async docs(after: number, limit = 500): Promise<DocsPage> {
     const res = await this.request(`/v1/docs?after=${after}&limit=${limit}`)
     if (!res.ok) throw new RemoteError(res.status, `docs failed (${res.status})`)
     return res.json()

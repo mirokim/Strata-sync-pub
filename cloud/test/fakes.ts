@@ -4,7 +4,9 @@ import type { BlobStore, FileRow, MetaStore } from '../src/sync.js'
 export class MemoryMeta implements MetaStore {
   rows = new Map<string, FileRow>()
   seq = 0
+  gen = 1
   async get(path: string) { return this.rows.get(path) ?? null }
+  async generation() { return this.gen }
   async listSince(since: number, limit: number) {
     return [...this.rows.values()].filter(r => r.seq > since).sort((a, b) => a.seq - b.seq).slice(0, limit)
   }

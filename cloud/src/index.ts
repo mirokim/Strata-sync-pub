@@ -184,6 +184,7 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
       if (!Number.isFinite(after) || after < 0) return json(400, { error: 'after must be a non-negative integer' })
       const rows = await deps.meta.listSince(Math.floor(after), limit)
       const head = await deps.meta.head()
+      const generation = await deps.meta.generation()
       // Markdown content is inlined; tombstones and binaries (images) carry `content: null`.
       const docs: (FileRow & { content: string | null })[] = []
       const BATCH = 25
@@ -196,7 +197,7 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
         docs.push(...part)
       }
       const next = rows.length === limit ? rows[rows.length - 1].seq : null
-      return json(200, { head, next, docs })
+      return json(200, { head, generation, next, docs })
     }
 
     // ── Bots / scripts: record an agent proposal ───────────────────────────────

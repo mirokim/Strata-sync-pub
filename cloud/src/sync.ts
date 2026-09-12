@@ -29,6 +29,8 @@ export interface MetaStore {
   upsert(row: Omit<FileRow, 'seq'>): Promise<FileRow>
   /** Current highest seq (0 when empty). */
   head(): Promise<number>
+  /** Identity of this database instance; changes when the vault is wiped and re-created. */
+  generation(): Promise<number>
 }
 
 export interface BlobStore {
@@ -54,7 +56,8 @@ export const MANIFEST_PAGE = 500
 
 /**
  * A vault path is relative, forward-slashed, has no empty / dot / dot-dot segments and stays
- * out of the client-private `.strata-sync/` folder. Returns the normalised path or null.
+ * out of dot-folders/files (`.strata-sync/`, `.obsidian/`, caches) — those never leave a client,
+ * the same rule the desktop sync engine applies. Returns the normalised path or null.
  */
 export function normalizeVaultPath(raw: string | null | undefined): string | null {
   if (!raw) return null
@@ -64,9 +67,8 @@ export function normalizeVaultPath(raw: string | null | undefined): string | nul
   if (/[\u0000-\u001f\u007f]/.test(p)) return null
   const segments = p.split('/')
   for (const s of segments) {
-    if (s === '' || s === '.' || s === '..') return null
+    if (s === '' || s.startsWith('.')) return null
   }
-  if (segments[0] === '.strata-sync') return null
   return p
 }
 
@@ -83,9 +85,10 @@ export async function getManifest(deps: SyncDeps, since: number): Promise<SyncRe
   if (!Number.isFinite(since) || since < 0) return { status: 400, body: { error: 'since must be a non-negative integer' } }
   const rows = await deps.meta.listSince(Math.floor(since), MANIFEST_PAGE)
   const head = await deps.meta.head()
+  const generation = await deps.meta.generation()
   // `next` lets the client page when a burst produced more than one page of changes.
   const next = rows.length === MANIFEST_PAGE ? rows[rows.length - 1].seq : null
-  return { status: 200, body: { head, next, files: rows } }
+  return { status: 200, body: { head, generation, next, files: rows } }
 }
 
 export async function getFile(deps: SyncDeps, rawPath: string | null): Promise<SyncResult> {
