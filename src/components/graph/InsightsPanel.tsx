@@ -47,7 +47,7 @@ export default function InsightsPanel({ onClose }: Props) {
   return (
     <div
       style={{
-        position: 'absolute', top: 8, right: 8, width: 320, maxHeight: 480,
+        position: 'absolute', top: 'calc(var(--chrome-top, 0px) + 8px)', right: 8, width: 320, maxHeight: 480,
         background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)',
         borderRadius: 8, display: 'flex', flexDirection: 'column', zIndex: 50,
         boxShadow: '0 8px 32px rgba(0,0,0,0.3)',

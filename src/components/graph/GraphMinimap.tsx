@@ -131,8 +131,8 @@ export default function GraphMinimap() {
   return (
     <div style={{
       position: 'absolute',
-      bottom: 52,
-      left: 12,
+      bottom: 'calc(var(--chrome-bottom, 0px) + 52px)',
+      left: 'calc(var(--chrome-left, 0px) + 12px)',
       zIndex: 5,
       pointerEvents: 'auto',
       borderRadius: 8,

@@ -41,6 +41,15 @@ const FLOAT_BTN_STYLE: React.CSSProperties = { background: 'var(--color-bg-secon
 
 export default function GraphPanel() {
   const { graphMode, nodeColorMode, setNodeColorMode, compareVaultId, setCompareVault } = useUIStore()
+  // The graph is the full-window background; the file tree, top bar and status bar float over it.
+  // Overlay controls are inset past that chrome so they stay visible (values as CSS variables).
+  const leftPanelCollapsed = useUIStore(s => s.leftPanelCollapsed)
+  const leftPanelWidth = useUIStore(s => s.leftPanelWidth)
+  const chrome = {
+    '--chrome-left': `${leftPanelCollapsed ? 0 : leftPanelWidth + 6}px`,
+    '--chrome-top': '36px',
+    '--chrome-bottom': '26px',
+  } as React.CSSProperties
   const { selectedNodeId, setAiHighlightNodes, nodes, setFocusNode, setSelectedNode } = useGraphStore()
   const { loadedDocuments, vaults, activeVaultId, vaultDocsCache } = useVaultStore()
   const { personaModels } = useSettingsStore()
@@ -238,7 +247,7 @@ export default function GraphPanel() {
   const halfWidth = compareVaultId ? Math.floor(size.width / 2) : size.width
 
   return (
-    <div ref={containerRef} className="relative overflow-hidden h-full" data-testid="graph-panel">
+    <div ref={containerRef} className="relative overflow-hidden h-full" data-testid="graph-panel" style={chrome}>
       {size.width > 0 && size.height > 0 && (
         compareVaultId && compareGraph ? (
           <div style={{ display: 'flex', width: '100%', height: '100%' }}>
@@ -250,7 +259,7 @@ export default function GraphPanel() {
                   ? <Graph3D width={halfWidth} height={size.height} />
                   : <Graph2DCanvas width={halfWidth} height={size.height} />
               }
-              <div style={{ position: 'absolute', top: 8, left: 8, fontSize: 10, color: 'var(--color-text-muted)', background: 'var(--color-bg-secondary)', padding: '2px 8px', borderRadius: 3, border: '1px solid var(--color-border)', pointerEvents: 'none' }}>
+              <div style={{ position: 'absolute', top: 'calc(var(--chrome-top, 0px) + 8px)', left: 'calc(var(--chrome-left, 0px) + 8px)', fontSize: 10, color: 'var(--color-text-muted)', background: 'var(--color-bg-secondary)', padding: '2px 8px', borderRadius: 3, border: '1px solid var(--color-border)', pointerEvents: 'none' }}>
                 {activeLabel}
               </div>
             </div>
@@ -263,7 +272,7 @@ export default function GraphPanel() {
                 width={halfWidth}
                 height={size.height}
               />
-              <div style={{ position: 'absolute', top: 8, left: 8, fontSize: 10, color: 'var(--color-text-muted)', background: 'var(--color-bg-secondary)', padding: '2px 8px', borderRadius: 3, border: '1px solid var(--color-border)', pointerEvents: 'none' }}>
+              <div style={{ position: 'absolute', top: 'calc(var(--chrome-top, 0px) + 8px)', left: 8, fontSize: 10, color: 'var(--color-text-muted)', background: 'var(--color-bg-secondary)', padding: '2px 8px', borderRadius: 3, border: '1px solid var(--color-border)', pointerEvents: 'none' }}>
                 {compareLabel}
               </div>
             </div>
@@ -278,7 +287,7 @@ export default function GraphPanel() {
       )}
 
       {/* Bottom-left buttons */}
-      <div style={{ position: 'absolute', bottom: 12, left: 12, display: 'flex', gap: 6, alignItems: 'center' }}>
+      <div style={{ position: 'absolute', bottom: 'calc(var(--chrome-bottom, 0px) + 12px)', left: 'calc(var(--chrome-left, 0px) + 12px)', display: 'flex', gap: 6, alignItems: 'center' }}>
         {/* Color mode toggle */}
         <div style={{ position: 'relative' }}>
           <button
@@ -412,8 +421,8 @@ export default function GraphPanel() {
       {showSearch && (
         <div style={{
           position: 'absolute',
-          top: 12,
-          left: '50%',
+          top: 'calc(var(--chrome-top, 0px) + 12px)',
+          left: 'calc(50% + var(--chrome-left, 0px) / 2)',
           transform: 'translateX(-50%)',
           width: 280,
           background: 'var(--color-bg-secondary)',
@@ -488,7 +497,7 @@ export default function GraphPanel() {
         <div
           style={{
             position: 'absolute',
-            top: 12,
+            top: 'calc(var(--chrome-top, 0px) + 12px)',
             right: 12,
             width: 320,
             maxHeight: 'calc(100% - 24px)',
