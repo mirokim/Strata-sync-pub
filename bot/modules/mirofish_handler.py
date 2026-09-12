@@ -168,9 +168,9 @@ class MiroFishHandler:
             self._log("[MiroFish] Electron offline → cannot run simulation")
             update(
                 f"🐟 *MiroFish simulation unavailable*\nTopic: *{topic}*\n\n"
-                f"🔴 *The Sandbox Map app is not responding.*\n\n"
+                f"🔴 *The Strata Sync app is not responding.*\n\n"
                 f"*Please check:*\n"
-                f"• Make sure the Sandbox Map app is running\n"
+                f"• Make sure the Strata Sync app is running\n"
                 f"• If the app was just launched, wait about 30 seconds and try again"
             )
             return None
@@ -744,7 +744,7 @@ class MiroFishHandler:
                     f"🐟 *A vs B simulation — both failed*\n\n"
                     f"A: _{topic_a}_\nB: _{topic_b}_\n{_err_hint}\n\n"
                     f"*Please check:*\n"
-                    f"• Is the Sandbox Map app running?\n"
+                    f"• Is the Strata Sync app running?\n"
                     f"• If another simulation is already running, retry after it finishes\n"
                     f"• Test a single simulation first with `시뮬 {topic_a}`"
                 ), thread_ts=thread_ts)
@@ -840,7 +840,7 @@ class MiroFishHandler:
             fail_msg = (
                 f"🐟 *MiroFish simulation failed*\nTopic: _{topic}_\n\n"
                 f"*Possible causes:*\n"
-                f"• The Sandbox Map app is off or the vault is not loaded\n"
+                f"• The Strata Sync app is off or the vault is not loaded\n"
                 f"• Another simulation is already running (retry after it finishes)\n"
                 f"• Simulation timed out (complex topics can take longer)\n\n"
                 f"Try again with `시뮬 {topic}`, or check the app status."

@@ -1745,7 +1745,7 @@ function createWindow() {
     height: 960,
     minWidth: 1200,
     minHeight: 700,
-    title: 'SANDBOX MAP',
+    title: 'STRATA SYNC',
     icon: path.join(__dirname, '..', '..', 'ico.png'),  // window titlebar icon
     frame: true,
     titleBarStyle: 'hidden',   // Hide native title text, keep window controls
