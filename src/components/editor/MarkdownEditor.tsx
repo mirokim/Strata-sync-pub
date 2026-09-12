@@ -31,6 +31,7 @@ import { buildAdjacencyMap } from '@/lib/graphRAG'
 import { invalidateTfIdfCache } from '@/lib/tfidfCache'
 import { MOCK_DOCUMENTS } from '@/data/mockDocuments'
 import { showToast } from '@/stores/toastStore'
+import ProposalBanner from './ProposalBanner'
 import type { LoadedDocument } from '@/types'
 import { markdownHighlight, vaultTheme } from '@/lib/editor/codemirrorTheme'
 import { buildWikiLinkPlugin, buildHighlightPlugin, buildCommentPlugin } from '@/lib/editor/wikiLinkPlugin'
@@ -148,6 +149,7 @@ function SuggestDropdown({ docs, selectedIdx, rect, onSelect }: SuggestDropdownP
 export default function MarkdownEditor() {
   const { editingDocId, closeEditor, openInEditor } = useUIStore()
   const { loadedDocuments, setLoadedDocuments, vaultPath } = useVaultStore()
+  const vaultFolders = useVaultStore(s => s.vaultFolders)
   const tagPresets = useSettingsStore(s => s.tagPresets)
   const { setNodes, setLinks } = useGraphStore()
 
@@ -724,8 +726,38 @@ export default function MarkdownEditor() {
 
   const displayName = doc.filename.replace(/\.md$/i, '')
 
+  /** After a proposal is promoted or discarded: reload the vault and follow the file (or close). */
+  const handleProposalDone = useCallback(async (result: { kind: 'promoted'; newAbsolutePath: string } | { kind: 'discarded' }) => {
+    if (!vaultPath || !window.vaultAPI) return
+    const { files } = await window.vaultAPI.loadFiles(vaultPath)
+    if (!files) return
+    const docs = parseVaultFiles(files) as LoadedDocument[]
+    setLoadedDocuments(docs)
+    const { nodes, links } = buildGraph(docs)
+    setNodes(nodes)
+    setLinks(links)
+    if (result.kind === 'promoted') {
+      const target = result.newAbsolutePath.replace(/\\/g, '/')
+      const newDoc = docs.find(d => d.absolutePath.replace(/\\/g, '/') === target)
+      showToast('Proposal promoted into the vault', 'success')
+      if (newDoc) openInEditor(newDoc.id); else closeEditor()
+    } else {
+      showToast('Proposal discarded', 'success')
+      closeEditor()
+    }
+  }, [vaultPath, setLoadedDocuments, setNodes, setLinks, openInEditor, closeEditor])
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {doc && (
+        <ProposalBanner
+          doc={doc}
+          vaultPath={vaultPath}
+          folders={vaultFolders}
+          onDone={handleProposalDone}
+          onError={msg => showToast(`Proposal action failed: ${msg}`, 'error')}
+        />
+      )}
       {/* ── Toolbar ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--color-border)', flexShrink: 0 }}>
         <button

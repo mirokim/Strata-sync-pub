@@ -1,5 +1,6 @@
 import type { ChatMessage, SpeakerId, DirectorId, Attachment, LoadedDocument, ProviderId } from '@/types'
 import { sanitize } from '@/lib/stringUtils'
+import { isProposalPath, PROPOSAL_SCORE_WEIGHT } from '@shared/proposals'
 import type { AnthropicTool, AgentLoopOpts, AgentMsg } from '@/services/agentLoop'
 import { runAgentLoop } from '@/services/agentLoop'
 import type { ConversionMeta } from '@/lib/mdConverter'
@@ -963,7 +964,9 @@ export async function fetchRAGContext(
               const d = docMapLocal.get(h.docId)
               if (!d || seen.has(d.id)) continue        // best chunk per document wins
               seen.add(d.id)
-              vecResults.push({ doc_id: d.id, filename: d.filename, section_id: null, heading: h.heading || null, speaker: d.speaker, content: '', score: h.score, tags: d.tags })
+              // Agent proposals rank below promoted documents, same as in the keyword tier
+              const weight = isProposalPath(d.folderPath) ? PROPOSAL_SCORE_WEIGHT : 1
+              vecResults.push({ doc_id: d.id, filename: d.filename, section_id: null, heading: h.heading || null, speaker: d.speaker, content: '', score: h.score * weight, tags: d.tags })
             }
             if (vecResults.length > 0) {
               candidates = fuseWithBm25(vecResults, 'team')

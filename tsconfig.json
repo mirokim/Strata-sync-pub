@@ -19,7 +19,7 @@
     "resolveJsonModule": true,
     "paths": {
       "@/*": ["./src/*"],
-      "@core/*": ["./mcp/src/lint/*"]
+      "@shared/*": ["./mcp/src/*"]
     },
     "baseUrl": "."
   },

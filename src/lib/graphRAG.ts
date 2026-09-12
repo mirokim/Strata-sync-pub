@@ -14,6 +14,7 @@
  */
 
 import type { SearchResult, GraphLink, LoadedDocument, DocSection } from '@/types'
+import { isProposalPath, PROPOSAL_SCORE_WEIGHT } from '@shared/proposals'
 import { useGraphStore } from '@/stores/graphStore'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useSettingsStore } from '@/stores/settingsStore'
@@ -279,7 +280,9 @@ export function frontendKeywordSearch(
           for (const t of ctxTerms) { if (raw.includes(t)) ctxHits++ }
           ctxBoost = (ctxHits / ctxTerms.length) * CTX_WEIGHT
         }
-        const scoreMultiplier = 1 + (hasPersonaTag ? TAG_BOOST : 0) + domainBoost + statusBoost
+        // Agent proposals (_agent/) rank below promoted documents until a person promotes them
+        const proposalWeight = isProposalPath(doc?.folderPath ?? '') ? PROPOSAL_SCORE_WEIGHT : 1
+        const scoreMultiplier = (1 + (hasPersonaTag ? TAG_BOOST : 0) + domainBoost + statusBoost) * proposalWeight
         return {
           doc_id: hit.docId,
           filename: hit.filename,

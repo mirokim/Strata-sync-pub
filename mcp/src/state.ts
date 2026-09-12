@@ -7,6 +7,7 @@ import { getConfig, getApiKey, getConfigPath } from './config.js'
 import { expandTerms, SYNONYM_MAP } from './synonyms.js'
 import { normalizeWikiLink } from './lint/graph.js'
 import { detectCommunities } from './lint/community.js'
+import { isProposalPath, PROPOSAL_SCORE_WEIGHT } from './proposals.js'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { createHash } from 'crypto'
 import { resolve, dirname } from 'path'
@@ -160,6 +161,8 @@ interface BM25Doc {
   docLen: number
   filenameTokens: Set<string>  // BUG3 fix: precomputed
   contentDate: number           // BUG2 fix: for recency boost
+  /** Score multiplier: proposals in _agent/ rank below promoted documents. */
+  weight: number
 }
 
 const BM25_K1 = 1.5
@@ -194,6 +197,7 @@ function buildBM25() {
       termFreqs: termFreq, docLen: tokens.length,
       filenameTokens: new Set(tokenize(doc.filename)),  // BUG3 fix
       contentDate: getContentDate(doc),                   // BUG2 fix
+      weight: isProposalPath(doc.folderPath) ? PROPOSAL_SCORE_WEIGHT : 1,
     })
     allDocLens.push(tokens.length)
     for (const term of termFreq.keys()) docFreq.set(term, (docFreq.get(term) ?? 0) + 1)
@@ -251,7 +255,7 @@ export function bm25Search(query: string, topK = 10): SearchResult[] {
       score *= 1 + 0.1 * Math.exp(-daysOld / 180)
     }
 
-    scores.push({ docId: doc.docId, filename: doc.filename, speaker: doc.speaker, score })
+    scores.push({ docId: doc.docId, filename: doc.filename, speaker: doc.speaker, score: score * doc.weight })
   }
 
   return scores.sort((a, b) => b.score - a.score).slice(0, topK)

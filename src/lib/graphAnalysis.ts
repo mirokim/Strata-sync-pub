@@ -11,7 +11,7 @@
  */
 
 import type { LoadedDocument } from '@/types'
-import { detectCommunities } from '@core/community'
+import { detectCommunities } from '@shared/lint/community'
 import { logger } from '@/lib/logger'
 import { expandTerms, SYNONYM_MAP } from '@/lib/synonyms'
 

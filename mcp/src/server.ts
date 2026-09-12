@@ -18,6 +18,8 @@ import {
 import { chat, chatDetailed, chatWithPersona, getUsageSummary, getUsageLog } from './llm/client.js'
 import { runLint, reportToMarkdown, ALL_RULES, type LintRuleId, type LintSeverity } from './lint/index.js'
 import { readSnapshot, writeSnapshot } from './lint/snapshot.js'
+import { buildProposal, isProposalPath, stripProposalFrontmatter, promotedPath, PROPOSAL_FOLDER } from './proposals.js'
+import { existsSync, mkdirSync, readdirSync, statSync } from 'fs'
 import { join, resolve, normalize } from 'path'
 
 /** External API call timeout (30 s) — prevents fetch from hanging on slow/down servers */
@@ -86,6 +88,23 @@ const TOOLS = [
   { name: 'graph_bridges', description: 'Find bridge documents whose links span two or more topic clusters', inputSchema: { type: 'object' as const, properties: { topK: { type: 'number', description: 'Top N (default 10)' } } } },
   { name: 'graph_implicit_links', description: 'Find implicit links via BM25 cosine similarity', inputSchema: { type: 'object' as const, properties: { minScore: { type: 'number' }, topK: { type: 'number' } } } },
   { name: 'graph_neighbors', description: 'Get direct neighbors of a document', inputSchema: { type: 'object' as const, properties: { docId: { type: 'string' } }, required: ['docId'] } },
+  { name: 'vault_propose', description: 'Record an idea, decision or note as an agent PROPOSAL in _agent/ (never directly into the vault). Proposals carry proposed_by: agent frontmatter, rank lower in search, are ignored by the lint, and a person promotes or discards them in the app. Use this whenever the user says to remember/record/write something down. Pass `links` (existing document titles) to wikilink it into the graph; call graph_suggest_links first if unsure.', inputSchema: { type: 'object' as const, properties: {
+    title: { type: 'string', description: 'Short title - becomes the file name' },
+    body: { type: 'string', description: 'Markdown body' },
+    tags: { type: 'array', items: { type: 'string' } },
+    links: { type: 'array', items: { type: 'string' }, description: 'Titles of existing documents to link under "## Related"' },
+    source: { type: 'string', description: 'Who is proposing (agent/session name), default "agent"' },
+  }, required: ['title', 'body'] } },
+  { name: 'graph_suggest_links', description: 'Suggest existing documents a text (or an existing document) should link to, ranked by relevance. Use before vault_propose or when adding wikilinks.', inputSchema: { type: 'object' as const, properties: {
+    text: { type: 'string', description: 'Free text to find related documents for' },
+    docId: { type: 'string', description: 'Or: an existing document id - suggests documents similar to it that it does not link yet' },
+    topK: { type: 'number', description: 'Max suggestions (default 5)' },
+  } } },
+  { name: 'vault_proposals', description: 'List pending agent proposals in _agent/ (path, title, proposedAt, tags).', inputSchema: { type: 'object' as const, properties: {} } },
+  { name: 'vault_promote', description: 'Promote an agent proposal into the real vault: strips the proposal frontmatter and moves the file out of _agent/ into destFolder (vault root by default). Only a person should decide this - call it when the user explicitly approves a proposal.', inputSchema: { type: 'object' as const, properties: {
+    path: { type: 'string', description: 'Vault-relative path of the proposal (e.g. _agent/2026-09-13-combat-notes.md)' },
+    destFolder: { type: 'string', description: 'Vault-relative destination folder (default: vault root)' },
+  }, required: ['path'] } },
   { name: 'graph_lint', description: 'Lint the vault link graph and return structural findings with severity: phantom-hot (missing documents linked from many places, ranked), bridge-spof (documents whose removal disconnects others), orphan, stale-hub (important but untouched), near-duplicate (similar unlinked pairs), cluster-drift (topic clusters that changed since the last run). Run this before editing or creating documents to see what the vault needs.', inputSchema: { type: 'object' as const, properties: {
     rules: { type: 'array', items: { type: 'string', enum: [...ALL_RULES] }, description: 'Rules to run (default: all)' },
     minSeverity: { type: 'string', enum: ['error', 'warn', 'info'], description: 'Drop findings below this severity (default: info = keep all)' },
@@ -246,6 +265,81 @@ async function handleTool(name: string, args: Args): Promise<ToolResult> {
       const docs = getDocuments()
       const idToFilename = new Map(docs.map(d => [d.id, d.filename]))
       return ok([...neighbors].map(id => ({ docId: id, filename: idToFilename.get(id) ?? id })))
+    }
+    case 'vault_propose': {
+      if (!vaultPath) return err('vaultPath not configured')
+      const title = String(args.title ?? '').trim()
+      const body = String(args.body ?? '').trim()
+      if (!title || !body) return err('title and body are required')
+      const links = Array.isArray(args.links) ? (args.links as unknown[]).map(String) : []
+      const proposal = buildProposal({
+        title, body,
+        tags: Array.isArray(args.tags) ? (args.tags as unknown[]).map(String) : [],
+        links,
+        source: typeof args.source === 'string' ? args.source : 'agent',
+      })
+      // Never overwrite: if the slug already exists today, number it
+      let rel = proposal.relPath
+      for (let n = 2; existsSync(join(vaultPath, rel)); n++) rel = proposal.relPath.replace(/\.md$/, `-${n}.md`)
+      const abs = safeVaultPath(rel)
+      if (!abs) return err('invalid proposal path')
+      mkdirSync(join(vaultPath, PROPOSAL_FOLDER), { recursive: true })
+      const result = saveFile(abs, proposal.content)
+      await reloadVault(vaultPath)
+      return ok({ ...result, path: rel, title: proposal.title, links, note: 'Proposal saved to _agent/. A person promotes it with vault_promote or from the app.' })
+    }
+    case 'graph_suggest_links': {
+      const topK = Math.min(Math.max(Number(args.topK) || 5, 1), 20)
+      const docs = getDocuments()
+      const idToTitle = new Map(docs.map(d => [d.id, d.filename.replace(/\.md$/i, '')]))
+      const isProposalDoc = (id: string) => isProposalPath(docs.find(d => d.id === id)?.folderPath ?? '')
+      if (typeof args.docId === 'string' && args.docId) {
+        const doc = docs.find(d => d.id === args.docId)
+        if (!doc) return err(`unknown docId ${args.docId}`)
+        const linked = new Set(getLinks().flatMap(l => l.source === doc.id ? [l.target] : l.target === doc.id ? [l.source] : []))
+        const suggestions = findImplicitLinks(0.1, 500)
+          .filter(p => p.docA === doc.id || p.docB === doc.id)
+          .map(p => ({ docId: p.docA === doc.id ? p.docB : p.docA, similarity: p.similarity }))
+          .filter(s => !linked.has(s.docId) && !isProposalDoc(s.docId))
+          .slice(0, topK)
+          .map(s => ({ docId: s.docId, title: idToTitle.get(s.docId) ?? s.docId, score: Number(s.similarity.toFixed(3)) }))
+        return ok({ for: doc.id, suggestions })
+      }
+      const text = String(args.text ?? '').trim()
+      if (!text) return err('text or docId required')
+      const hits = bm25Search(text, topK * 2).filter(h => !isProposalDoc(h.docId)).slice(0, topK)
+      return ok({ suggestions: hits.map(h => ({ docId: h.docId, title: idToTitle.get(h.docId) ?? h.filename.replace(/\.md$/i, ''), score: Number(h.score.toFixed(3)) })) })
+    }
+    case 'vault_proposals': {
+      if (!vaultPath) return err('vaultPath not configured')
+      const dir = join(vaultPath, PROPOSAL_FOLDER)
+      if (!existsSync(dir)) return ok({ proposals: [] })
+      const docs = getDocuments()
+      const proposals = readdirSync(dir).filter(f => f.toLowerCase().endsWith('.md')).sort().reverse().map(f => {
+        const rel = `${PROPOSAL_FOLDER}/${f}`
+        const doc = docs.find(d => d.folderPath === PROPOSAL_FOLDER && d.filename === f)
+        const st = statSync(join(dir, f))
+        return { path: rel, title: doc?.title ?? f.replace(/\.md$/i, ''), proposedAt: new Date(st.mtimeMs).toISOString(), tags: doc?.tags ?? [], size: st.size }
+      })
+      return ok({ proposals })
+    }
+    case 'vault_promote': {
+      if (!vaultPath) return err('vaultPath not configured')
+      const rel = String(args.path ?? '').replace(/\\/g, '/')
+      if (!isProposalPath(rel) || rel === PROPOSAL_FOLDER) return err('path must be a proposal under _agent/')
+      const abs = safeVaultPath(rel)
+      if (!abs || !existsSync(abs)) return err(`proposal not found: ${rel}`)
+      const destRel = promotedPath(rel, typeof args.destFolder === 'string' ? args.destFolder : '')
+      const destAbs = safeVaultPath(destRel)
+      if (!destAbs) return err('invalid destination')
+      if (existsSync(destAbs)) return err(`destination already exists: ${destRel}`)
+      const content = readFile(abs)
+      if (content === null) return err(`cannot read ${rel}`)
+      mkdirSync(join(destAbs, '..'), { recursive: true })
+      saveFile(destAbs, stripProposalFrontmatter(content))
+      deleteFile(abs)
+      await reloadVault(vaultPath)
+      return ok({ promoted: rel, to: destRel })
     }
     case 'graph_lint': {
       if (!vaultPath) return err('vaultPath not configured')

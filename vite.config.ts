@@ -10,8 +10,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
-      // Graph core shared with the MCP server and the Cloudflare Worker (see mcp/src/lint)
-      '@core': path.resolve(__dirname, './mcp/src/lint'),
+      // Code shared with the MCP server and the Cloudflare Worker (graph core in mcp/src/lint, proposals)
+      '@shared': path.resolve(__dirname, './mcp/src'),
     },
   },
   server: {
