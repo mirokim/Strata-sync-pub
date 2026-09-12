@@ -94,6 +94,17 @@ describe('team sync manager', () => {
     expect((await manager.testConnection('', '')).error).toMatch(/URL is empty/)
   })
 
+  it('search proxies to /v1/search and degrades to ok:false when off or unconfigured', async () => {
+    await boot(tmp('ud-'), tmp('vault-'))
+    expect((await manager.search('anything')).ok).toBe(false)
+    await manager.updateConfig({ url: 'https://sync.test', token: 'team-token', enabled: true })
+    // the fake server has no /v1/search → 404 → ok:false with a reason, never a throw
+    const r = await manager.search('combat')
+    expect(r.ok).toBe(false)
+    expect(r.reason).toMatch(/404/)
+    expect(server.calls.some(c => c.startsWith('POST /v1/search'))).toBe(true)
+  })
+
   it('follows the active vault and stays idle without one', async () => {
     const ud = tmp('ud-')
     let vault: string | null = null

@@ -5,7 +5,7 @@
  * need what that deduplicated, undirected list throws away: link direction, reference counts
  * and — most importantly — links whose target does not exist (phantoms).
  */
-import type { LoadedDocument } from '../parser.js'
+import type { LintDocument } from './document.js'
 
 export interface LintNode {
   id: string
@@ -63,7 +63,7 @@ export function wikiLinkLabel(raw: string): string {
 }
 
 /** Everything a document links to (frontmatter `links:` plus body wikilinks), normalised, with counts and a display label. */
-export function collectLinkTargets(doc: LoadedDocument): Map<string, { count: number; label: string }> {
+export function collectLinkTargets(doc: LintDocument): Map<string, { count: number; label: string }> {
   const counts = new Map<string, { count: number; label: string }>()
   const raw = [...doc.links, ...doc.sections.flatMap(s => s.wikiLinks)]
   for (const r of raw) {
@@ -80,7 +80,7 @@ export function collectLinkTargets(doc: LoadedDocument): Map<string, { count: nu
 
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|bmp|pdf|mp4|mp3|wav)$/i
 
-export function buildLintGraph(docs: LoadedDocument[]): LintGraph {
+export function buildLintGraph(docs: LintDocument[]): LintGraph {
   const nodes: LintNode[] = []
   const nodeById = new Map<string, LintNode>()
   const titleToId = new Map<string, string>()

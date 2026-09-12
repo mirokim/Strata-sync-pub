@@ -159,6 +159,28 @@ async function testConnection(url, token) {
   }
 }
 
+/**
+ * Semantic search against the team index (POST /v1/search). Returns ok:false with a reason instead
+ * of throwing so the renderer can fall through to its other search tiers quietly.
+ */
+async function search(query, topK = 20) {
+  if (!_config.enabled || !_config.url || !_config.token) return { ok: false, hits: [], reason: 'team sync off' }
+  if (typeof query !== 'string' || !query.trim()) return { ok: false, hits: [], reason: 'empty query' }
+  try {
+    const res = await fetch(`${_config.url}/v1/search`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${_config.token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ query: query.slice(0, 2000), topK: Math.min(Math.max(Number(topK) || 20, 1), 50) }),
+    })
+    if (res.status === 503) return { ok: false, hits: [], reason: 'semantic search not configured on the server' }
+    if (!res.ok) return { ok: false, hits: [], reason: `search returned ${res.status}` }
+    const body = await res.json()
+    return { ok: true, hits: Array.isArray(body.hits) ? body.hits : [] }
+  } catch (e) {
+    return { ok: false, hits: [], reason: e.message || String(e) }
+  }
+}
+
 function shutdown() { stopEngine() }
 
-module.exports = { init, onVaultChanged, updateConfig, syncNow, testConnection, getState, shutdown }
+module.exports = { init, onVaultChanged, updateConfig, syncNow, testConnection, search, getState, shutdown }

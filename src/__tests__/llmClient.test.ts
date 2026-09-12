@@ -358,6 +358,28 @@ describe('fetchRAGContext()', () => {
     expect(result).toBe('')
   })
 
+  it('uses the team vector index (window.syncAPI.search) when no local index is built', async () => {
+    const prevSearchConfig = useSettingsStore.getState().searchConfig
+    useSettingsStore.setState({ searchConfig: { ...prevSearchConfig, fullVaultThreshold: 0, llmRerank: false } })
+    const body = 'Enemy behaviour trees and aggro rules. '.repeat(8)
+    const docs = ['enemy_ai_spec', 'unrelated_note'].map(id => ({
+      id, filename: `${id}.md`, folderPath: '', absolutePath: `/v/${id}.md`, speaker: 'plan_director' as const, date: '',
+      tags: [], links: [], rawContent: body, sections: [{ id: `${id}_s1`, heading: 'Body', body, wikiLinks: [] }], mtime: Date.now(),
+    }))
+    useVaultStore.setState({ loadedDocuments: docs })
+    const search = vi.fn(async () => ({ ok: true, hits: [{ path: 'enemy_ai_spec.md', docId: 'enemy_ai_spec', heading: 'Body', score: 0.71 }] }))
+    ;(window as unknown as { syncAPI: unknown }).syncAPI = { search }
+    try {
+      const { fetchRAGContext } = await import('@/services/llmClient')
+      const result = await fetchRAGContext('how do enemies pick targets')
+      expect(search).toHaveBeenCalled()
+      expect(result).toContain('enemy_ai_spec')
+    } finally {
+      delete (window as unknown as { syncAPI?: unknown }).syncAPI
+      useSettingsStore.setState({ searchConfig: prevSearchConfig })
+    }
+  })
+
   it('directVaultSearch path: strong filename match (score>=0.4) returns pinned content', async () => {
     // A one-document vault is below fullVaultThreshold and would be injected whole; disable that
     // mode so the direct-search → pinned-content path is the one exercised here.

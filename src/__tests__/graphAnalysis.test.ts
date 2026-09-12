@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { tokenize, TfIdfIndex } from '@/lib/graphAnalysis'
+import { tokenize, TfIdfIndex, detectClusters, detectTopicClusters, detectBridgeNodes } from '@/lib/graphAnalysis'
 import type { LoadedDocument } from '@/types'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -187,5 +187,29 @@ describe('TfIdfIndex', () => {
     index.build([makeDoc('new_doc', 'completely different new topic')])
     expect(index.docCount).toBe(1)
     expect(s1.docs.length).toBe(4) // old serialized snapshot unchanged
+  })
+})
+
+describe('topic clusters vs connected components', () => {
+  // two 4-cliques joined by one bridge document
+  const adj = new Map<string, string[]>()
+  const link = (a: string, b: string) => { adj.set(a, [...(adj.get(a) ?? []), b]); adj.set(b, [...(adj.get(b) ?? []), a]) }
+  const A = ['a1', 'a2', 'a3', 'a4'], B = ['b1', 'b2', 'b3', 'b4']
+  for (const g of [A, B]) for (let i = 0; i < g.length; i++) for (let j = i + 1; j < g.length; j++) link(g[i], g[j])
+  link('a1', 'bridge'); link('bridge', 'b1')
+
+  it('connected components see one cluster and therefore no bridges', () => {
+    const components = detectClusters(adj)
+    expect(new Set(components.values()).size).toBe(1)
+    expect(detectBridgeNodes(adj, components)).toEqual([])
+  })
+
+  it('Louvain topic clusters split the cliques and expose the bridge document', () => {
+    const topics = detectTopicClusters(adj)
+    expect(new Set(A.map(x => topics.get(x))).size).toBe(1)
+    expect(new Set(B.map(x => topics.get(x))).size).toBe(1)
+    expect(topics.get('a1')).not.toBe(topics.get('b1'))
+    const bridges = detectBridgeNodes(adj, topics)
+    expect(bridges.map(b => b.docId)).toContain('bridge')
   })
 })

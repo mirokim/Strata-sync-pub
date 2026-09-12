@@ -26,3 +26,24 @@ migrations_dir = "migrations"
 [vars]
 # Largest single file accepted by PUT /v1/file (bytes). Images in design vaults rarely exceed this.
 MAX_FILE_BYTES = "10485760"
+
+# ── Nightly batch: lint report + embeddings. 19:00 UTC = 04:00 Asia/Seoul. ──
+[triggers]
+crons = ["0 19 * * *"]
+
+# Optional — semantic search. Without these two bindings the batch still lints, just no embeddings.
+#   npx wrangler vectorize create strata-vault-vectors --dimensions=1024 --metric=cosine
+[ai]
+binding = "AI"
+
+[[vectorize]]
+binding = "VECTORS"
+index_name = "strata-vault-vectors"
+
+# ── R2 event bridge: files written straight to the bucket (Obsidian Remotely Save) get indexed. ──
+#   npx wrangler queues create strata-vault-events
+#   npx wrangler r2 bucket notification create strata-vault --event-type object-create --event-type object-delete --queue strata-vault-events
+[[queues.consumers]]
+queue = "strata-vault-events"
+max_batch_size = 50
+max_batch_timeout = 5

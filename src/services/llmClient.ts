@@ -888,6 +888,51 @@ export async function fetchRAGContext(
       }
 
       const geminiKey = getApiKey('gemini')
+
+      /**
+       * Vector hits (raw cosine) + BM25 supplement, fused by rank (RRF) and max-normalised.
+       * Shared by the local index (Priority 1) and the team server (Priority 1b).
+       */
+      const fuseWithBm25 = (vecResults: import('@/types').SearchResult[], label: string): import('@/types').SearchResult[] => {
+        // ── Vector threshold: use a relative value ──────────────────────
+        // fullVectorSearch returns raw, un-normalized cosine. With BGE-M3 (L2-normalized),
+        // cosine between Korean documents clusters in the narrow 0.4~0.75 band, so the absolute 0.1 threshold was a no-op.
+        const vecTop = vecResults[0].score
+        const vecMin = Math.max(0.35, vecTop * 0.6)
+        const vecKept = vecResults.filter(r => r.score >= vecMin)
+        const vecList = vecKept.length > 0 ? vecKept : vecResults.slice(0, sc.rerankSeeds)
+
+        // BM25 supplement — match the fusion depth of the vector list
+        const bm25Results = frontendKeywordSearch(
+          userMessage, Math.max(sc.bm25Candidates, vecList.length), currentSpeaker, contextTerms,
+        ).filter(r => r.score > sc.minBm25Score)
+
+        // ── RRF fusion ───────────────────────────────────────
+        // Vector is raw cosine, BM25 is max-normalized → mixing both scores in one array
+        // means a BM25 supplement doc (0.95) always beats the vector #1 (0.72).
+        // Fuse via rank-based RRF to remove the dependence on score scales.
+        const vecRank = new Map(vecList.map((r, i) => [r.doc_id, i + 1]))
+        const bm25Rank = new Map(bm25Results.map((r, i) => [r.doc_id, i + 1]))
+        const MISS_RANK = vecList.length + bm25Results.length + 1
+
+        const merged = new Map<string, import('@/types').SearchResult>()
+        for (const r of vecList) if (!merged.has(r.doc_id)) merged.set(r.doc_id, r)
+        for (const r of bm25Results) if (!merged.has(r.doc_id)) merged.set(r.doc_id, r)
+
+        const fused = [...merged.values()]
+          .map(r => ({
+            ...r,
+            score: rrfScore([vecRank.get(r.doc_id) ?? MISS_RANK, bm25Rank.get(r.doc_id) ?? MISS_RANK]),
+          }))
+          .sort((a, b) => b.score - a.score)
+
+        // Raw RRF scores are on a ≈0.03 scale, mismatched with downstream (rerankResults' weighted sum, llmRerank's 0.4/0.6 blend,
+        // the _index.md seed at 0.15) → max-normalize with the top at 1.0 to restore a 0~1 scale.
+        const topRrf = fused[0]?.score || 1
+        logger.debug(`[RAG] RRF fusion (${label}): vector ${vecList.length} (threshold ${vecMin.toFixed(2)}, top ${vecTop.toFixed(3)}) + BM25 ${bm25Results.length} → ${fused.length}`)
+        return fused.map(r => ({ ...r, score: r.score / topRrf }))
+      }
+
       if (vectorEmbedIndex.isBuilt && await isEmbeddingReady(geminiKey)) {
         // ── Priority 1: full vector search (pure semantic similarity) ──────────
         try {
@@ -895,50 +940,38 @@ export async function fetchRAGContext(
             searchQuery, (geminiKey ?? ''), sc.bm25Candidates * 2, searchDocs,
           )
           if (vecResults && vecResults.length > 0) {
-            // ── Vector threshold: use a relative value ──────────────────────
-            // fullVectorSearch returns raw, un-normalized cosine. With BGE-M3 (L2-normalized),
-            // cosine between Korean documents clusters in the narrow 0.4~0.75 band, so the absolute 0.1 threshold was a no-op.
-            const vecTop = vecResults[0].score
-            const vecMin = Math.max(0.35, vecTop * 0.6)
-            const vecKept = vecResults.filter(r => r.score >= vecMin)
-            const vecList = vecKept.length > 0 ? vecKept : vecResults.slice(0, sc.rerankSeeds)
-
-            // BM25 supplement — match the fusion depth of the vector list
-            const bm25Results = frontendKeywordSearch(
-              userMessage, Math.max(sc.bm25Candidates, vecList.length), currentSpeaker, contextTerms,
-            ).filter(r => r.score > sc.minBm25Score)
-
-            // ── RRF fusion ─────────────────────────────────────────────────
-            // Vector is raw cosine, BM25 is max-normalized → mixing both scores in one array
-            // means a BM25 supplement doc (0.95) always beats the vector #1 (0.72).
-            // Fuse via rank-based RRF to remove the dependence on score scales.
-            // (This code is unaffected even if graphAnalysis changes its BM25 normalization)
-            const vecRank = new Map(vecList.map((r, i) => [r.doc_id, i + 1]))
-            const bm25Rank = new Map(bm25Results.map((r, i) => [r.doc_id, i + 1]))
-            const MISS_RANK = vecList.length + bm25Results.length + 1
-
-            const merged = new Map<string, import('@/types').SearchResult>()
-            for (const r of vecList) if (!merged.has(r.doc_id)) merged.set(r.doc_id, r)
-            for (const r of bm25Results) if (!merged.has(r.doc_id)) merged.set(r.doc_id, r)
-
-            const fused = [...merged.values()]
-              .map(r => ({
-                ...r,
-                score: rrfScore([vecRank.get(r.doc_id) ?? MISS_RANK, bm25Rank.get(r.doc_id) ?? MISS_RANK]),
-              }))
-              .sort((a, b) => b.score - a.score)
-
-            // Raw RRF scores are on a ≈0.03 scale, mismatched with downstream (rerankResults' weighted sum, llmRerank's 0.4/0.6 blend,
-            // the _index.md seed at 0.15) → max-normalize with the top at 1.0 to restore a 0~1 scale.
-            const topRrf = fused[0]?.score || 1
-            candidates = fused.map(r => ({ ...r, score: r.score / topRrf }))
+            candidates = fuseWithBm25(vecResults, 'local')
             // Set the mode only after candidates are final — if an exception occurs midway, the BM25 fallback below uses its own mode
             searchMode = 'vector'
-
-            logger.debug(`[RAG] RRF fusion: vector ${vecList.length} (threshold ${vecMin.toFixed(2)}, top ${vecTop.toFixed(3)}) + BM25 ${bm25Results.length} → ${candidates.length}`)
           }
         } catch (e: unknown) {
           logger.warn('[vector] fullVectorSearch failed, falling back to BM25:', e instanceof Error ? e.message : String(e))
+        }
+      }
+
+      if (candidates.length === 0 && typeof window !== 'undefined' && window.syncAPI) {
+        // ── Priority 1b: team vector index (Cloudflare Vectorize, built by the nightly batch) ──
+        // Same document ids as the local vault (both derive from the vault-relative path), so hits
+        // map straight onto loaded documents. Silent when team sync is off or search is not configured.
+        try {
+          const res = await window.syncAPI.search(searchQuery, sc.bm25Candidates * 2)
+          if (res.ok && res.hits.length > 0) {
+            const docMapLocal = new Map((vaultDocs ?? []).map(d => [d.id, d]))
+            const seen = new Set<string>()
+            const vecResults: import('@/types').SearchResult[] = []
+            for (const h of res.hits) {
+              const d = docMapLocal.get(h.docId)
+              if (!d || seen.has(d.id)) continue        // best chunk per document wins
+              seen.add(d.id)
+              vecResults.push({ doc_id: d.id, filename: d.filename, section_id: null, heading: h.heading || null, speaker: d.speaker, content: '', score: h.score, tags: d.tags })
+            }
+            if (vecResults.length > 0) {
+              candidates = fuseWithBm25(vecResults, 'team')
+              searchMode = 'vector'
+            }
+          }
+        } catch (e: unknown) {
+          logger.debug('[vector] team search unavailable:', e instanceof Error ? e.message : String(e))
         }
       }
 

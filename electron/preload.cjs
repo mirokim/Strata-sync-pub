@@ -153,6 +153,7 @@ contextBridge.exposeInMainWorld('syncAPI', {
   updateConfig: (patch) => ipcRenderer.invoke('sync:update-config', patch),
   syncNow: () => ipcRenderer.invoke('sync:now'),
   testConnection: (url, token) => ipcRenderer.invoke('sync:test-connection', url, token),
+  search: (query, topK) => ipcRenderer.invoke('sync:search', query, topK),
   onStatus: (callback) => {
     const listener = (_event, state) => callback(state)
     ipcRenderer.on('sync:status', listener)

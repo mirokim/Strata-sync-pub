@@ -11,6 +11,7 @@ import { phantomHot, bridgeSpof, orphan, staleHub, nearDuplicate, clusterDrift, 
 
 export type { LintFinding, LintInput, LintOptions, LintReport, LintRuleId, LintSeverity, LintSnapshot, SimilarPair } from './types.js'
 export { ALL_RULES } from './types.js'
+export type { LintDocument } from './document.js'
 export { buildLintGraph, normalizeWikiLink, articulationPoints } from './graph.js'
 export { detectCommunities } from './community.js'
 

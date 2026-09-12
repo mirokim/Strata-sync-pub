@@ -6,7 +6,7 @@
  * `lint:vault` CLI and (later) the server-side nightly batch, so nothing in here may depend on
  * MCP state, the filesystem or the network — callers pass documents in and get a report out.
  */
-import type { LoadedDocument } from '../parser.js'
+import type { LintDocument } from './document.js'
 
 export type LintSeverity = 'error' | 'warn' | 'info'
 
@@ -76,7 +76,7 @@ export interface LintOptions {
 }
 
 export interface LintInput {
-  docs: LoadedDocument[]
+  docs: LintDocument[]
   /** Optional similarity pairs for `near-duplicate` (the rule is skipped without them). */
   similarPairs?: SimilarPair[]
   /** Optional previous snapshot for `cluster-drift` (the rule is skipped without it). */

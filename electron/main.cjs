@@ -2228,6 +2228,7 @@ function startRagApiServer() {
     ipcMain.handle('sync:update-config', (_event, patch) => teamSync.updateConfig(patch && typeof patch === 'object' ? patch : {}))
     ipcMain.handle('sync:now', () => teamSync.syncNow())
     ipcMain.handle('sync:test-connection', (_event, url, token) => teamSync.testConnection(url, token))
+    ipcMain.handle('sync:search', (_event, query, topK) => teamSync.search(query, topK))
 
     ipcMain.handle('cron:get-state', () => cronScheduler.getFullState())
     ipcMain.handle('cron:update-config', async (_event, jobId, patch) => {

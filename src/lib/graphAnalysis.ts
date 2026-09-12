@@ -4,13 +4,14 @@
  * Provides six analysis tools:
  *   A. TfIdfIndex      — cosine-similarity document search + implicit connection discovery
  *   B. computePageRank — document ranking by link importance (popular hub detection)
- *   C. detectClusters  — Union-Find connected components (topic cluster detection)
+ *   C. detectClusters  — Union-Find connected components; detectTopicClusters — Louvain communities (shared core)
  *   D. detectBridgeNodes — detect bridge nodes connecting multiple clusters
  *   E. getClusterTopics  — extract top TF-IDF keywords per cluster
  *   F. findImplicitLinks — discover hidden semantically similar connections without WikiLinks
  */
 
 import type { LoadedDocument } from '@/types'
+import { detectCommunities } from '@core/community'
 import { logger } from '@/lib/logger'
 import { expandTerms, SYNONYM_MAP } from '@/lib/synonyms'
 
@@ -950,6 +951,29 @@ export function detectClusters(
   return clusterMap
 }
 
+/**
+ * Topic clusters = Louvain communities over the link graph (from the shared graph core).
+ *
+ * Connected components are useless as "topics" on a real vault: one hub page joins everything
+ * into a single component, and a bridge between components is then impossible by definition —
+ * which is why detectBridgeNodes used to return nothing. Louvain splits the giant component into
+ * densely linked groups. Singletons keep their own id so every node has a cluster.
+ *
+ * @returns Map<docId, clusterId> — clusterId 0 is the largest community
+ */
+export function detectTopicClusters(adjacency: Map<string, string[]>): Map<string, number> {
+  const sets = new Map<string, Set<string>>()
+  for (const [id, nbs] of adjacency) {
+    if (!sets.has(id)) sets.set(id, new Set())
+    for (const nb of nbs) {
+      sets.get(id)!.add(nb)
+      if (!sets.has(nb)) sets.set(nb, new Set())
+      sets.get(nb)!.add(id)
+    }
+  }
+  return detectCommunities(sets).membership
+}
+
 // ── Graph metrics cache ──────────────────────────────────────────────────────
 
 export interface GraphMetrics {
@@ -980,7 +1004,7 @@ export function getGraphMetrics(
   if (_metricsCache && _metricsLinksRef === linksRef) return _metricsCache
 
   const pageRank = computePageRank(adjacency)
-  const clusters = detectClusters(adjacency)
+  const clusters = detectTopicClusters(adjacency)
   const clusterCount = new Set(clusters.values()).size
 
   _metricsCache = { pageRank, clusters, clusterCount }

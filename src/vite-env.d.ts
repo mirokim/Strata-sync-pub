@@ -82,6 +82,8 @@ declare global {
       updateConfig(patch: Partial<{ enabled: boolean; url: string; token: string; author: string; pullIntervalMs: number; clearToken: boolean }>): Promise<TeamSyncState>
       syncNow(): Promise<TeamSyncState>
       testConnection(url?: string, token?: string): Promise<{ ok: boolean; error?: string; head?: number; files?: number }>
+      /** Semantic search on the team index built by the nightly batch; ok:false when unavailable. */
+      search(query: string, topK?: number): Promise<{ ok: boolean; hits: { path: string; docId: string; heading: string; score: number }[]; reason?: string }>
       onStatus(callback: (state: TeamSyncState) => void): () => void
     }
 

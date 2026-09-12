@@ -11,13 +11,20 @@
  */
 import { D1MetaStore, R2BlobStore } from './stores.js'
 import { getManifest, getFile, putFile, deleteFile, parseIfMatch, type SyncDeps } from './sync.js'
+import { runNightly, semanticSearch, type NightlyDeps, type VectorStore, type VectorQuery } from './nightly.js'
+import { applyR2Events, type R2EventMessage } from './r2events.js'
 
 export interface Env {
   VAULT: R2Bucket
   DB: D1Database
   TEAM_TOKEN: string
   MAX_FILE_BYTES?: string
+  /** Optional — set by the [ai] and [[vectorize]] bindings; embeddings are skipped without them. */
+  AI?: Ai
+  VECTORS?: VectorizeIndex
 }
+
+const EMBED_MODEL = '@cf/baai/bge-m3'
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
 
@@ -51,13 +58,21 @@ export default {
     if (!env.TEAM_TOKEN) return json(503, { error: 'TEAM_TOKEN secret not configured' })
     if (!tokenMatches(bearer(req), env.TEAM_TOKEN)) return json(401, { error: 'unauthorized' })
 
-    const deps: SyncDeps = {
-      meta: new D1MetaStore(env.DB),
-      blobs: new R2BlobStore(env.VAULT),
-      maxFileBytes: Number(env.MAX_FILE_BYTES ?? 10 * 1024 * 1024),
-    }
+    const deps = baseDeps(env)
 
     try {
+      if (url.pathname === '/v1/search' && req.method === 'POST') {
+        if (!env.AI || !env.VECTORS) return json(503, { error: 'semantic search not configured (AI / Vectorize bindings missing)' })
+        const body = await req.json().catch(() => ({})) as { query?: unknown; topK?: unknown }
+        if (typeof body.query !== 'string') return json(400, { error: 'query (string) required' })
+        const hits = await semanticSearch(embedder(env.AI), vectorQuery(env.VECTORS), body.query, Number(body.topK ?? 10))
+        return json(200, { hits })
+      }
+      if (url.pathname === '/v1/lint/run' && req.method === 'POST') {
+        // Manual trigger of the nightly batch (same code the cron runs)
+        const result = await runNightly(nightlyDeps(env))
+        return json(200, result)
+      }
       if (url.pathname === '/v1/manifest' && req.method === 'GET') {
         const since = Number(url.searchParams.get('since') ?? '0')
         return toResponse(await getManifest(deps, since))
@@ -87,7 +102,63 @@ export default {
       return json(500, { error: 'internal error' })
     }
   },
-} satisfies ExportedHandler<Env>
+
+  /** Cron trigger (wrangler.toml [triggers]) — the nightly lint + embedding batch. */
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(runNightly(nightlyDeps(env)).then(
+      r => console.log('[nightly] done', JSON.stringify(r)),
+      e => console.error('[nightly] failed', e),
+    ))
+  },
+
+  /** R2 event notifications (Queue consumer) — index files written outside the API. */
+  async queue(batch: MessageBatch<R2EventMessage>, env: Env): Promise<void> {
+    const result = await applyR2Events(baseDeps(env), batch.messages.map(m => m.body), msg => console.log(msg))
+    console.log('[r2events]', JSON.stringify(result))
+    for (const m of batch.messages) m.ack()
+  },
+} satisfies ExportedHandler<Env, R2EventMessage>
+
+function baseDeps(env: Env): SyncDeps {
+  return {
+    meta: new D1MetaStore(env.DB),
+    blobs: new R2BlobStore(env.VAULT),
+    maxFileBytes: Number(env.MAX_FILE_BYTES ?? 10 * 1024 * 1024),
+  }
+}
+
+function nightlyDeps(env: Env): NightlyDeps {
+  const deps: NightlyDeps = { ...baseDeps(env), log: msg => console.log(msg) }
+  if (env.AI && env.VECTORS) {
+    deps.embed = embedder(env.AI)
+    deps.vectors = vectorStore(env.VECTORS)
+  }
+  return deps
+}
+
+function embedder(ai: Ai): (texts: string[]) => Promise<number[][]> {
+  return async texts => {
+    const out = await ai.run(EMBED_MODEL, { text: texts }) as { data?: number[][] }
+    if (!out.data || out.data.length !== texts.length) throw new Error(`embedding returned ${out.data?.length ?? 0} vectors for ${texts.length} texts`)
+    return out.data
+  }
+}
+
+function vectorStore(index: VectorizeIndex): VectorStore {
+  return {
+    async upsert(items) { if (items.length) await index.upsert(items.map(i => ({ id: i.id, values: i.values, metadata: i.metadata }))) },
+    async deleteByIds(ids) { if (ids.length) await index.deleteByIds(ids) },
+  }
+}
+
+function vectorQuery(index: VectorizeIndex): VectorQuery {
+  return {
+    async query(values, topK) {
+      const res = await index.query(values, { topK, returnMetadata: 'all' })
+      return res.matches.map(m => ({ id: m.id, score: m.score, metadata: m.metadata as Record<string, unknown> | undefined }))
+    },
+  }
+}
 
 /** Clients send the author percent-encoded because header values must be Latin-1. */
 function decodeHeader(v: string | null): string {
