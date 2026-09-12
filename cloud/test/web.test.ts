@@ -387,7 +387,7 @@ describe('routes', () => {
 
   it('MCP writes into eligible folders are queued for member reactions like PUT /v1/file', async () => {
     const sent: { path: string; etag: string }[] = []
-    const envQ = { ...env, REACTION_QUEUE: { send: async (m: { path: string; etag: string }) => { sent.push(m) } } } as unknown as Env
+    const envQ = { ...env, ANTHROPIC_API_KEY: 'k', REACTION_QUEUE: { send: async (m: { path: string; etag: string }) => { sent.push(m) } } } as unknown as Env
     const waited: Promise<unknown>[] = []
     const ctxQ = { waitUntil: (p: Promise<unknown>) => { waited.push(p) }, passThroughOnException() {}, props: {} } as unknown as ExecutionContext
     const mcp = (name: string, args: unknown) => route(new Request('https://w/mcp', {

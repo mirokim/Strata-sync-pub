@@ -184,7 +184,7 @@ export default {
       for (const ev of events) {
         if (ev.action === 'DeleteObject' || ev.action === 'LifecycleDeletion') continue
         const key = ev.object?.key ?? ''
-        if (shouldEnqueueReaction({ path: key, deleted: false, size: ev.object?.size ?? 0, author: 'external' }, reactionFolders(env))) {
+        if (env.ANTHROPIC_API_KEY && shouldEnqueueReaction({ path: key, deleted: false, size: ev.object?.size ?? 0, author: 'external' }, reactionFolders(env))) {
           await env.REACTION_QUEUE.send({ path: key }).catch(e => console.error('[reactions] enqueue failed', e))
         } else if (isImagePath(key)) {
           await env.REACTION_QUEUE.send({ kind: 'describe', path: key }).catch(e => console.error('[images] enqueue failed', e))
@@ -393,7 +393,8 @@ function enqueueReaction(env: Env, ctx: ExecutionContext, row: FileRow): void {
     ctx.waitUntil(env.REACTION_QUEUE.send({ kind: 'describe', path: row.path, etag: row.etag }).catch(e => console.error('[images] enqueue failed', e)))
     return
   }
-  if (!shouldEnqueueReaction(row, reactionFolders(env))) return
+  // No key on the server → the consumer would only drop the job; save the queue operation
+  if (!env.ANTHROPIC_API_KEY || !shouldEnqueueReaction(row, reactionFolders(env))) return
   ctx.waitUntil(env.REACTION_QUEUE.send({ path: row.path, etag: row.etag }).catch(e => console.error('[reactions] enqueue failed', e)))
 }
 
