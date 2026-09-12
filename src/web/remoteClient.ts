@@ -38,7 +38,15 @@ export class RemoteError extends Error {
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
 
 export class RemoteClient {
-  constructor(private readonly config: WebConfig, private readonly fetchImpl: FetchLike = (i, init) => fetch(i, init)) {}
+  /**
+   * @param onUnauthorized called once per request after a 401; return true when `config.token`
+   *   was refreshed and the request should be retried (OAuth sessions).
+   */
+  constructor(
+    private readonly config: WebConfig,
+    private readonly fetchImpl: FetchLike = (i, init) => fetch(i, init),
+    private readonly onUnauthorized?: () => Promise<boolean>,
+  ) {}
 
   private headers(extra: Record<string, string> = {}): Record<string, string> {
     return {
@@ -49,9 +57,10 @@ export class RemoteClient {
     }
   }
 
-  private async request(path: string, init: RequestInit & { headers?: Record<string, string> } = {}): Promise<Response> {
+  private async request(path: string, init: RequestInit & { headers?: Record<string, string> } = {}, retried = false): Promise<Response> {
     const res = await this.fetchImpl(`${this.config.url}${path}`, { ...init, headers: this.headers(init.headers) })
-    if (res.status === 401) throw new RemoteError(401, 'team token rejected')
+    if (res.status === 401 && !retried && this.onUnauthorized && await this.onUnauthorized()) return this.request(path, init, true)
+    if (res.status === 401) throw new RemoteError(401, this.config.auth === 'oauth' ? 'session expired — sign in again' : 'team token rejected')
     if (res.status === 503) {
       const body = await res.clone().json().catch(() => ({})) as { error?: string }
       throw new RemoteError(503, body.error || 'server unavailable')
@@ -62,6 +71,13 @@ export class RemoteClient {
   async health(): Promise<boolean> {
     const res = await this.fetchImpl(`${this.config.url}/health`)
     return res.ok
+  }
+
+  /** Who the server thinks we are (Google identity or the service token). */
+  async me(): Promise<{ sub: string; email: string; name: string; picture: string | null; service: boolean; author: string }> {
+    const res = await this.request('/v1/me')
+    if (!res.ok) throw new RemoteError(res.status, `me failed (${res.status})`)
+    return res.json()
   }
 
   /** Documents changed after `after`, oldest first. */

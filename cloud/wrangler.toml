@@ -31,7 +31,9 @@ REPORT_TIMEZONE = "Asia/Seoul"
 REVIEW_MODEL = "claude-opus-5"
 REVIEW_FOLDERS = ""
 # Browser origins of the web app (Vercel). `*` while the API is token-protected and origins are not final.
-ALLOWED_ORIGINS = "*"
+ALLOWED_ORIGINS = "https://strata-sync-nine.vercel.app,http://localhost:4188,http://localhost:5277,http://127.0.0.1:4188"
+# Google accounts allowed to sign in, by e-mail domain (comma-separated). Empty = anyone with a Google account.
+ALLOWED_EMAIL_DOMAINS = ""
 
 # The nightly batch parses every document and runs Louvain. On the Workers Paid plan raise the CPU
 # budget with the block below; the Free plan rejects `[limits]` entirely (and caps CPU at 10 ms,
@@ -45,6 +47,11 @@ crons = ["0 19 * * *"]
 
 # Optional — semantic search. Without these two bindings the batch still lints, just no embeddings.
 #   npx wrangler vectorize create strata-vault-vectors --dimensions=1024 --metric=cosine
+# OAuth state, dynamically registered clients, grants and tokens (Google sign-in + MCP clients)
+[[kv_namespaces]]
+binding = "OAUTH_KV"
+id = "398d4d30a29e4d33b1d3545ab9f85c3b"
+
 [ai]
 binding = "AI"
 

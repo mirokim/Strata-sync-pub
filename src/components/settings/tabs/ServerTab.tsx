@@ -8,6 +8,7 @@ import { Cloud, RefreshCw, AlertTriangle, GitBranch, LogOut, Terminal } from 'lu
 import { fieldInputStyle } from '../settingsShared'
 import { clearWebConfig, loadWebConfig } from '@/web/config'
 import { currentRemoteVault } from '@/web/remoteVault'
+import { clearSession } from '@/web/auth'
 
 type SyncState = NonNullable<Window['syncAPI']> extends { getState(): Promise<infer S> } ? S : never
 
@@ -54,8 +55,11 @@ export default function ServerTab() {
   }
 
   const status = state?.status
-  const url = state?.config.url ?? loadWebConfig()?.url ?? ''
-  const mcpCommand = `claude mcp add --transport http strata ${url}/mcp --header "Authorization: Bearer <team token>"`
+  const saved = loadWebConfig()
+  const url = state?.config.url ?? saved?.url ?? ''
+  const signedIn = saved?.auth === 'oauth'
+  // Signed-in servers issue MCP clients their own tokens through the same Google sign-in; the shared token is only for servers without it
+  const mcpCommand = signedIn ? `claude mcp add --transport http strata ${url}/mcp` : `claude mcp add --transport http strata ${url}/mcp --header "Authorization: Bearer <team token>"`
 
   const saveAuthor = async () => {
     setBusy('save')
@@ -68,6 +72,7 @@ export default function ServerTab() {
   const disconnect = async () => {
     if (!window.confirm('Disconnect from this server? The local copy of the vault in this browser is removed; nothing on the server changes.')) return
     await currentRemoteVault()?.cache.reset()
+    clearSession()
     clearWebConfig()
     window.location.reload()
   }
@@ -81,7 +86,7 @@ export default function ServerTab() {
             {status?.inFlight ? 'Syncing…' : status?.lastError ? 'Sync error' : `Connected · last ${relative(status?.lastSyncAt ?? null)}`}
           </div>
           <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {url}{status ? ` · seq ${status.lastSeq}` : ''}
+            {url}{status ? ` · seq ${status.lastSeq}` : ''}{signedIn && saved?.email ? ` · ${saved.email}` : ''}
           </div>
           {status?.lastError && <div style={{ fontSize: 11, color: 'var(--color-error)', marginTop: 4 }}>{status.lastError}</div>}
         </div>
@@ -99,7 +104,7 @@ export default function ServerTab() {
               <input value={author} onChange={e => setAuthor(e.target.value)} placeholder="shown on your edits and conflict copies" style={fieldInputStyle} data-testid="server-author" />
               <button onClick={saveAuthor} disabled={busy !== null || author.trim() === (state?.config.author ?? '')} style={{ ...button, whiteSpace: 'nowrap' }}>Save</button>
             </div>
-            <div style={hint}>Recorded on every file you save so the team sees who changed what.</div>
+            <div style={hint}>{signedIn ? 'Comes from your Google account; change it here if the team knows you by another name.' : 'Recorded on every file you save so the team sees who changed what.'}</div>
           </div>
         </div>
       </div>
@@ -111,7 +116,7 @@ export default function ServerTab() {
             <Terminal size={13} style={{ flexShrink: 0, marginTop: 3, color: 'var(--color-text-muted)' }} />
             <code style={{ fontSize: 11, lineHeight: 1.6, wordBreak: 'break-all', color: 'var(--color-text-primary)' }} data-testid="server-mcp-command">{mcpCommand}</code>
           </div>
-          <div style={hint}>Same server, same token. Gives Claude Code <code>vault_search</code>, <code>graph_lint</code>, <code>vault_propose</code> and friends.</div>
+          <div style={hint}>{signedIn ? 'Claude Code opens the Google sign-in the first time you use it.' : 'Same server, same token.'} Gives Claude Code <code>vault_search</code>, <code>graph_lint</code>, <code>vault_propose</code> and friends.</div>
         </div>
       </div>
 
@@ -151,10 +156,10 @@ export default function ServerTab() {
         <div style={card}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ flex: 1, fontSize: 11, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
-              Removes the server address, the token and the local copy of the vault from this browser.
+              {signedIn ? 'Signs you out and removes the local copy of the vault from this browser.' : 'Removes the server address, the token and the local copy of the vault from this browser.'}
             </div>
             <button onClick={disconnect} data-testid="server-disconnect" style={{ ...button, color: 'var(--color-error)' }}>
-              <LogOut size={11} /> Disconnect
+              <LogOut size={11} /> {signedIn ? 'Sign out' : 'Disconnect'}
             </button>
           </div>
         </div>

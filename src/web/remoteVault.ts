@@ -36,6 +36,8 @@ export interface RemoteVaultOptions {
   clearTimer?: (id: unknown) => void
   /** Surface a message to the user (toast). */
   notify?: (message: string, kind: 'info' | 'warn' | 'error') => void
+  /** OAuth sessions: refresh `config.token` after a 401 and return true to retry. */
+  onUnauthorized?: () => Promise<boolean>
 }
 
 export interface RemoteVaultStatus {
@@ -79,7 +81,7 @@ export class RemoteVault {
   constructor(private readonly config: WebConfig, options: RemoteVaultOptions = {}) {
     this.vaultPath = remoteVaultPath(config.url)
     this.fetchImpl = options.fetchImpl
-    this.client = new RemoteClient(config, options.fetchImpl)
+    this.client = new RemoteClient(config, options.fetchImpl, options.onUnauthorized)
     this.cache = new RemoteCache(options.backend ?? defaultCacheBackend(new URL(config.url).host))
     this.now = options.now ?? (() => Date.now())
     this.opts = {
@@ -153,7 +155,7 @@ export class RemoteVault {
       this.setStatus({ inFlight: false, lastError: message })
       if (e instanceof RemoteError && e.status === 401 && !this.authWarned) {
         this.authWarned = true
-        this.opts.notify('The team token was rejected — reconnect in Settings → Server', 'error')
+        this.opts.notify(this.config.auth === 'oauth' ? 'Your session expired — sign in again from Settings → Server' : 'The team token was rejected — reconnect in Settings → Server', 'error')
       }
       if (this.cache.rows.size === 0) throw e
       return { changed, removed }

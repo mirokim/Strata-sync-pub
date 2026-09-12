@@ -142,7 +142,7 @@ describe('config', () => {
     clearWebConfig()
     expect(loadWebConfig()).toBeNull()
     saveWebConfig(CONFIG)
-    expect(loadWebConfig()).toEqual(CONFIG)
+    expect(loadWebConfig()).toMatchObject(CONFIG)
     localStorage.setItem(WEB_CONFIG_KEY, JSON.stringify({ url: 'https://x.example' }))
     expect(loadWebConfig()).toBeNull()
     clearWebConfig()

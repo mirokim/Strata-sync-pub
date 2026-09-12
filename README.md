@@ -298,7 +298,13 @@ cd bot && pytest      # Bot
 2. Vercel에서 이 저장소를 import 합니다. `vercel.json`이 빌드(`npm run build:web`)와 SPA 라우팅을 담고 있어 설정할 게 없습니다. main에 push 하면 자동 배포.
 3. Worker는 GitHub Actions가 배포합니다(`.github/workflows/ci.yml`의 `deploy-worker`): main push → 테스트 통과 → D1 마이그레이션 → `wrangler deploy`. 저장소 시크릿 `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_D1_ID`(`wrangler d1 create`가 출력한 database_id — `wrangler.toml`에는 자리표시자만 커밋)가 필요합니다.
 
-**사용** — 첫 화면에서 서버 주소, 팀 토큰, 이름을 넣으면 끝. 토큰은 이 브라우저의 localStorage에만 저장됩니다. 문서 사본은 IndexedDB에 두고 15초마다 바뀐 것만 내려받습니다(`GET /v1/docs?after=<seq>`). 저장은 `If-Match`로 잠그고, 같은 파일을 둘이 고쳤으면 데스크톱과 같은 규칙으로 `이름 (conflict 내이름 날짜 시각).md` 사본을 남깁니다. Settings → Server에서 상태·충돌·이름 변경·연결 해제.
+**구글 로그인** — Worker가 OAuth 서버 역할을 해서 웹 앱과 MCP 클라이언트(Claude Code) 모두 Google 계정으로 들어옵니다. 한 번만 설정:
+1. [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → OAuth 클라이언트 ID(웹 애플리케이션) 생성, 승인된 리디렉션 URI에 `https://<worker>/callback` 추가(로컬 개발용 `http://127.0.0.1:8787/callback`도).
+2. `cd cloud && npx wrangler kv namespace create OAUTH_KV` → id를 `wrangler.toml`의 `[[kv_namespaces]]`에.
+3. `npx wrangler secret put GOOGLE_CLIENT_ID`, `npx wrangler secret put GOOGLE_CLIENT_SECRET`, `npx wrangler deploy`.
+이후 첫 화면에 "Sign in with Google"이 뜹니다. 특정 도메인만 허용하려면 `ALLOWED_EMAIL_DOMAINS = "studio.example"`. 팀 토큰은 그대로 데스크톱 엔진·봇·스크립트용 서비스 자격으로 남습니다. Claude Code는 `claude mcp add --transport http strata https://<worker>/mcp`만으로 붙고, 처음 쓸 때 브라우저로 Google 로그인을 엽니다.
+
+**사용** — 첫 화면에서 Google로 로그인하거나(설정된 경우) 팀 토큰과 이름을 넣으면 끝. 토큰은 이 브라우저의 localStorage에만 저장됩니다. 문서 사본은 IndexedDB에 두고 15초마다 바뀐 것만 내려받습니다(`GET /v1/docs?after=<seq>`). 저장은 `If-Match`로 잠그고, 같은 파일을 둘이 고쳤으면 데스크톱과 같은 규칙으로 `이름 (conflict 내이름 날짜 시각).md` 사본을 남깁니다. Settings → Server에서 상태·충돌·이름 변경·연결 해제.
 
 **로컬에서 돌려보기**
 ```bash
@@ -843,7 +849,13 @@ Use the team vault from a browser, nothing to install. Vercel serves the React a
 2. Import this repository in Vercel. `vercel.json` carries the build (`npm run build:web`) and the SPA rewrite; pushes to main deploy automatically.
 3. The Worker is deployed by GitHub Actions (`deploy-worker` in `.github/workflows/ci.yml`): push to main → tests pass → D1 migrations → `wrangler deploy`. Needs the repository secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_D1_ID` (the database_id printed by `wrangler d1 create`; only a placeholder is committed in `wrangler.toml`).
 
-**Use** — the first screen asks for the server URL, the team token and your name. The token stays in this browser's localStorage. Documents are mirrored in IndexedDB and only changes are pulled, every 15 s (`GET /v1/docs?after=<seq>`). Saves are locked with `If-Match`; when two people edit the same file, the desktop rule applies: your text is kept as `<name> (conflict <you> <date> <time>).md`. Settings → Server shows status, conflicts, your name and disconnect.
+**Google sign-in** — the Worker is an OAuth server, so the web app and MCP clients (Claude Code) both sign in with a Google account. One-time setup:
+1. [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → create an OAuth client ID (Web application) with `https://<worker>/callback` as an authorised redirect URI (add `http://127.0.0.1:8787/callback` for local dev).
+2. `cd cloud && npx wrangler kv namespace create OAUTH_KV` → put the id under `[[kv_namespaces]]` in `wrangler.toml`.
+3. `npx wrangler secret put GOOGLE_CLIENT_ID`, `npx wrangler secret put GOOGLE_CLIENT_SECRET`, `npx wrangler deploy`.
+The first screen then shows "Sign in with Google". Restrict to certain domains with `ALLOWED_EMAIL_DOMAINS = "studio.example"`. The team token stays as the service credential for the desktop engine, bots and scripts. Claude Code needs only `claude mcp add --transport http strata https://<worker>/mcp` and opens the Google sign-in in a browser the first time.
+
+**Use** — the first screen offers Google sign-in (when configured) or asks for the team token and your name. The token stays in this browser's localStorage. Documents are mirrored in IndexedDB and only changes are pulled, every 15 s (`GET /v1/docs?after=<seq>`). Saves are locked with `If-Match`; when two people edit the same file, the desktop rule applies: your text is kept as `<name> (conflict <you> <date> <time>).md`. Settings → Server shows status, conflicts, your name and disconnect.
 
 **Run locally**
 ```bash

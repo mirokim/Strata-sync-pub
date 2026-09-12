@@ -65,3 +65,6 @@ vector_cache.json
 cloud/.dev.vars
 cloud/.wrangler/
 cloud/dist-dry/
+
+.vercel
+.env*

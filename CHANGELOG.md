@@ -7,6 +7,14 @@ the vault, the search index and an MCP server. Electron builds still work but ar
 delivery target.
 
 ### Added
+- **Google sign-in** — the Worker is an OAuth 2.1 authorization server (`@cloudflare/workers-oauth-provider`,
+  KV-backed) fronting Google: the browser app (PKCE, `src/web/auth.ts`) and MCP clients (Claude
+  Code discovers `/.well-known/oauth-authorization-server`, registers, signs in) get their own
+  tokens; `GET /v1/me`; authorship from the Google identity. The team token remains the service
+  credential (`resolveExternalToken`). `ALLOWED_EMAIL_DOMAINS` optionally restricts sign-in.
+- **Seed vault** — `scripts/seed-worlds.mjs` writes ~740 invented design notes about 19 game
+  universes (frontmatter, dense wikilinks, cross-universe analyses, deliberate phantom links) to a
+  folder or straight into a server.
 - **Web build** (`npm run build:web`, `vercel.json`) — `src/web/`: connect screen (server URL,
   team token, author), `window.vaultAPI` / `window.syncAPI` implemented over the Worker
   (IndexedDB mirror advanced with `GET /v1/docs?after=<seq>`, `If-Match` saves, conflict copies,

@@ -19,8 +19,10 @@ import { preflight, withCors } from './cors.js'
 import { handleMcpRequest } from './mcp.js'
 import { invalidateVaultView } from './vaultIndex.js'
 import { buildProposal } from '../../mcp/src/proposals.js'
+import OAuthProvider from '@cloudflare/workers-oauth-provider'
+import { handleAuth, SCOPE, type AuthEnv, type Identity } from './auth.js'
 
-export interface Env {
+export interface Env extends AuthEnv {
   VAULT: R2Bucket
   DB: D1Database
   TEAM_TOKEN: string
@@ -67,11 +69,54 @@ function bearer(req: Request): string | null {
   return h.startsWith('Bearer ') ? h.slice(7).trim() : null
 }
 
+/**
+ * Authorization server + resource server. `/v1/*` and `/mcp` accept either an access token issued
+ * after a Google sign-in (browser app, MCP clients) or the shared TEAM_TOKEN (desktop engine,
+ * bots, scripts). Everything else — /authorize, /callback, /token, /register, the OAuth metadata
+ * documents, /health — is unauthenticated.
+ */
+const provider = new OAuthProvider<Env>({
+  apiRoute: ['/v1/', '/mcp'],
+  apiHandler: {
+    fetch: (req, env, ctx) => route(req, env, ctx, undefined, identityFromProps((ctx as ExecutionContext & { props?: unknown }).props, req)),
+  },
+  defaultHandler: {
+    fetch: (req, env) => {
+      if (new URL(req.url).pathname === '/health') return Promise.resolve(json(200, { ok: true, service: 'strata-sync-cloud', signIn: Boolean(env.GOOGLE_CLIENT_ID) ? 'google' : 'token' }))
+      return handleAuth(req, env)
+    },
+  },
+  authorizeEndpoint: '/authorize',
+  tokenEndpoint: '/token',
+  clientRegistrationEndpoint: '/register',
+  scopesSupported: [SCOPE],
+  // The team token is not in KV: validate it here and hand the handler a service identity
+  resolveExternalToken: async ({ token, request, env }) => {
+    if (!env.TEAM_TOKEN || !tokenMatches(token, env.TEAM_TOKEN)) return null
+    const name = decodeHeader(request.headers.get('x-author'))
+    return { props: { sub: 'service', email: '', name, service: true } satisfies Identity }
+  },
+})
+
+/** Props travel inside the access token; anything malformed is treated as no identity. */
+function identityFromProps(props: unknown, req: Request): Identity | undefined {
+  if (!props || typeof props !== 'object') return undefined
+  const p = props as Partial<Identity>
+  if (typeof p.sub !== 'string') return undefined
+  const name = typeof p.name === 'string' ? p.name : ''
+  return {
+    sub: p.sub, email: typeof p.email === 'string' ? p.email : '', picture: typeof p.picture === 'string' ? p.picture : undefined,
+    service: p.service === true,
+    // Service callers name themselves per request (the desktop engine sends the user's name)
+    name: p.service ? (decodeHeader(req.headers.get('x-author')) || name || 'service') : name,
+  }
+}
+
 export default {
-  /** CORS wrapper around `route` — the web app on Vercel calls this API from the browser. */
+  /** CORS wrapper — the web app on Vercel calls this API from the browser. */
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     if (req.method === 'OPTIONS') return preflight(req, env.ALLOWED_ORIGINS)
-    const res = await route(req, env, ctx)
+    const res = await provider.fetch(req, env, ctx)
     return withCors(res, req, env.ALLOWED_ORIGINS)
   },
 
@@ -150,21 +195,31 @@ function anthropicLlm(env: Env): LlmCall | null {
 }
 
 /**
- * All HTTP routing; `fetch` only wraps it with CORS. Exported so tests can drive the routes with
- * in-memory stores (`deps`) instead of D1/R2 bindings.
+ * All HTTP routing behind authentication. In production the OAuth provider has already validated
+ * the bearer token and passes `identity`; without one (tests, direct use) the team token is checked
+ * here. Exported so tests can drive the routes with in-memory stores (`deps`).
  */
-export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?: SyncDeps): Promise<Response> {
+export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?: SyncDeps, identity?: Identity): Promise<Response> {
   const url = new URL(req.url)
 
   if (url.pathname === '/health') return json(200, { ok: true, service: 'strata-sync-cloud' })
   if (!url.pathname.startsWith('/v1/') && url.pathname !== '/mcp') return json(404, { error: 'not found' })
 
-  if (!env.TEAM_TOKEN) return json(503, { error: 'TEAM_TOKEN secret not configured' })
-  if (!tokenMatches(bearer(req), env.TEAM_TOKEN)) return json(401, { error: 'unauthorized' })
+  if (!identity) {
+    if (!env.TEAM_TOKEN) return json(503, { error: 'TEAM_TOKEN secret not configured' })
+    if (!tokenMatches(bearer(req), env.TEAM_TOKEN)) return json(401, { error: 'unauthorized' })
+    identity = { sub: 'service', email: '', name: decodeHeader(req.headers.get('x-author')), service: true }
+  }
+  // Who gets recorded as the author of writes: the signed-in person, or whatever a service caller says
+  const author = identity.service ? (identity.name || 'service') : (identity.name || identity.email)
 
   deps ??= baseDeps(env)
 
   try {
+    if (url.pathname === '/v1/me' && req.method === 'GET') {
+      return json(200, { sub: identity.sub, email: identity.email, name: identity.name, picture: identity.picture ?? null, service: Boolean(identity.service), author })
+    }
+
     // ── Remote MCP (Claude Code / Cursor over Streamable HTTP) ────────────────
     if (url.pathname === '/mcp') {
       const semantic = env.AI && env.VECTORS
@@ -172,7 +227,7 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
         : undefined
       return handleMcpRequest(req, {
         ...deps, semanticSearch: semantic,
-        author: decodeHeader(req.headers.get('x-author')) || 'mcp',
+        author: author || 'mcp',
         onWrite: row => enqueueReview(env, ctx, row),
       })
     }
@@ -214,7 +269,7 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
       })
       let rel = proposal.relPath
       for (let n = 2; (await deps.meta.get(rel))?.deleted === false; n++) rel = proposal.relPath.replace(/\.md$/, `-${n}.md`)
-      const r = await putFile(deps, { path: rel, body: new TextEncoder().encode(proposal.content), mtime: Date.now(), author: decodeHeader(req.headers.get('x-author')) || 'bot', createOnly: true })
+      const r = await putFile(deps, { path: rel, body: new TextEncoder().encode(proposal.content), mtime: Date.now(), author: author || 'bot', createOnly: true })
       if (r.status >= 400) return toResponse(r)
       invalidateVaultView()
       return json(200, { ok: true, path: rel, title: proposal.title })
@@ -238,7 +293,6 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
     }
     if (url.pathname === '/v1/file') {
       const path = url.searchParams.get('path')
-      const author = decodeHeader(req.headers.get('x-author'))
       if (req.method === 'GET') return toResponse(await getFile(deps, path))
       if (req.method === 'PUT') {
         const declared = Number(req.headers.get('content-length'))

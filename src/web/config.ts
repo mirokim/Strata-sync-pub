@@ -13,6 +13,10 @@ export interface WebConfig {
   token: string
   /** Display name recorded as the author of writes. */
   author: string
+  /** 'oauth' = signed in with Google (token is a short-lived access token kept fresh by auth.ts); 'token' = shared team token. */
+  auth?: 'oauth' | 'token'
+  /** Signed-in account, for the Server tab. */
+  email?: string
 }
 
 export const WEB_CONFIG_KEY = 'strata-sync-web-config'
@@ -54,15 +58,20 @@ export function loadWebConfig(): WebConfig | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<WebConfig>
     const url = typeof parsed.url === 'string' ? normalizeServerUrl(parsed.url) : null
-    if (!url || typeof parsed.token !== 'string' || !parsed.token) return null
-    return { url, token: parsed.token, author: typeof parsed.author === 'string' ? parsed.author : '' }
+    if (!url) return null
+    const auth = parsed.auth === 'oauth' ? 'oauth' : 'token'
+    // OAuth sessions keep their tokens in auth.ts; the team token must be present here
+    if (auth === 'token' && (typeof parsed.token !== 'string' || !parsed.token)) return null
+    return { url, token: typeof parsed.token === 'string' ? parsed.token : '', author: typeof parsed.author === 'string' ? parsed.author : '', auth, email: typeof parsed.email === 'string' ? parsed.email : undefined }
   } catch {
     return null
   }
 }
 
 export function saveWebConfig(config: WebConfig): void {
-  try { localStorage.setItem(WEB_CONFIG_KEY, JSON.stringify(config)) } catch { /* private mode etc. */ }
+  // Access tokens are short-lived and owned by auth.ts; never persist them as the "token"
+  const persisted = config.auth === 'oauth' ? { ...config, token: '' } : config
+  try { localStorage.setItem(WEB_CONFIG_KEY, JSON.stringify(persisted)) } catch { /* private mode etc. */ }
 }
 
 export function clearWebConfig(): void {
