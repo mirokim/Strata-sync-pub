@@ -1,2 +1,0 @@
-{"id":"79dd8499-074a-4129-a439-ff761ec602bf","timestamp":"2026-05-21T07:30:02.924Z","jobId":"daily-run","level":"info","message":"cron 등록: \"0 4 * * *\" (Asia/Seoul)","runId":null,"event":"info"}
-{"id":"0210cad0-e1a2-4b2f-b6e4-88368d1f7c0a","timestamp":"2026-05-21T07:30:02.924Z","jobId":"system","level":"info","message":"크론 스케줄러 초기화 완료","runId":null,"event":"info"}
