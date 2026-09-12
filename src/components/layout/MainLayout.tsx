@@ -4,7 +4,6 @@ import TopBar from './TopBar'
 import ResizeHandle from './ResizeHandle'
 import FileTree from '@/components/fileTree/FileTree'
 import GraphPanel from '@/components/graph/GraphPanel'
-import RightPanel from './RightPanel'
 import SettingsPanel from '@/components/settings/SettingsPanel'
 import ConverterEditor from '@/components/converter/ConverterEditor'
 import MarkdownEditor from '@/components/editor/MarkdownEditor'
@@ -21,8 +20,6 @@ import { useSettingsStore } from '@/stores/settingsStore'
 
 const LEFT_MIN = 140
 const LEFT_MAX = 340
-const RIGHT_MIN = 300
-const RIGHT_MAX = 1000
 
 const PANEL_SPRING = { type: 'spring', stiffness: 80, damping: 18, delay: 0.15 } as const
 const OVERLAY_TRANSITION = { duration: 0.2 }
@@ -31,9 +28,9 @@ const NO_TRANSITION = { duration: 0 } as const
 
 export default function MainLayout() {
   const {
-    centerTab, editingDocId, leftPanelCollapsed, rightPanelCollapsed,
-    leftPanelWidth: leftWidth, rightPanelWidth: rightWidth,
-    setLeftPanelWidth, setRightPanelWidth,
+    centerTab, editingDocId, leftPanelCollapsed,
+    leftPanelWidth: leftWidth,
+    setLeftPanelWidth,
   } = useUIStore()
   const isFast = useSettingsStore(s => s.paragraphRenderQuality === 'fast')
 
@@ -50,11 +47,6 @@ export default function MainLayout() {
     const w = useUIStore.getState().leftPanelWidth
     setLeftPanelWidth(Math.min(LEFT_MAX, Math.max(LEFT_MIN, w + delta)))
   }, [setLeftPanelWidth])
-
-  const handleRightResize = useCallback((delta: number) => {
-    const w = useUIStore.getState().rightPanelWidth
-    setRightPanelWidth(Math.min(RIGHT_MAX, Math.max(RIGHT_MIN, w - delta)))
-  }, [setRightPanelWidth])
 
   return (
     <div
@@ -187,34 +179,6 @@ export default function MainLayout() {
             )}
           </div>
 
-          {/* Right resize handle */}
-          {!rightPanelCollapsed && (
-            <div style={{ pointerEvents: 'auto', flexShrink: 0, background: 'var(--color-bg-secondary)' }}>
-              <ResizeHandle onResize={handleRightResize} />
-            </div>
-          )}
-
-          {/* Right panel — Chat */}
-          <motion.div
-            initial={isFast ? false : { x: rightWidth, opacity: 0 }}
-            animate={{
-              x: 0,
-              opacity: rightPanelCollapsed ? 0 : 1,
-              width: rightPanelCollapsed ? 0 : rightWidth,
-            }}
-            transition={rightPanelCollapsed ? collapseTransition : panelTransition}
-            style={{
-              minWidth: rightPanelCollapsed ? 0 : rightWidth,
-              flexShrink: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              pointerEvents: rightPanelCollapsed ? 'none' : 'auto',
-              ...solidPanel,
-              borderLeft: '1px solid var(--color-border)',
-            }}
-          >
-            <RightPanel />
-          </motion.div>
         </div>
 
         {/* StatusBar — bottom, full width */}

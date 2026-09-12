@@ -6,7 +6,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useUIStore } from '@/stores/uiStore'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useGraphStore } from '@/stores/graphStore'
-import { File, Settings, PanelLeft, PanelRight, RotateCcw, Search } from 'lucide-react'
+import { File, Settings, PanelLeft, RotateCcw, Search } from 'lucide-react'
 
 interface PaletteItem {
   id: string
@@ -20,7 +20,6 @@ export default function CommandPalette() {
   const open              = useUIStore(s => s.commandPaletteOpen)
   const setOpen           = useUIStore(s => s.setCommandPaletteOpen)
   const toggleLeft        = useUIStore(s => s.toggleLeftPanel)
-  const toggleRight       = useUIStore(s => s.toggleRightPanel)
   const toggleSettings    = useUIStore(s => s.toggleSettingsPanel)
   const openInEditor      = useUIStore(s => s.openInEditor)
   const setFocusNode      = useGraphStore(s => s.setFocusNode)
@@ -45,16 +44,11 @@ export default function CommandPalette() {
       action: () => { toggleLeft(); setOpen(false) },
     },
     {
-      id: 'cmd:right-panel', label: 'Toggle Right Panel', sub: 'Toggle right panel',
-      icon: <PanelRight size={14} />,
-      action: () => { toggleRight(); setOpen(false) },
-    },
-    {
       id: 'cmd:reload', label: 'Reload Page', sub: 'Reload',
       icon: <RotateCcw size={14} />,
       action: () => { window.location.reload() },
     },
-  ], [toggleSettings, toggleLeft, toggleRight, setOpen])
+  ], [toggleSettings, toggleLeft, setOpen])
 
   // Vault file items
   const fileItems: PaletteItem[] = useMemo(() => {

@@ -1,4 +1,4 @@
-import { Monitor, Settings, Terminal, PanelLeft, PanelRight, Type, Bot, ScrollText } from 'lucide-react'
+import { Monitor, Settings, Terminal, PanelLeft, Type, Bot, ScrollText } from 'lucide-react'
 import { useUIStore } from '@/stores/uiStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useBotStore } from '@/stores/botStore'
@@ -10,9 +10,9 @@ import VaultTabs from './VaultTabs'
 export default function TopBar() {
   const {
     graphMode, centerTab,
-    leftPanelCollapsed, rightPanelCollapsed,
+    leftPanelCollapsed,
     setGraphMode, setCenterTab,
-    toggleLeftPanel, toggleRightPanel,
+    toggleLeftPanel,
     toggleSettingsPanel,
   } = useUIStore()
   const { toggleNodeLabels } = useSettingsStore()
@@ -159,16 +159,6 @@ export default function TopBar() {
           aria-label="Toggle left panel"
         >
           <PanelLeft size={14} />
-        </button>
-
-        <button
-          onClick={toggleRightPanel}
-          className={cn('flex items-center justify-center w-7 h-7 rounded transition-colors', 'hover:bg-[var(--color-bg-hover)]')}
-          style={{ color: rightPanelCollapsed ? 'var(--color-text-muted)' : 'var(--color-text-primary)' }}
-          title={rightPanelCollapsed ? 'Open right panel' : 'Close right panel'}
-          aria-label="Toggle right panel"
-        >
-          <PanelRight size={14} />
         </button>
 
       </div>

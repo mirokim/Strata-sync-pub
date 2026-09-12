@@ -335,67 +335,6 @@ export default function GraphPanel() {
           )}
         </div>
 
-        {/* AI analysis button — always shown (node selected: node-centered / none: entire project) */}
-        <div style={{ position: 'relative' }}>
-          <button
-            onClick={handleAnalyze}
-            onMouseEnter={() => setShowRagPreview(true)}
-            onMouseLeave={() => setShowRagPreview(false)}
-            disabled={analysis?.loading}
-            style={{
-              ...FLOAT_BTN_STYLE,
-              color: selectedNodeId ? 'var(--color-accent)' : 'var(--color-text-secondary)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              fontSize: 11,
-              padding: '5px 10px',
-              opacity: analysis?.loading ? 0.6 : 1,
-            }}
-            title={selectedNodeId
-              ? `Analyze documents connected to "${selectedName}" node with AI`
-              : 'Analyze entire project documents with AI (hub node based)'
-            }
-          >
-            {analysis?.loading
-              ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />
-              : <Sparkles size={11} />
-            }
-            {selectedNodeId ? 'AI Analysis' : 'AI Full Analysis'}
-          </button>
-
-          {/* RAG context preview */}
-          {showRagPreview && !analysis?.loading && (() => {
-            const previewIds = selectedNodeId
-              ? getBfsContextDocIds(selectedNodeId)
-              : getGlobalContextDocIds(35, 4)
-            const previewDocs = previewIds
-              .map(id => loadedDocuments?.find(d => d.id === id))
-              .filter(Boolean)
-            if (previewDocs.length === 0) return null
-            return (
-              <div style={{
-                position: 'absolute', bottom: '100%', left: 0, marginBottom: 4,
-                background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)',
-                borderRadius: 4, padding: '6px 8px', zIndex: 60,
-                boxShadow: '0 4px 16px rgba(0,0,0,0.4)', minWidth: 200, maxWidth: 280,
-                pointerEvents: 'none',
-              }}>
-                <div style={{ fontSize: 9, color: 'var(--color-text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                  RAG Context ({previewDocs.length})
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 180, overflowY: 'auto' }}>
-                  {previewDocs.map(d => (
-                    <div key={d!.id} style={{ fontSize: 10, color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {d!.filename.replace(/\.md$/i, '')}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )
-          })()}
-        </div>
-
         {/* Vault insight button */}
         <button
           onClick={() => setShowInsights(v => !v)}

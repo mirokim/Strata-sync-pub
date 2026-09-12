@@ -9,10 +9,9 @@
 import { useState } from 'react'
 import {
   X, BarChart2, Trash2,
-  Settings, Cpu, GitMerge, Keyboard, Info,
-  Layers, Clock,
-  Users, Tag, Download, Bot, Database, Search, Fish, Coins, Send,
-  Link2, HardDrive, Sparkles, Cloud,
+  Settings, Keyboard, Info, Clock,
+  Tag, Download, Bot, Fish, Send,
+  HardDrive, Cloud, Plug,
 } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
@@ -39,6 +38,7 @@ import JiraDispatchTab from './tabs/JiraDispatchTab'
 import ConfluencePublishTab from './tabs/ConfluencePublishTab'
 import CronJobTab from './tabs/CronJobTab'
 import ServerTab from './tabs/ServerTab'
+import McpTab from './tabs/McpTab'
 import { isWebMode } from '@/web/config'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -47,7 +47,7 @@ type SettingsTab =
   | 'stats' | 'trash'
   | 'general' | 'ai' | 'search' | 'vector-embed' | 'personas' | 'debate' | 'shortcuts' | 'project' | 'tags'
   | 'confluence' | 'confluence-publish' | 'slack-bot' | 'jira' | 'jira-dispatch' | 'vault-manager' | 'mirofish'
-  | 'edit-agent' | 'cron-jobs' | 'usage' | 'team-sync' | 'server'
+  | 'edit-agent' | 'cron-jobs' | 'usage' | 'team-sync' | 'server' | 'mcp'
   | 'about'
 
 type NavItem = { id: SettingsTab; icon: React.ElementType; label: string }
@@ -78,9 +78,9 @@ const NAV: NavGroup[] = [
     items: [
       { id: 'stats',         icon: BarChart2, label: 'Statistics' },
       { id: 'server',        icon: Cloud,     label: 'Server' },
+      { id: 'mcp',           icon: Plug,      label: 'MCP' },
       { id: 'vault-manager', icon: HardDrive, label: 'Vault Manager' },
       { id: 'team-sync',     icon: Cloud,     label: 'Team Sync' },
-      { id: 'usage',         icon: Coins,     label: 'Token Usage' },
       { id: 'trash',         icon: Trash2,    label: 'Trash' },
     ],
   },
@@ -88,13 +88,7 @@ const NAV: NavGroup[] = [
     label: 'Settings',
     items: [
       { id: 'general',   icon: Settings,  label: 'General' },
-      { id: 'ai',        icon: Cpu,       label: 'AI Settings' },
-      { id: 'search',       icon: Search,    label: 'Search Tuning' },
-      { id: 'vector-embed', icon: Sparkles,  label: 'Vector Embed' },
       { id: 'tags',      icon: Tag,       label: 'Tags' },
-      { id: 'personas',  icon: Users,     label: 'Personas' },
-      { id: 'project',   icon: Layers,    label: 'Project' },
-      { id: 'debate',    icon: GitMerge,  label: 'Debate' },
       { id: 'shortcuts', icon: Keyboard,  label: 'Shortcuts' },
     ],
   },
@@ -146,6 +140,7 @@ function renderTabContent(tab: SettingsTab) {
     case 'vault-manager': return <VaultManagerTab />
     case 'team-sync':     return <TeamSyncTab />
     case 'server':        return <ServerTab />
+    case 'mcp':           return <McpTab />
     case 'mirofish':   return <MirofishTab />
     case 'cron-jobs':  return <CronJobTab />
     case 'usage':      return <UsageTab />
@@ -159,7 +154,7 @@ function renderTabContent(tab: SettingsTab) {
 export default function SettingsPanel() {
   const { resetPersonaModels } = useSettingsStore()
   const setCenterTab = useUIStore(s => s.setCenterTab)
-  const [activeTab, setActiveTab] = useState<SettingsTab>('ai')
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general')
   const nav = visibleNav()
 
   const activeLabel = ALL_ITEMS.find(i => i.id === activeTab)?.label ?? ''

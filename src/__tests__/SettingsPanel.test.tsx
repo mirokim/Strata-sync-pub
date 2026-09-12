@@ -60,46 +60,28 @@ describe('SettingsPanel', () => {
     expect(screen.getByTestId('settings-panel')).toBeInTheDocument()
   })
 
-  // ── Persona rows ───────────────────────────────────────────────────────────
+  // ── MCP tab ────────────────────────────────────────────────────────────────
 
-  it('renders 5 persona rows', () => {
+  it('MCP tab hands out the Claude Code command and the JSON config for the connected server', () => {
+    localStorage.setItem('strata-sync-web-config', JSON.stringify({ url: 'https://strata.example', token: 'tok', author: 'Kim', auth: 'token' }))
     resetStore(true)
     render(<SettingsPanel />)
-    const rows = screen.getAllByTestId(/^persona-row-/)
-    expect(rows).toHaveLength(5)
+    fireEvent.click(screen.getByText('MCP'))
+    expect(screen.getByTestId('mcp-url')).toHaveTextContent('https://strata.example/mcp')
+    expect(screen.getByTestId('snippet-claude-code')).toHaveTextContent('claude mcp add --transport http strata https://strata.example/mcp --header "Authorization: Bearer <team token>"')
+    expect(screen.getByTestId('snippet-json')).toHaveTextContent('"url": "https://strata.example/mcp"')
+    expect(screen.getByText('vault_search')).toBeInTheDocument()
+    localStorage.removeItem('strata-sync-web-config')
   })
 
-  it('renders a model select for each persona', () => {
+  it('MCP tab drops the token header once the server has Google sign-in', () => {
+    localStorage.setItem('strata-sync-web-config', JSON.stringify({ url: 'https://strata.example', token: '', author: 'Kim', auth: 'oauth' }))
     resetStore(true)
     render(<SettingsPanel />)
-    const selects = screen.getAllByTestId(/^model-select-/)
-    expect(selects).toHaveLength(5)
-  })
-
-  it('shows default model for chief_director', () => {
-    resetStore(true)
-    render(<SettingsPanel />)
-    const select = screen.getByTestId('model-select-chief_director') as HTMLSelectElement
-    expect(select.value).toBe(DEFAULT_PERSONA_MODELS.chief_director)
-  })
-
-  it('shows default model for art_director', () => {
-    resetStore(true)
-    render(<SettingsPanel />)
-    const select = screen.getByTestId('model-select-art_director') as HTMLSelectElement
-    expect(select.value).toBe(DEFAULT_PERSONA_MODELS.art_director)
-  })
-
-  // ── Interactions ───────────────────────────────────────────────────────────
-
-  it('changing a model select updates settingsStore', () => {
-    resetStore(true)
-    render(<SettingsPanel />)
-    const select = screen.getByTestId('model-select-chief_director') as HTMLSelectElement
-    fireEvent.change(select, { target: { value: 'gpt-4o' } })
-
-    const { personaModels } = useSettingsStore.getState()
-    expect(personaModels.chief_director).toBe('gpt-4o')
+    fireEvent.click(screen.getByText('MCP'))
+    expect(screen.getByTestId('snippet-claude-code')).toHaveTextContent('claude mcp add --transport http strata https://strata.example/mcp')
+    expect(screen.getByTestId('snippet-claude-code')).not.toHaveTextContent('Authorization')
+    localStorage.removeItem('strata-sync-web-config')
   })
 
   it('clicking reset button restores defaults', () => {
@@ -131,30 +113,19 @@ describe('SettingsPanel', () => {
 
   // ── Content ────────────────────────────────────────────────────────────────
 
-  it('shows all 5 speaker labels', () => {
-    resetStore(true)
-    render(<SettingsPanel />)
-    // Labels from SPEAKER_CONFIG: STRATA BOT, Art, Design, Level, Tech
-    expect(screen.getByText('STRATA BOT')).toBeInTheDocument()
-    expect(screen.getByText('Art')).toBeInTheDocument()
-    expect(screen.getByText('Design')).toBeInTheDocument()
-    expect(screen.getByText('Level')).toBeInTheDocument()
-    expect(screen.getByText('Tech')).toBeInTheDocument()
-  })
-
   // ── VaultSelector section (in 'General' tab) ─────────────────────────────
 
   it('renders the vault section after switching to General tab', () => {
     resetStore(true)
     render(<SettingsPanel />)
-    fireEvent.click(screen.getByText('General'))
+    fireEvent.click(screen.getAllByText('General')[0])
     expect(screen.getByTestId('vault-section')).toBeInTheDocument()
   })
 
   it('renders the vault-selector within the General tab', () => {
     resetStore(true)
     render(<SettingsPanel />)
-    fireEvent.click(screen.getByText('General'))
+    fireEvent.click(screen.getAllByText('General')[0])
     expect(screen.getByTestId('vault-selector')).toBeInTheDocument()
   })
 
@@ -168,7 +139,7 @@ describe('SettingsPanel', () => {
     try {
       resetStore(true)
       render(<SettingsPanel />)
-      fireEvent.click(screen.getByText('General'))
+      fireEvent.click(screen.getAllByText('General')[0])
       expect(screen.getByTestId('vault-select-btn')).toBeInTheDocument()
     } finally {
       ;(window as any).vaultAPI = prev
@@ -184,10 +155,11 @@ describe('SettingsPanel', () => {
       resetStore(true)
       render(<SettingsPanel />)
       expect(screen.getByText('Server')).toBeInTheDocument()
-      for (const hidden of ['Cron Jobs', 'Slack Bot', 'Team Sync', 'Vault Manager', 'MiroFish', 'Edit Agent', 'Jira Import', 'Trash']) {
+      expect(screen.getByText('MCP')).toBeInTheDocument()
+      for (const hidden of ['Cron Jobs', 'Slack Bot', 'Team Sync', 'Vault Manager', 'MiroFish', 'Edit Agent', 'Jira Import', 'Trash', 'AI Settings', 'Personas', 'Token Usage']) {
         expect(screen.queryByText(hidden)).toBeNull()
       }
-      expect(screen.getAllByText('AI Settings').length).toBeGreaterThan(0)
+      expect(screen.getAllByText('General').length).toBeGreaterThan(0)
     } finally {
       ;(window as any).electronAPI = prevElectron
     }

@@ -1,88 +1,57 @@
 /**
- * Bottom status bar — shows real-time token usage and estimated USD cost.
- * Always visible; shows live counts even at zero.
+ * Bottom status bar — where the vault lives and who you are to it: the team server, the sync
+ * state and the author name (web), or the vault folder (desktop).
  */
-import { useUsageStore } from '@/stores/usageStore'
-import { formatTokens, formatCost } from '@/lib/formatUtils'
-import { RotateCcw, Coins } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Cloud, CloudOff, FolderOpen } from 'lucide-react'
+import { useVaultStore } from '@/stores/vaultStore'
+
+function relative(ms: number | null): string {
+  if (!ms) return 'never'
+  const s = Math.floor((Date.now() - ms) / 1000)
+  if (s < 5) return 'just now'
+  if (s < 60) return `${s}s ago`
+  const m = Math.floor(s / 60)
+  return m < 60 ? `${m}m ago` : `${Math.floor(m / 60)}h ago`
+}
 
 export default function StatusBar() {
-  const totalInputTokens  = useUsageStore(s => s.totalInputTokens)
-  const totalOutputTokens = useUsageStore(s => s.totalOutputTokens)
-  const totalCostUsd      = useUsageStore(s => s.totalCostUsd)
-  const resetSession      = useUsageStore(s => s.resetSession)
+  const vaultPath = useVaultStore(s => s.vaultPath)
+  const [sync, setSync] = useState<TeamSyncState | null>(null)
+
+  useEffect(() => {
+    const api = window.syncAPI
+    if (!api) return
+    let cancelled = false
+    api.getState().then(s => { if (!cancelled) setSync(s) }).catch(() => {})
+    const off = api.onStatus(s => setSync(s))
+    return () => { cancelled = true; off() }
+  }, [])
+
+  const remote = sync?.config.enabled ? sync : null
+  const host = remote ? remote.config.url.replace(/^https?:\/\//, '') : null
 
   return (
     <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: 0,
-      padding: '0 12px',
-      background: 'var(--color-bg-secondary)',
-      borderTop: '1px solid var(--color-border)',
-      fontSize: 11,
-      color: 'var(--color-text-muted)',
-      userSelect: 'none',
-      height: 26,
-      flexShrink: 0,
-    }}>
-      {/* Spacer */}
+      display: 'flex', alignItems: 'center', gap: 10, padding: '0 12px',
+      background: 'var(--color-bg-secondary)', borderTop: '1px solid var(--color-border)',
+      fontSize: 11, color: 'var(--color-text-muted)', userSelect: 'none', height: 26, flexShrink: 0,
+    }} data-testid="status-bar">
+      {remote ? (
+        <>
+          {remote.status.lastError ? <CloudOff size={11} color="var(--color-error)" /> : <Cloud size={11} color="var(--color-accent)" />}
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={remote.config.url}>{host}</span>
+          <span style={{ opacity: 0.4 }}>·</span>
+          <span>{remote.status.inFlight ? 'syncing…' : remote.status.lastError ? remote.status.lastError : `synced ${relative(remote.status.lastSyncAt)}`}</span>
+          {remote.config.author && (<><span style={{ opacity: 0.4 }}>·</span><span>{remote.config.author}</span></>)}
+        </>
+      ) : vaultPath ? (
+        <>
+          <FolderOpen size={11} />
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={vaultPath}>{vaultPath}</span>
+        </>
+      ) : null}
       <div style={{ flex: 1 }} />
-
-      {/* Token + cost summary */}
-      <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        {/* Input tokens */}
-        <span style={{ display: 'flex', alignItems: 'center', gap: 3 }} title="Input tokens">
-          <span style={{ opacity: 0.45, fontSize: 10 }}>IN</span>
-          <span style={{ color: totalInputTokens > 0 ? '#94a3b8' : 'rgba(148,163,184,0.35)' }}>
-            {formatTokens(totalInputTokens)}
-          </span>
-        </span>
-
-        <span style={{ opacity: 0.2 }}>·</span>
-
-        {/* Output tokens */}
-        <span style={{ display: 'flex', alignItems: 'center', gap: 3 }} title="Output tokens">
-          <span style={{ opacity: 0.45, fontSize: 10 }}>OUT</span>
-          <span style={{ color: totalOutputTokens > 0 ? '#94a3b8' : 'rgba(148,163,184,0.35)' }}>
-            {formatTokens(totalOutputTokens)}
-          </span>
-        </span>
-
-        <span style={{ opacity: 0.2 }}>·</span>
-
-        {/* Cost */}
-        <span style={{ display: 'flex', alignItems: 'center', gap: 3 }} title="Estimated cost (USD)">
-          <Coins size={10} style={{ opacity: 0.45 }} />
-          <span style={{
-            color: totalCostUsd > 0 ? '#f59e0b' : 'rgba(245,158,11,0.35)',
-            fontWeight: totalCostUsd > 0 ? 600 : 400,
-          }}>
-            {formatCost(totalCostUsd)}
-          </span>
-        </span>
-
-        {/* Reset */}
-        {(totalInputTokens > 0 || totalOutputTokens > 0) && (
-          <button
-            onClick={resetSession}
-            title="Reset session tokens"
-            aria-label="Reset session tokens"
-            style={{
-              display: 'flex', alignItems: 'center',
-              padding: '1px 4px', borderRadius: 3, border: 'none',
-              background: 'transparent',
-              color: 'rgba(148,163,184,0.4)',
-              cursor: 'pointer', fontSize: 10,
-              transition: 'color 0.15s',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.color = '#94a3b8')}
-            onMouseLeave={e => (e.currentTarget.style.color = 'rgba(148,163,184,0.4)')}
-          >
-            <RotateCcw size={9} />
-          </button>
-        )}
-      </span>
     </div>
   )
 }

@@ -994,31 +994,6 @@ export default function MarkdownEditor() {
                 </button>
           )}
 
-          {!isLocked && !isAddingTag && (
-            <>
-              <button
-                onClick={handleSuggestTags}
-                disabled={isSuggestingTags}
-                style={{ display: 'flex', alignItems: 'center', background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: isSuggestingTags ? 'default' : 'pointer', padding: '1px 4px', borderRadius: 3, transition: 'color 0.1s', opacity: isSuggestingTags ? 0.5 : 1 }}
-                onMouseEnter={e => { if (!isSuggestingTags) e.currentTarget.style.color = 'var(--color-accent)' }}
-                onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-text-muted)' }}
-                title="AI tag suggestions"
-              >
-                {isSuggestingTags ? <Loader2 size={10} /> : <Wand2 size={10} />}
-              </button>
-              <button
-                onClick={handleSuggestSpeaker}
-                disabled={isSuggestingSpeaker}
-                style={{ display: 'flex', alignItems: 'center', gap: 2, background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: isSuggestingSpeaker ? 'default' : 'pointer', padding: '1px 4px', borderRadius: 3, transition: 'color 0.1s', opacity: isSuggestingSpeaker ? 0.5 : 1, fontSize: 10 }}
-                onMouseEnter={e => { if (!isSuggestingSpeaker) e.currentTarget.style.color = 'var(--color-accent)' }}
-                onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-text-muted)' }}
-                title="AI persona suggestion"
-              >
-                {isSuggestingSpeaker ? <Loader2 size={10} /> : '👤'}
-              </button>
-            </>
-          )}
-
           {!isLocked && previousTags !== null && (
             <button
               onClick={handleUndoTags}
