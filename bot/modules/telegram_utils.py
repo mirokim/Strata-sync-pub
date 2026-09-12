@@ -138,6 +138,10 @@ def parse_persona_command(text: str) -> tuple[str, str]:
         query = " ".join(parts[1:]) if len(parts) > 1 else ""
         return "__search__", query
 
+    if cmd in ("/propose", "/제안", "/기록"):
+        body = " ".join(parts[1:]) if len(parts) > 1 else ""
+        return "__propose__", body
+
     if cmd in ("/help", "/도움"):
         return "__help__", ""
 

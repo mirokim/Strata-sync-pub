@@ -77,6 +77,13 @@ class TestParsePersonaCommand:
         assert tag == "__debate__"
         assert query == "PvP 밸런스"
 
+    def test_propose_command(self):
+        tag, body = parse_persona_command("/propose 전투 노트 | 적은 공격 전에 예고 동작을 해야 한다")
+        assert tag == "__propose__"
+        assert body == "전투 노트 | 적은 공격 전에 예고 동작을 해야 한다"
+        tag, body = parse_persona_command("/기록")
+        assert (tag, body) == ("__propose__", "")
+
     def test_help_command(self):
         tag, query = parse_persona_command("/help")
         assert tag == "__help__"

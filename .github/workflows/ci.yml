@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: App · MCP · Electron · Worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            mcp/package-lock.json
+            cloud/package-lock.json
+
+      - name: Install
+        run: |
+          npm ci --no-audit --no-fund
+          npm ci --no-audit --no-fund --prefix mcp
+          npm ci --no-audit --no-fund --prefix cloud
+
+      - name: Type-check
+        run: |
+          npx tsc -p tsconfig.json
+          npx tsc --noEmit -p mcp/tsconfig.json
+          npm run typecheck --prefix cloud
+
+      - name: Unit tests (app, MCP, Worker protocol, Electron sync)
+        run: npm run test:all
+
+      - name: Build renderer
+        run: npx vite build
+
+      - name: Build MCP server + vault lint self-check
+        # The CLI runs over the lint fixture vault written to disk. The fixture deliberately contains
+        # errors, so `--fail-on error` must exit 1 — this proves the CI gate itself works.
+        run: |
+          npm run build --prefix mcp
+          node mcp/scripts/fixture-vault.mjs "$RUNNER_TEMP/lint-fixture"
+          if node mcp/dist/src/cli/lint.js --vault "$RUNNER_TEMP/lint-fixture" --format md --fail-on error --no-snapshot > lint-report.md; then
+            echo "expected the fixture vault to fail the lint" && exit 1
+          fi
+          head -20 lint-report.md
+
+      - name: Worker bundle (offline dry run)
+        working-directory: cloud
+        run: npx wrangler deploy --dry-run --outdir dist-dry
+
+  bot:
+    name: Slack/Telegram bot
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: bot/requirements.txt
+      - name: Install
+        working-directory: bot
+        run: |
+          pip install -r requirements.txt
+          pip install pytest
+      - name: Compile all Python
+        run: python -m compileall -q bot tools scripts backend
+      - name: Bot tests
+        working-directory: bot
+        run: python -m pytest tests -q

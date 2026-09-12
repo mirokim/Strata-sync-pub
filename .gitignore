@@ -64,3 +64,4 @@ vector_cache.json
 # Cloudflare local secrets
 cloud/.dev.vars
 cloud/.wrangler/
+cloud/dist-dry/

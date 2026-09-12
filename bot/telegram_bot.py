@@ -18,6 +18,7 @@ Commands:
     /search keyword         — Vault search
     /debate topic           — Multi-persona debate
     /mirofish topic         — MiroFish simulation
+    /propose title | body   — Record an agent proposal (_agent/)
     /help                   — Help
 """
 import json
@@ -44,7 +45,7 @@ from modules.telegram_utils import (
 from modules.claude_client import ClaudeClient
 from modules.persona_config import resolve_persona, PERSONA_ALIASES
 from modules.rag_simple import search_vault as rag_search, RagResult
-from modules.rag_electron import is_electron_alive, search_via_electron as electron_search, ask_via_electron as electron_ask
+from modules.rag_electron import is_electron_alive, search_via_electron as electron_search, ask_via_electron as electron_ask, propose_via_electron
 from modules.api_keys import get_anthropic_key
 from modules.web_search import search_web, build_web_context
 from modules.constants import DEFAULT_SONNET_MODEL
@@ -78,6 +79,7 @@ HELP_TEXT = """*Strata Sync Bot* — Vault-based AI Assistant
 `/search keyword` — Search vault documents
 `/debate topic` — Multi-persona debate
 `/mirofish topic` — MiroFish simulation
+`/propose title | body` — Record a proposal in the vault's _agent/ folder (a person promotes it in Strata Sync)
 `/help` — This help message
 
 *Personas:*
@@ -236,6 +238,27 @@ def handle_message(message: dict, cfg: dict, token: str) -> None:
         send_typing(token, chat_id)
         result = handle_search(query, cfg)
         send_message(token, chat_id, result, reply_to=message_id)
+        return
+
+    # Proposal → vault _agent/ via the Electron RAG API
+    if persona_tag == "__propose__":
+        if "|" in query:
+            title, body = [part.strip() for part in query.split("|", 1)]
+        else:
+            title, body = query[:60].strip(), query.strip()
+        if not title or not body:
+            send_message(token, chat_id, "Usage: `/propose title | body` — records a proposal the team can promote in Strata Sync.", reply_to=message_id)
+            return
+        author = (message.get("from") or {}).get("username") or (message.get("from") or {}).get("first_name") or "telegram"
+        try:
+            result = propose_via_electron(title, body, source=f"telegram:{author}")
+        except Exception as e:
+            send_message(token, chat_id, f"❌ Could not record the proposal: {e}", reply_to=message_id)
+            return
+        if not result or not result.get("ok"):
+            send_message(token, chat_id, "❌ Strata Sync is not running, so the proposal could not be recorded.", reply_to=message_id)
+            return
+        send_message(token, chat_id, f"📝 Proposal recorded as `{result.get('path')}` — promote it in Strata Sync when you agree with it.", reply_to=message_id)
         return
 
     # Debate
