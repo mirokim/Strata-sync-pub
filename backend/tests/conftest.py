@@ -29,8 +29,8 @@ def isolated_chroma(monkeypatch):
     """
     from backend.services import chroma_service as cs_module
 
-    # EphemeralClient은 프로세스 내에서 상태를 공유하므로 테스트마다 고유 컬렉션명 사용.
-    # clear()가 settings.collection_name을 지우므로 이름을 여기서 맞춰야 한다.
+    # EphemeralClient shares state within the process, so use a unique collection name per test.
+    # clear() deletes settings.collection_name, so the name must be set to match here.
     monkeypatch.setattr(settings, "collection_name", f"test_vault_{uuid.uuid4().hex[:8]}")
 
     # Fresh service instance per test
@@ -38,7 +38,7 @@ def isolated_chroma(monkeypatch):
     fresh_service = ChromaService()
 
     # Patch _ensure_ready to use EphemeralClient + DeterministicEF.
-    # 실제 구현과 동일한 가드 — clear() 후 _collection이 None이면 재생성해야 한다.
+    # Same guard as the real implementation — _collection must be recreated if it is None after clear().
     def _mock_ensure_ready(self):
         if self._client is not None and self._collection is not None:
             return

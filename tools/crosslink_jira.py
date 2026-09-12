@@ -2,12 +2,12 @@
 """
 crosslink_jira.py — Jira ↔ Active vault cross-link injection
 
-Jira 파일(Epic, Release, attachments_md)과 Active 볼트 간의 wikilink를 생성하여
-BFS 도달성을 확보한다.
+Creates wikilinks between Jira files (Epic, Release, attachments_md) and the Active vault
+to ensure BFS reachability.
 
 Usage:
-  python crosslink_jira.py [vault_path] --dry-run   # 미리보기
-  python crosslink_jira.py [vault_path] --apply      # 실제 반영
+  python crosslink_jira.py [vault_path] --dry-run   # Preview
+  python crosslink_jira.py [vault_path] --apply      # Apply for real
 """
 
 import io
@@ -17,7 +17,7 @@ import argparse
 from pathlib import Path
 from collections import defaultdict
 
-# Windows 콘솔 UTF-8 출력 강제
+# Force UTF-8 output on the Windows console
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
@@ -29,17 +29,17 @@ SKIP_TERMS = frozenset({
     '필요', '처리', '예정', '참고', '기타', '기능', '상태', '현황',
 })
 
-# Confluence ID 패턴: 숫자_로 시작하는 접두사
+# Confluence ID pattern: prefix starting with digits_
 CONFLUENCE_ID_RE = re.compile(r'^\d{6,}_')
 
 # Separate frontmatter
 def split_frontmatter(content: str) -> tuple:
-    """(frontmatter_str, body_str) 반환. frontmatter 없으면 ('', content)."""
+    """Returns (frontmatter_str, body_str). Without frontmatter returns ('', content)."""
     if content.startswith('---'):
         end = content.find('\n---\n', 4)
         if end != -1:
             return content[:end + 5], content[end + 5:]
-        # 파일 끝에 --- 만 있는 경우
+        # Case where only --- sits at the end of the file
         if content.rstrip().endswith('---') and content.count('---') >= 2:
             end2 = content.find('---', 4)
             return content[:end2 + 3] + '\n', content[end2 + 3:]
@@ -47,7 +47,7 @@ def split_frontmatter(content: str) -> tuple:
 
 
 def parse_related(fm: str) -> list:
-    """frontmatter에서 related: [] 값 파싱."""
+    """Parse the related: [] value from the frontmatter."""
     m = re.search(r'related:\s*\[([^\]]*)\]', fm)
     if not m:
         return []
@@ -58,7 +58,7 @@ def parse_related(fm: str) -> list:
 
 
 def update_related_fm(fm: str, new_stems: list) -> str:
-    """frontmatter의 related 배열에 새 항목 추가."""
+    """Add new entries to the related array in the frontmatter."""
     if not new_stems:
         return fm
     existing = parse_related(fm)
@@ -70,24 +70,24 @@ def update_related_fm(fm: str, new_stems: list) -> str:
     new_val = ', '.join(merged)
     if re.search(r'related:\s*\[', fm):
         return re.sub(r'related:\s*\[[^\]]*\]', f'related: [{new_val}]', fm)
-    # related 필드가 없으면 tags 뒤에 삽입
+    # If there is no related field, insert after tags
     if 'tags:' in fm:
         return re.sub(r'(tags:\s*\[[^\]]*\]\n)', rf'\1related: [{new_val}]\n', fm)
-    # Last resort: --- 직전
+    # Last resort: right before ---
     return fm.rstrip().rstrip('-').rstrip() + f'\nrelated: [{new_val}]\n---\n'
 
 
 # ── Keyword extraction ────────────────────────────────────────────────────────
 
 def extract_tokens_from_stem(stem: str) -> list:
-    """파일 stem에서 의미 있는 토큰 추출.
-    Confluence ID 접두사 제거 후, 언더스코어/공백/특수문자 기준 분리."""
-    # Confluence ID 제거
+    """Extract meaningful tokens from a file stem.
+    Strips the Confluence ID prefix, then splits on underscores/whitespace/special characters."""
+    # Strip the Confluence ID
     clean = CONFLUENCE_ID_RE.sub('', stem)
-    # 날짜 패턴 제거 (2024_03_11, 20240311 등)
+    # Strip date patterns (2024_03_11, 20240311, etc.)
     clean = re.sub(r'\b20\d{2}[_\-.]?\d{2}[_\-.]?\d{2}\b', '', clean)
     clean = re.sub(r'\b20\d{2}년?\b', '', clean)
-    # 대괄호 내용 보존하면서 괄호 제거
+    # Remove brackets while keeping their contents
     clean = clean.replace('[', ' ').replace(']', ' ')
     clean = clean.replace('(', ' ').replace(')', ' ')
     # Split by delimiters
@@ -104,11 +104,11 @@ def extract_tokens_from_stem(stem: str) -> list:
 
 
 def build_active_index(active_dir: Path) -> tuple:
-    """active 볼트에서 (stem→tokens, token→stems) 인덱스 구축.
+    """Build the (stem→tokens, token→stems) index from the active vault.
 
     Returns:
-        stem_tokens: dict[str, list[str]] — 각 stem의 토큰 목록
-        token_stems: dict[str, set[str]] — 각 토큰이 등장하는 stem 집합
+        stem_tokens: dict[str, list[str]] — token list for each stem
+        token_stems: dict[str, set[str]] — set of stems each token appears in
         stem_title:  dict[str, str]      — stem → title
     """
     stem_tokens = {}
@@ -125,7 +125,7 @@ def build_active_index(active_dir: Path) -> tuple:
         stem_tokens[stem] = tokens
         for t in tokens:
             token_stems[t].add(stem)
-        # title 추출
+        # Extract title
         try:
             head = md.read_text(encoding='utf-8', errors='replace')[:500]
             m = re.search(r'title:\s*"?([^"\n]+)"?', head)
@@ -136,21 +136,21 @@ def build_active_index(active_dir: Path) -> tuple:
     return stem_tokens, token_stems, stem_title
 
 
-# ── Jira 파일 매칭 ─────────────────────────────────────────────────────
+# ── Jira file matching ──────────────────────────────────────────────────
 
 def score_matches(jira_content: str, jira_title: str,
                   stem_tokens: dict, token_stems: dict) -> list:
-    """Jira 파일 본문과 active 파일 간 매칭 점수 계산.
+    """Compute matching scores between a Jira file body and active files.
 
-    Returns: [(stem, score), ...] 내림차순 정렬
+    Returns: [(stem, score), ...] sorted in descending order
     """
     scores = defaultdict(float)
 
-    # 본문 텍스트 (개요, 설명, 전체)
+    # Body text (overview, description, everything)
     body_lower = jira_content.lower()
     title_lower = jira_title.lower()
 
-    # 모든 active 토큰에 대해 검색
+    # Search for every active token
     checked_tokens = set()
     for token in token_stems:
         if token in checked_tokens:
@@ -160,26 +160,26 @@ def score_matches(jira_content: str, jira_title: str,
         checked_tokens.add(token)
 
         t_lower = token.lower()
-        # 본문 매칭
+        # Body match
         body_count = body_lower.count(t_lower)
         if body_count == 0:
             continue
 
-        # 타이틀 매칭 보너스
+        # Title match bonus
         title_bonus = 3.0 if t_lower in title_lower else 0.0
 
         for stem in token_stems[token]:
-            # 기본: 본문 출현 (cap at 5)
+            # Base: body occurrences (cap at 5)
             scores[stem] += min(body_count, 5) * 1.0 + title_bonus
 
-    # stem 전체 이름 매칭 보너스 (Confluence ID 제거 후)
+    # Full stem name match bonus (after stripping the Confluence ID)
     for stem in stem_tokens:
         clean_stem = CONFLUENCE_ID_RE.sub('', stem).strip('_ ')
         if len(clean_stem) >= 4 and clean_stem.lower() in body_lower:
             scores[stem] += 10.0
 
-    # 최소 2개 토큰 매칭 필터
-    # 토큰 매칭 수 계산
+    # Minimum 2-token match filter
+    # Count token matches
     token_match_count = defaultdict(int)
     for token in token_stems:
         t_lower = token.lower()
@@ -187,7 +187,7 @@ def score_matches(jira_content: str, jira_title: str,
             for stem in token_stems[token]:
                 token_match_count[stem] += 1
 
-    # 2개 미만 토큰 매칭은 제거 (stem 전체 매칭은 예외)
+    # Drop matches with fewer than 2 tokens (full stem matches are exempt)
     filtered = {}
     for stem, score in scores.items():
         clean_stem = CONFLUENCE_ID_RE.sub('', stem).strip('_ ')
@@ -199,34 +199,34 @@ def score_matches(jira_content: str, jira_title: str,
     return ranked
 
 
-# ── 섹션 주입 ──────────────────────────────────────────────────────────
+# ── Section injection ───────────────────────────────────────────────────
 
 def has_section(content: str, heading: str) -> bool:
-    """특정 ## 섹션이 이미 존재하는지 확인."""
+    """Check whether a given ## section already exists."""
     return f'\n{heading}\n' in content or content.startswith(f'{heading}\n')
 
 
 def append_section(content: str, heading: str, links: list) -> str:
-    """파일 끝에 섹션 추가. 이미 있으면 기존 섹션에 링크 추가."""
+    """Append a section at the end of the file. If it exists, add links to the existing section."""
     link_lines = '\n'.join(f'- [[{link}]]' for link in links)
     block = f'\n\n{heading}\n\n{link_lines}\n'
 
     if has_section(content, heading):
-        # 기존 섹션 끝에 추가 (중복 방지)
+        # Append to the end of the existing section (avoid duplicates)
         existing_links = set(re.findall(r'\[\[([^\]]+)\]\]', content))
         new_links = [l for l in links if l not in existing_links]
         if not new_links:
             return content
         add_lines = '\n'.join(f'- [[{l}]]' for l in new_links)
-        # 섹션 위치 찾기
+        # Locate the section
         idx = content.find(f'\n{heading}\n')
         if idx == -1:
             idx = content.find(f'{heading}\n')
-        # 다음 ## 또는 파일 끝 찾기
+        # Find the next ## or the end of the file
         after = idx + len(heading) + 2
         next_section = content.find('\n## ', after)
         if next_section == -1:
-            # 파일 끝에 추가
+            # Append at the end of the file
             return content.rstrip() + '\n' + add_lines + '\n'
         else:
             return content[:next_section] + '\n' + add_lines + content[next_section:]
@@ -234,12 +234,12 @@ def append_section(content: str, heading: str, links: list) -> str:
         return content.rstrip() + block
 
 
-# ── Main 로직 ──────────────────────────────────────────────────────────
+# ── Main logic ──────────────────────────────────────────────────────────
 
 def collect_jira_files(jira_dir: Path) -> list:
-    """Jira 디렉토리에서 모든 MD 파일 수집 (Epic, Release, attachments_md)."""
+    """Collect every MD file from the Jira directory (Epic, Release, attachments_md)."""
     files = []
-    # Epic + Release (루트 레벨)
+    # Epic + Release (root level)
     for md in jira_dir.glob('*.md'):
         if md.name == 'jira_index.md':
             continue
@@ -257,10 +257,10 @@ def run(vault_path: Path, dry_run: bool = True):
     jira_dir = vault_path / 'jira'
 
     if not active_dir.exists():
-        print(f"ERROR: active 디렉토리 없음: {active_dir}")
+        print(f"ERROR: active directory not found: {active_dir}")
         sys.exit(1)
     if not jira_dir.exists():
-        print(f"ERROR: jira 디렉토리 없음: {jira_dir}")
+        print(f"ERROR: jira directory not found: {jira_dir}")
         sys.exit(1)
 
     mode = "DRY-RUN" if dry_run else "APPLY"
@@ -269,17 +269,17 @@ def run(vault_path: Path, dry_run: bool = True):
     print(f"Jira:   {jira_dir}")
     print()
 
-    # 1) Active 인덱스 구축
-    print("Active 볼트 인덱스 구축 중...")
+    # 1) Build the Active index
+    print("Building Active vault index...")
     stem_tokens, token_stems, stem_title = build_active_index(active_dir)
-    print(f"  → {len(stem_tokens)} 파일, {len(token_stems)} 고유 토큰")
+    print(f"  → {len(stem_tokens)} files, {len(token_stems)} unique tokens")
     print()
 
-    # 2) Jira 파일 스캔 & 매칭
+    # 2) Scan & match Jira files
     jira_files = collect_jira_files(jira_dir)
-    print(f"Jira 파일 스캔: {len(jira_files)}개")
+    print(f"Jira files scanned: {len(jira_files)}")
 
-    # 결과 누적
+    # Accumulate results
     jira_to_active = {}   # jira_path → [active_stems]
     active_to_jira = defaultdict(list)  # active_stem → [jira_stems]
 
@@ -298,7 +298,7 @@ def run(vault_path: Path, dry_run: bool = True):
             continue
 
         fm, body = split_frontmatter(content)
-        # title 추출
+        # Extract title
         m_title = re.search(r'title:\s*"?([^"\n]+)"?', fm)
         title = m_title.group(1).strip("'\"") if m_title else jira_md.stem
 
@@ -306,7 +306,7 @@ def run(vault_path: Path, dry_run: bool = True):
         if not ranked:
             continue
 
-        # 상위 10개
+        # Top 10
         top = ranked[:10]
         top_stems = [s for s, _ in top]
 
@@ -314,9 +314,9 @@ def run(vault_path: Path, dry_run: bool = True):
         stats['jira_linked'] += 1
         stats['links_jira_to_active'] += len(top_stems)
 
-        # Reverse mapping (active → jira, max 5는 나중에 적용)
+        # Reverse mapping (active → jira, the max of 5 is applied later)
         jira_stem = jira_md.stem
-        # jira 파일이 attachments_md 안에 있으면 경로 포함
+        # Include the path if the jira file lives in attachments_md
         if jira_md.parent.name == 'attachments_md':
             jira_link = f"jira/attachments_md/{jira_stem}"
         else:
@@ -325,12 +325,12 @@ def run(vault_path: Path, dry_run: bool = True):
         for active_stem in top_stems:
             active_to_jira[active_stem].append((jira_link, jira_stem))
 
-    print(f"  → 매칭된 Jira 파일: {stats['jira_linked']}개")
-    print(f"  → Jira→Active Links: {stats['links_jira_to_active']}개")
+    print(f"  → Matched Jira files: {stats['jira_linked']}")
+    print(f"  → Jira→Active links: {stats['links_jira_to_active']}")
     print()
 
-    # 3) Jira 파일에 ## 관련 문서 주입 + related frontmatter 업데이트
-    print("Jira 파일에 링크 주입 중...")
+    # 3) Inject ## 관련 문서 (related documents) into Jira files + update related frontmatter
+    print("Injecting links into Jira files...")
     for jira_md, active_stems in jira_to_active.items():
         try:
             content = jira_md.read_text(encoding='utf-8', errors='replace')
@@ -339,7 +339,7 @@ def run(vault_path: Path, dry_run: bool = True):
 
         fm, body = split_frontmatter(content)
 
-        # frontmatter related 업데이트
+        # Update frontmatter related
         new_fm = update_related_fm(fm, active_stems)
 
         # ## Add Related Documents section
@@ -355,9 +355,9 @@ def run(vault_path: Path, dry_run: bool = True):
                 jira_md.write_text(new_content, encoding='utf-8')
                 print(f"  [OK]  {jira_md.name}: +{len(active_stems)} links")
 
-    # 4) Active 파일에 ## Jira 관련 역방향 링크 주입
+    # 4) Inject reverse ## Jira 관련 (Jira related) links into Active files
     print()
-    print("Active 파일에 역방향 Jira 링크 주입 중...")
+    print("Injecting reverse Jira links into Active files...")
     for active_stem, jira_links in active_to_jira.items():
         active_md = active_dir / f"{active_stem}.md"
         if not active_md.exists():
@@ -378,7 +378,7 @@ def run(vault_path: Path, dry_run: bool = True):
         except Exception:
             continue
 
-        # 이미 있는 링크 확인
+        # Check existing links
         existing_links = set(re.findall(r'\[\[([^\]]+)\]\]', content))
         new_jira = [l for l in jira_links_unique if l not in existing_links]
         if not new_jira:
@@ -395,7 +395,7 @@ def run(vault_path: Path, dry_run: bool = True):
                 active_md.write_text(new_content, encoding='utf-8')
                 print(f"  [OK]  {active_md.name}: +{len(new_jira)} Jira links")
 
-    # 5) _index.md 업데이트
+    # 5) Update _index.md
     print()
     index_md = active_dir / '_index.md'
     index_updated = False
@@ -412,39 +412,39 @@ def run(vault_path: Path, dry_run: bool = True):
             )
             new_idx = idx_content.rstrip() + jira_section
             if dry_run:
-                print(f"  [DRY] _index.md: Jira 섹션 추가")
+                print(f"  [DRY] _index.md: Jira section added")
             else:
                 index_md.write_text(new_idx, encoding='utf-8')
-                print(f"  [OK]  _index.md: Jira 섹션 추가")
+                print(f"  [OK]  _index.md: Jira section added")
             index_updated = True
         else:
-            print("  _index.md: Jira 링크 이미 존재, 스킵")
+            print("  _index.md: Jira link already exists, skipping")
     else:
-        print(f"  WARNING: _index.md 없음 ({index_md})")
+        print(f"  WARNING: _index.md not found ({index_md})")
 
-    # 6) 요약 출력
+    # 6) Print summary
     print()
     print("=" * 50)
-    print(f"총 Jira 파일 스캔:        {stats['jira_scanned']}")
-    print(f"링크 추가된 Jira 파일:     {stats['jira_linked']}")
-    print(f"Jira→Active 링크 수:      {stats['links_jira_to_active']}")
-    print(f"Active→Jira 링크 수:      {stats['links_active_to_jira']}")
-    print(f"수정된 Active 파일:        {stats['active_files_modified']}")
-    print(f"_index.md 업데이트:        {'예' if index_updated else '아니오'}")
-    print(f"총 주입 Links:              {stats['links_jira_to_active'] + stats['links_active_to_jira']}")
+    print(f"Total Jira files scanned:  {stats['jira_scanned']}")
+    print(f"Jira files with links:     {stats['jira_linked']}")
+    print(f"Jira→Active links:         {stats['links_jira_to_active']}")
+    print(f"Active→Jira links:         {stats['links_active_to_jira']}")
+    print(f"Modified Active files:     {stats['active_files_modified']}")
+    print(f"_index.md updated:         {'yes' if index_updated else 'no'}")
+    print(f"Total injected links:      {stats['links_jira_to_active'] + stats['links_active_to_jira']}")
     print("=" * 50)
 
     if dry_run:
-        print("\n⚠ DRY-RUN 모드: 실제 파일 변경 없음. --apply 로 실행하세요.")
+        print("\n⚠ DRY-RUN mode: no files were changed. Run with --apply to apply.")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Jira ↔ Active 볼트 교차 wikilink 주입'
+        description='Jira ↔ Active vault cross wikilink injection'
     )
     parser.add_argument(
         'vault_path', nargs='?', default='c:/dev2/refined_vault',
-        help='refined_vault 루트 경로 (기본: c:/dev2/refined_vault)'
+        help='refined_vault root path (default: c:/dev2/refined_vault)'
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--dry-run', action='store_true', help='Preview (no file changes)')
@@ -454,7 +454,7 @@ def main():
     vault = Path(args.vault_path)
 
     if not vault.exists():
-        print(f"ERROR: 볼트 경로 없음: {vault}")
+        print(f"ERROR: vault path not found: {vault}")
         sys.exit(1)
 
     run(vault, dry_run=not args.apply)

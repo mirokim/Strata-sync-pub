@@ -102,7 +102,7 @@ function FolderPickerModal({ folders, x, y, onPick, onClose }: FolderPickerProps
         borderBottom: '1px solid var(--color-bg-tertiary)',
         marginBottom: 4,
       }}>
-        이동할 폴더 선택
+        Select destination folder
       </div>
       {folders.map(folder => (
         <button
@@ -127,7 +127,7 @@ function FolderPickerModal({ folders, x, y, onPick, onClose }: FolderPickerProps
           onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
         >
           <Folder size={11} style={{ color: 'var(--color-accent)', flexShrink: 0 }} />
-          {folder || '/ (루트)'}
+          {folder || '/ (root)'}
         </button>
       ))}
     </div>,
@@ -165,7 +165,7 @@ export default function FileTree() {
   // Context menu state
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
 
-  // Folder picker state — set when user clicks "폴더로 이동"
+  // Folder picker state — set when user clicks "Move to folder"
   const [moveTarget, setMoveTarget] = useState<{
     absolutePath: string
     filename: string
@@ -233,7 +233,7 @@ export default function FileTree() {
     const ext = filename.endsWith('.md') ? '.md' : ''
     const base = filename.replace(/\.md$/i, '')
     const copyFilename = `${base} copy${ext}`
-    if (!isValidFilename(copyFilename)) { alert('유효하지 않은 파일명입니다.'); return }
+    if (!isValidFilename(copyFilename)) { alert('Invalid file name.'); return }
     const dir = absolutePath.replace(/[\\/][^\\/]+$/, '')
     const sep = absolutePath.includes('\\') ? '\\' : '/'
     const destPath = `${dir}${sep}${copyFilename}`
@@ -249,12 +249,12 @@ export default function FileTree() {
   }
 
   const handleRename = async (absolutePath: string, filename: string) => {
-    const newName = window.prompt('새 파일 이름:', filename.replace(/\.md$/i, ''))
+    const newName = window.prompt('New file name:', filename.replace(/\.md$/i, ''))
     if (!newName || newName.trim() === '') return
     const newFilename = newName.trim().endsWith('.md')
       ? newName.trim()
       : `${newName.trim()}.md`
-    if (!isValidFilename(newFilename)) { alert('유효하지 않은 파일명입니다.'); return }
+    if (!isValidFilename(newFilename)) { alert('Invalid file name.'); return }
     if (newFilename === filename) return
 
     const oldDoc = loadedDocuments?.find(d => (d as LoadedDocument).absolutePath === absolutePath)
@@ -278,10 +278,10 @@ export default function FileTree() {
   }
 
   const handleDelete = async (absolutePath: string, filename: string) => {
-    const confirmed = window.confirm(`"${filename}" 을(를) 삭제하시겠습니까?\n설정 › 휴지통에서 복원할 수 있습니다.`)
+    const confirmed = window.confirm(`Delete "${filename}"?\nYou can restore it from Settings › Trash.`)
     if (!confirmed) return
     await safeFileOp('delete', async () => {
-      // 삭제 전 내용 백업 → 휴지통 스토어에 보관
+      // Back up the content before deleting → keep it in the trash store
       const content = await window.vaultAPI?.readFile(absolutePath) ?? ''
       const doc = loadedDocuments?.find(d => d.absolutePath === absolutePath)
       pushTrash({
@@ -299,11 +299,11 @@ export default function FileTree() {
 
   const handleCreateFolder = async () => {
     if (!vaultPath || !window.vaultAPI?.createFolder) return
-    const name = window.prompt('새 폴더 이름 (중첩 가능: 부모/자식):')
+    const name = window.prompt('New folder name (nested allowed: parent/child):')
     if (!name || !name.trim()) return
-    // 각 경로 세그먼트 검증 (부모/자식 허용, ../ 차단)
+    // Validate each path segment (parent/child allowed, ../ blocked)
     const segments = name.trim().split(/[/\\]/).filter(Boolean)
-    if (segments.some(s => !isValidFilename(s))) { alert('유효하지 않은 폴더명입니다.'); return }
+    if (segments.some(s => !isValidFilename(s))) { alert('Invalid folder name.'); return }
     const sep = vaultPath.includes('\\') ? '\\' : '/'
     const folderRelPath = name.trim().replace(/[/\\]/g, sep)
     const folderAbsPath = `${vaultPath}${sep}${folderRelPath}`
@@ -356,12 +356,12 @@ export default function FileTree() {
     const existing = new Set(
       (loadedDocuments ?? []).map(d => normalizePath((d as LoadedDocument).absolutePath))
     )
-    let name = '무제'
+    let name = 'Untitled'
     let counter = 1
     let newPath = `${vaultPath}${sep}${name}.md`
     while (existing.has(normalizePath(newPath))) {
       counter++
-      name = `무제 ${counter}`
+      name = `Untitled ${counter}`
       newPath = `${vaultPath}${sep}${name}.md`
     }
     await safeFileOp('newDocument', async () => {
@@ -392,7 +392,7 @@ export default function FileTree() {
       >
         <button
           style={iconBtn(sortBy === 'name')}
-          title={`이름순${sortBy === 'name' ? (sortDir === 'asc' ? ' (오름차순)' : ' (내림차순)') : ''}`}
+          title={`By name${sortBy === 'name' ? (sortDir === 'asc' ? ' (ascending)' : ' (descending)') : ''}`}
           onClick={() => sortBy === 'name' ? toggleSortDir() : setSortBy('name')}
         >
           {sortBy === 'name'
@@ -402,7 +402,7 @@ export default function FileTree() {
 
         <button
           style={iconBtn(sortBy === 'date')}
-          title={`수정일순${sortBy === 'date' ? (sortDir === 'asc' ? ' (오름차순)' : ' (내림차순)') : ''}`}
+          title={`By date${sortBy === 'date' ? (sortDir === 'asc' ? ' (ascending)' : ' (descending)') : ''}`}
           onClick={() => sortBy === 'date' ? toggleSortDir() : setSortBy('date')}
         >
           {sortBy === 'date'
@@ -414,8 +414,8 @@ export default function FileTree() {
 
         <button
           style={iconBtn(expandOverride !== null)}
-          title={expandOverride === true ? '모두 접기' : '모두 펼치기'}
-          aria-label={expandOverride === true ? '모두 접기' : '모두 펼치기'}
+          title={expandOverride === true ? 'Collapse all' : 'Expand all'}
+          aria-label={expandOverride === true ? 'Collapse all' : 'Expand all'}
           onClick={handleExpandCollapseToggle}
         >
           {expandOverride === true ? <ChevronsDownUp size={11} /> : <ChevronsUpDown size={11} />}
@@ -423,8 +423,8 @@ export default function FileTree() {
 
         <button
           style={iconBtn(isVaultLoaded)}
-          title={groupMode === 'folder' ? '태그별 보기로 전환' : '폴더별 보기로 전환'}
-          aria-label={groupMode === 'folder' ? '태그별 보기로 전환' : '폴더별 보기로 전환'}
+          title={groupMode === 'folder' ? 'Switch to tag view' : 'Switch to folder view'}
+          aria-label={groupMode === 'folder' ? 'Switch to tag view' : 'Switch to folder view'}
           onClick={handleGroupModeToggle}
           disabled={!isVaultLoaded}
         >
@@ -435,8 +435,8 @@ export default function FileTree() {
 
         <button
           style={iconBtn()}
-          title={vaultPath ? '새 폴더 만들기' : '볼트를 먼저 선택하세요'}
-          aria-label="새 폴더 만들기"
+          title={vaultPath ? 'Create new folder' : 'Please select a vault first'}
+          aria-label="Create new folder"
           onClick={handleCreateFolder}
           disabled={!vaultPath}
         >
@@ -445,8 +445,8 @@ export default function FileTree() {
 
         <button
           style={iconBtn()}
-          title={vaultPath ? '새 문서 만들기' : '볼트를 먼저 선택하세요'}
-          aria-label="새 문서 만들기"
+          title={vaultPath ? 'Create new document' : 'Please select a vault first'}
+          aria-label="Create new document"
           onClick={handleNewDocument}
           disabled={!vaultPath}
         >
@@ -502,7 +502,7 @@ export default function FileTree() {
 
         {filtered.length === 0 && (
           <div className="px-4 py-6 text-xs text-center" style={{ color: 'var(--color-text-muted)' }}>
-            검색 결과 없음
+            No results found
           </div>
         )}
       </div>
@@ -512,10 +512,10 @@ export default function FileTree() {
         className="px-3 py-2 text-[10px] shrink-0"
         style={{ color: 'var(--color-text-muted)', borderTop: '1px solid var(--color-border)' }}
       >
-        <span>{filtered.length} / {totalCount} 문서</span>
+        <span>{filtered.length} / {totalCount} docs</span>
         {nodes.length > 0 && (
           <span style={{ opacity: 0.6 }}>
-            {' · '}{nodes.length} 노드 · {links.length} 와이어
+            {' · '}{nodes.length} nodes · {links.length} wires
           </span>
         )}
       </div>

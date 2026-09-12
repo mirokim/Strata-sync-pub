@@ -141,9 +141,9 @@ export function getConfig(): McpConfig {
 }
 
 /**
- * 설정 갱신 — 반드시 deepMerge 를 쓴다.
- * 얕은 병합이면 `{ jira: { jql } }` 하나만 넣어도 baseUrl/apiToken 이 통째로 사라지고
- * 그대로 디스크에 flush 되어 복구가 불가능하다.
+ * Update config — always use deepMerge.
+ * With a shallow merge, passing just `{ jira: { jql } }` would wipe baseUrl/apiToken entirely
+ * and flush that to disk, making recovery impossible.
  */
 export function updateConfig(updates: Partial<McpConfig>): void {
   _config = deepMerge(getConfig(), updates) as McpConfig

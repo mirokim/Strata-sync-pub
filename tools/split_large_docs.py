@@ -3,14 +3,14 @@
 split_large_docs.py — §5 Large document hub-spoke split
 
 Split criteria (§5.1):
-  - 파일 전체 줄 수가 LINE_LIMIT(기본 200) 이상인 파일 대상
-  - ## 헤딩 단위로 섹션 분할
-  - 각 섹션을 별도 스포크 파일로 저장
-  - 원본 파일은 목차 역할 허브 파일로 교체
+  - Targets files whose total line count is at least LINE_LIMIT (default 200)
+  - Splits into sections at ## headings
+  - Saves each section as a separate spoke file
+  - Replaces the original file with a hub file that serves as a table of contents
 
 Output structure:
-  허브 파일:  {stem}.md            (기존 위치, 목차만 포함)
-  스포크 파일: {stem} - {섹션제목}.md
+  Hub file:   {stem}.md            (original location, table of contents only)
+  Spoke file: {stem} - {section title}.md
 
 Usage:
   python split_large_docs.py <active_dir> [--lines 200] [--dry-run] [--verbose]
@@ -24,13 +24,13 @@ from pathlib import Path
 from datetime import datetime
 
 
-LINE_LIMIT = 200    # 분할 대상 최소 줄 수 (§5.1)
-SECTION_LINES = 200  # 섹션 분할 기준 (이상이면 독립 파일)
+LINE_LIMIT = 200    # Minimum line count for splitting (§5.1)
+SECTION_LINES = 200  # Section split threshold (at or above → separate file)
 
 
 # ── Parse frontmatter ──────────────────────────────────────────────
 def parse_frontmatter(content: str) -> tuple[dict, str, str]:
-    """(fields_dict, fm_block, body) 반환."""
+    """Returns (fields_dict, fm_block, body)."""
     if not content.startswith('---'):
         return {}, '', content
     end = content.find('\n---\n', 4)
@@ -52,25 +52,25 @@ def get_fm_field(fields: dict, key: str, default: str = '') -> str:
 
 # ── Parse sections ────────────────────────────────────────────────────
 def parse_sections(body: str) -> list[dict]:
-    """## 헤딩 단위로 섹션 분리. [{'title': str, 'content': str}]"""
+    """Split into sections at ## headings. [{'title': str, 'content': str}]"""
     sections  = []
     current   = {'title': '_intro', 'content': ''}
     heading_re = re.compile(r'^(## .+)', re.MULTILINE)
 
     parts = heading_re.split(body)
-    # parts[0] = ## 이전 intro 텍스트
-    # parts[1], parts[2], parts[3], parts[4], ... = 헤딩, 내용, 헤딩, 내용 ...
+    # parts[0] = intro text before the first ##
+    # parts[1], parts[2], parts[3], parts[4], ... = heading, content, heading, content ...
 
-    # Intro (## 헤딩 이전)
+    # Intro (before the first ## heading)
     intro_text = parts[0].strip()
     if intro_text:
         sections.append({'title': '_intro', 'content': intro_text})
 
-    # 헤딩+내용 쌍
+    # Heading + content pairs
     i = 1
     while i < len(parts) - 1:
-        heading = parts[i].strip()   # '## 제목'
-        content = parts[i + 1]       # 다음 ## 이전 내용
+        heading = parts[i].strip()   # '## Title'
+        content = parts[i + 1]       # Content before the next ##
         title   = heading.lstrip('#').strip()
         sections.append({'title': title, 'content': heading + '\n' + content})
         i += 2
@@ -82,7 +82,7 @@ def safe_filename(title: str) -> str:
     """Section title → filename-safe string."""
     cleaned = re.sub(r'[\\/:*?"<>|]', '', title)
     cleaned = cleaned.strip().strip('.')
-    return cleaned[:60]   # 최대 60자
+    return cleaned[:60]   # Max 60 chars
 
 
 # ── Generate hub file ────────────────────────────────────────────────
@@ -174,7 +174,7 @@ def split_file(md_path: Path, out_dir: Path,
     if len(sections) <= 1:
         # Cannot split — no ## headings
         if verbose:
-            print(f"  Skipped (헤딩 없음): {md_path.name}")
+            print(f"  Skipped (no headings): {md_path.name}")
         result['skipped'] = True
         return result
 
@@ -196,7 +196,7 @@ def split_file(md_path: Path, out_dir: Path,
     spoke_titles = [s['title'] for s in split_sections]
 
     if verbose:
-        print(f"\n  분할: {md_path.name}  ({total_lines}줄, {len(split_sections)}섹션)")
+        print(f"\n  Splitting: {md_path.name}  ({total_lines} lines, {len(split_sections)} sections)")
 
     if not dry_run:
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -213,7 +213,7 @@ def split_file(md_path: Path, out_dir: Path,
             spoke_path.write_text(spoke_content, encoding='utf-8')
             if verbose:
                 lines_cnt = spoke_content.count('\n')
-                print(f"    → {spoke_path.name}  ({lines_cnt}줄)")
+                print(f"    → {spoke_path.name}  ({lines_cnt} lines)")
 
     result['split']  = True
     result['spokes'] = len(split_sections)
@@ -221,10 +221,10 @@ def split_file(md_path: Path, out_dir: Path,
 
 
 def main():
-    parser = argparse.ArgumentParser(description='§5 대용량 문서 허브-스포크 분할')
+    parser = argparse.ArgumentParser(description='§5 Large document hub-spoke split')
     parser.add_argument('input',    help='MD file or active/ folder')
     parser.add_argument('--lines',  type=int, default=LINE_LIMIT,
-                        help=f'분할 대상 최소 줄 수 (기본: {LINE_LIMIT})')
+                        help=f'Minimum line count for splitting (default: {LINE_LIMIT})')
     parser.add_argument('--dry-run', action='store_true', help='Preview without changing files')
     parser.add_argument('--verbose', '-v', action='store_true')
     args = parser.parse_args()
@@ -249,8 +249,8 @@ def main():
         if line_cnt >= args.lines:
             candidates.append((md, line_cnt))
 
-    print(f"§5 split_large_docs 시작{'  [DRY-RUN]' if args.dry_run else ''}...")
-    print(f"  Total MDs: {total}개 / 분할 대상({args.lines}줄+): {len(candidates)}개")
+    print(f"§5 split_large_docs starting{'  [DRY-RUN]' if args.dry_run else ''}...")
+    print(f"  Total MDs: {total} / split candidates ({args.lines}+ lines): {len(candidates)}")
 
     for md, line_cnt in candidates:
         r = split_file(md, out_dir, args.lines, SECTION_LINES,
@@ -264,11 +264,11 @@ def main():
     print(f"\n{'='*50}")
     print(f"§5 split_large_docs Complete{'  [DRY-RUN]' if args.dry_run else ''}")
     print(f"{'='*50}")
-    print(f"  분할 Complete:    {split_count} files")
+    print(f"  Split complete:    {split_count} files")
     print(f"  Generated spokes:  {spoke_count} files")
-    print(f"  Skipped:       {skipped}개 (헤딩 없음 등)")
+    print(f"  Skipped:       {skipped} (no headings, etc.)")
     if args.dry_run:
-        print("  ※ --dry-run 모드: 실제 파일 변경 없음")
+        print("  ※ --dry-run mode: no files were changed")
 
 
 if __name__ == '__main__':

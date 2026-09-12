@@ -1,9 +1,9 @@
 /**
- * ConfluencePublishTab — AI로 Confluence 페이지 초안을 생성하고 발행.
+ * ConfluencePublishTab — Generate a Confluence page draft with AI and publish it.
  *
- * 모드:
- *   create — 새 페이지 생성 (spaceKey + 부모 페이지 선택)
- *   update — 기존 페이지 업데이트 (URL/ID로 조회)
+ * Modes:
+ *   create — create a new page (spaceKey + optional parent page)
+ *   update — update an existing page (looked up by URL/ID)
  */
 
 import { useState, useRef } from 'react'
@@ -148,14 +148,14 @@ export default function ConfluencePublishTab() {
   // ── Fetch existing page info (update mode) ──────────────────────────────────
   const handleFetchInfo = async () => {
     const id = extractPageId(targetUrl)
-    if (!id) { setFetchError('URL 또는 페이지 ID를 입력하세요.'); return }
+    if (!id) { setFetchError('Enter a URL or page ID.'); return }
     setFetchingInfo(true); setFetchError(''); setPageInfo(null)
     try {
       const info = await (window as any).confluenceAPI.getPageInfo(configForApi, id)
       setPageInfo(info)
       setPageTitle(info.title)
     } catch (e: any) {
-      setFetchError(e?.message ?? '페이지 조회 실패')
+      setFetchError(e?.message ?? 'Failed to fetch page')
     } finally {
       setFetchingInfo(false)
     }
@@ -174,7 +174,7 @@ export default function ConfluencePublishTab() {
     setPublishedUrl('')
 
     const modelId = editAgentConfig?.modelId || 'claude-sonnet-4-6'
-    const titleHint = pageTitle ? `페이지 제목: "${pageTitle}"` : ''
+    const titleHint = pageTitle ? `Page title: "${pageTitle}"` : ''
     const systemPrompt = [
       'You are a professional technical writer creating Confluence page content.',
       'Write clear, well-structured Markdown that will be converted to Confluence storage format.',
@@ -198,7 +198,7 @@ export default function ConfluencePublishTab() {
       )
       setGenState('done')
     } catch (e: any) {
-      setGenError(e?.message ?? '생성 실패')
+      setGenError(e?.message ?? 'Generation failed')
       setGenState('error')
     }
   }
@@ -222,7 +222,7 @@ export default function ConfluencePublishTab() {
         setPublishedUrl(result.url ?? '')
         setPubState('done')
       } else {
-        if (!pageInfo) { setPubError('페이지 정보를 먼저 조회하세요.'); setPubState('error'); return }
+        if (!pageInfo) { setPubError('Fetch the page info first.'); setPubState('error'); return }
         const result = await (window as any).confluenceAPI.updatePage(configForApi, {
           pageId: pageInfo.id,
           title: pageTitle || pageInfo.title,
@@ -235,7 +235,7 @@ export default function ConfluencePublishTab() {
         setPageInfo(p => p ? { ...p, version: p.version + 1 } : p)
       }
     } catch (e: any) {
-      setPubError(e?.message ?? '발행 실패')
+      setPubError(e?.message ?? 'Publish failed')
       setPubState('error')
     }
   }
@@ -248,15 +248,15 @@ export default function ConfluencePublishTab() {
     <div className="flex flex-col gap-5">
       <section>
         <p style={{ fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.7 }}>
-          AI가 작성한 초안을 검토 후 Confluence에 발행합니다.<br />
-          Confluence 연결 설정은 <strong style={{ color: 'var(--color-text-secondary)' }}>설정 › Confluence 가져오기</strong>에서 하세요.
+          Review an AI-written draft, then publish it to Confluence.<br />
+          Configure the Confluence connection under <strong style={{ color: 'var(--color-text-secondary)' }}>Settings › Confluence Import</strong>.
         </p>
       </section>
 
-      {/* 볼트 선택기 */}
+      {/* Vault selector */}
       {vaultEntries.length > 0 && (
         <section>
-          <SectionTitle>대상 볼트</SectionTitle>
+          <SectionTitle>Target Vault</SectionTitle>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {vaultEntries.map(([id, v]) => {
               const isActive = selectedVaultId === id
@@ -287,19 +287,19 @@ export default function ConfluencePublishTab() {
 
       {!confluenceConfigured && (
         <p style={{ fontSize: 11, color: 'var(--color-warning)' }}>
-          ⚠ Confluence 연결이 설정되지 않았습니다. 먼저 연결 설정을 완료하세요.
+          ⚠ Confluence connection is not configured. Complete the connection settings first.
         </p>
       )}
 
       <div style={{ borderTop: '1px solid var(--color-border)' }} />
 
-      {/* 모드 선택 */}
+      {/* Mode selection */}
       <section>
-        <SectionTitle>발행 모드</SectionTitle>
+        <SectionTitle>Publish Mode</SectionTitle>
         <div style={{ display: 'flex', border: '1px solid var(--color-border)', borderRadius: 2, overflow: 'hidden', width: 'fit-content' }}>
           {([
-            { id: 'create', label: '새 페이지 생성' },
-            { id: 'update', label: '기존 페이지 업데이트' },
+            { id: 'create', label: 'Create New Page' },
+            { id: 'update', label: 'Update Existing Page' },
           ] as const).map((opt, i) => (
             <button
               key={opt.id}
@@ -316,21 +316,21 @@ export default function ConfluencePublishTab() {
         </div>
       </section>
 
-      {/* 페이지 설정 */}
+      {/* Page settings */}
       <section>
-        <SectionTitle>{mode === 'create' ? '새 페이지 설정' : '대상 페이지'}</SectionTitle>
+        <SectionTitle>{mode === 'create' ? 'New Page Settings' : 'Target Page'}</SectionTitle>
 
         {mode === 'create' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <FieldRow label="Space Key" value={spaceKey} onChange={setSpaceKey} placeholder={cfg.spaceKey || 'TEAM'} />
-            <FieldRow label="부모 페이지 URL" value={parentUrl} onChange={setParentUrl} placeholder="https://wiki.company.com/pages/12345 (선택)" />
-            <FieldRow label="페이지 제목" value={pageTitle} onChange={setPageTitle} placeholder="제목 (비우면 AI 주제로 자동 설정)" />
+            <FieldRow label="Parent Page URL" value={parentUrl} onChange={setParentUrl} placeholder="https://wiki.company.com/pages/12345 (optional)" />
+            <FieldRow label="Page Title" value={pageTitle} onChange={setPageTitle} placeholder="Title (leave empty to derive from the AI topic)" />
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <div style={{ flex: 1 }}>
-                <FieldRow label="페이지 URL / ID" value={targetUrl} onChange={v => { setTargetUrl(v); setPageInfo(null); setFetchError('') }} placeholder="https://wiki.company.com/pages/12345 또는 숫자 ID" />
+                <FieldRow label="Page URL / ID" value={targetUrl} onChange={v => { setTargetUrl(v); setPageInfo(null); setFetchError('') }} placeholder="https://wiki.company.com/pages/12345 or numeric ID" />
               </div>
               <button
                 onClick={handleFetchInfo}
@@ -345,19 +345,19 @@ export default function ConfluencePublishTab() {
                 }}
               >
                 {fetchingInfo ? <Loader size={11} className="animate-spin" /> : <RefreshCw size={11} />}
-                조회
+                Fetch
               </button>
             </div>
             {fetchError && <p style={{ fontSize: 11, color: 'var(--color-error)' }}>{fetchError}</p>}
             {pageInfo && (
               <div style={{ padding: '8px 12px', borderRadius: 2, background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', fontSize: 11 }}>
-                <span style={{ color: 'var(--color-text-muted)' }}>페이지: </span>
+                <span style={{ color: 'var(--color-text-muted)' }}>Page: </span>
                 <strong style={{ color: 'var(--color-text-primary)' }}>{pageInfo.title}</strong>
                 <span style={{ color: 'var(--color-text-muted)', marginLeft: 8 }}>v{pageInfo.version} · {pageInfo.spaceKey}</span>
               </div>
             )}
             {pageInfo && (
-              <FieldRow label="페이지 제목" value={pageTitle} onChange={setPageTitle} placeholder={pageInfo.title} />
+              <FieldRow label="Page Title" value={pageTitle} onChange={setPageTitle} placeholder={pageInfo.title} />
             )}
           </div>
         )}
@@ -365,15 +365,15 @@ export default function ConfluencePublishTab() {
 
       <div style={{ borderTop: '1px solid var(--color-border)' }} />
 
-      {/* AI 초안 생성 */}
+      {/* AI draft generation */}
       <section>
-        <SectionTitle>AI 초안 생성</SectionTitle>
+        <SectionTitle>AI Draft Generation</SectionTitle>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <label style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>작성 주제 / 지시</label>
+          <label style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>Topic / Instructions</label>
           <textarea
             value={topic}
             onChange={e => setTopic(e.target.value)}
-            placeholder="예: 2026년 1분기 신규 기능 릴리즈 노트를 작성해줘. 주요 변경사항: ..."
+            placeholder="e.g.: Write the Q1 2026 new feature release notes. Key changes: ..."
             rows={4}
             style={{
               width: '100%', fontSize: 12, padding: '8px 10px', borderRadius: 2,
@@ -395,19 +395,19 @@ export default function ConfluencePublishTab() {
                 display: 'flex', alignItems: 'center', gap: 6,
               }}
             >
-              {genState === 'generating' ? <><Loader size={11} className="animate-spin" /> 생성 중…</> : 'AI 초안 생성'}
+              {genState === 'generating' ? <><Loader size={11} className="animate-spin" /> Generating…</> : 'Generate AI Draft'}
             </button>
             {genError && <span style={{ fontSize: 11, color: 'var(--color-error)' }}>{genError}</span>}
           </div>
         </div>
       </section>
 
-      {/* 초안 에디터 */}
+      {/* Draft editor */}
       {(markdownDraft || genState === 'generating') && (
         <>
           <div style={{ borderTop: '1px solid var(--color-border)' }} />
           <section>
-            <SectionTitle>초안 검토 (Markdown 편집 가능)</SectionTitle>
+            <SectionTitle>Review Draft (Markdown editable)</SectionTitle>
             <textarea
               value={markdownDraft}
               onChange={e => { setMarkdownDraft(e.target.value); setAccepted(false) }}
@@ -432,7 +432,7 @@ export default function ConfluencePublishTab() {
                   disabled={genState === 'generating'}
                 />
                 <CheckCircle size={13} style={{ color: accepted ? 'var(--color-success)' : 'var(--color-text-muted)' }} />
-                초안 승인
+                Approve Draft
               </label>
 
               <button
@@ -448,18 +448,18 @@ export default function ConfluencePublishTab() {
                 }}
               >
                 {pubState === 'publishing'
-                  ? <><Loader size={11} className="animate-spin" /> 발행 중…</>
-                  : <><Send size={11} /> Confluence 발행</>
+                  ? <><Loader size={11} className="animate-spin" /> Publishing…</>
+                  : <><Send size={11} /> Publish to Confluence</>
                 }
               </button>
 
               {pubState === 'done' && (
                 <span style={{ fontSize: 11, color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <CheckCircle size={12} /> 발행 완료
+                  <CheckCircle size={12} /> Published
                   {publishedUrl && (
                     <a href={publishedUrl} target="_blank" rel="noreferrer"
                       style={{ marginLeft: 4, color: '#60a5fa', textDecoration: 'underline' }}>
-                      열기
+                      Open
                     </a>
                   )}
                 </span>

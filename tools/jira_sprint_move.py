@@ -5,11 +5,11 @@ jira_sprint_move.py — Move Jira issues to active sprint
 Usage:
   python jira_sprint_move.py SGEATF-12345
   python jira_sprint_move.py SGEATF-12345 --sprint-id 9999
-  python jira_sprint_move.py SGEATF-12345 SGEATF-12346 ...  (일괄 이동)
+  python jira_sprint_move.py SGEATF-12345 SGEATF-12346 ...  (batch move)
 
 Config:
-  mcp-config.json 의 jira 섹션을 읽습니다.
-  boardId 가 설정되어 있으면 해당 보드의 활성 스프린트를 사용합니다.
+  Reads the jira section of mcp-config.json.
+  If boardId is set, the active sprint of that board is used.
 """
 
 import io
@@ -25,7 +25,7 @@ from pathlib import Path
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
-# ── Configuration 로드 ────────────────────────────────────────────────────────────────
+# ── Configuration loading ─────────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / 'mcp-config.json'
 
@@ -53,7 +53,7 @@ def api_request(cfg: dict, path: str, method: str = 'GET', body: dict | None = N
         'Accept': 'application/json',
     }
     data = json.dumps(body).encode() if body else None
-    # bypassSSL=false → 기본 인증서 검증, bypassSSL=true → 검증 생략
+    # bypassSSL=false → default certificate verification, bypassSSL=true → skip verification
     ctx = ssl.create_default_context()
     if cfg.get('bypassSSL', False):
         ctx.check_hostname = False
@@ -74,7 +74,7 @@ def get_active_sprint_id(cfg: dict) -> int | None:
     board_id = cfg.get('boardId')
     project_key = cfg.get('projectKey', '')
 
-    # boardId 없으면 프로젝트로 보드 탐색
+    # Without boardId, look up the board by project
     if not board_id:
         boards = api_request(cfg, f'/rest/agile/1.0/board?projectKeyOrId={project_key}&type=scrum')
         if not boards or not boards.get('values'):
@@ -100,7 +100,7 @@ def move_issues(issue_keys: list[str], sprint_id: int, cfg: dict) -> bool:
 
 # ── Main ────────────────────────────────────────────────────────────────────
 def main():
-    parser = argparse.ArgumentParser(description='Jira 이슈를 활성 스프린트로 이동')
+    parser = argparse.ArgumentParser(description='Move Jira issues to the active sprint')
     parser.add_argument('issue_keys', nargs='+', help='Issue key (e.g. SGEATF-12345)')
     parser.add_argument('--sprint-id', type=int, default=None, help='Directly specify sprint ID (auto-detect if not specified)')
     args = parser.parse_args()
@@ -114,10 +114,10 @@ def main():
             print('[ERROR] Could not determine sprint ID.', file=sys.stderr)
             sys.exit(1)
 
-    print(f'[INFO] 이슈 {args.issue_keys} → 스프린트 {sprint_id} Moving...')
+    print(f'[INFO] Issues {args.issue_keys} → sprint {sprint_id} Moving...')
     ok = move_issues(args.issue_keys, sprint_id, cfg)
     if ok:
-        print(f'[OK] 이동 Complete: {", ".join(args.issue_keys)}')
+        print(f'[OK] Move Complete: {", ".join(args.issue_keys)}')
     else:
         print('[ERROR] Move failed', file=sys.stderr)
         sys.exit(1)

@@ -1,15 +1,15 @@
 /**
- * vectorEmbedIndex.ts — 벡터 임베딩 인덱스 (v3: 증분 빌드)
+ * vectorEmbedIndex.ts — Vector embedding index (v3: incremental build)
  *
- * v2까지는 전체 fingerprint 일치 방식 → 문서 1개 수정 시 전량 재빌드.
- * v3부터 문서별 mtime 비교로 변경된 문서만 재임베딩합니다.
+ * Up to v2 the whole-fingerprint match approach meant editing a single document triggered a full rebuild.
+ * From v3, per-document mtime comparison re-embeds only changed documents.
  *
- * 섹션 2개 이상 문서는 섹션별 임베딩, 1개면 문서 단위 임베딩.
- * 볼트 로드 후 백그라운드에서 빌드되며 파일 캐시에 저장됩니다.
+ * Documents with 2+ sections are embedded per section; single-section documents are embedded as a whole.
+ * Built in the background after vault load and stored in a file cache.
  *
- * 사용 흐름:
- *   1. vault 로드 후 → buildIncremental(docs, apiKey, vaultPath)
- *   2. 검색 시 → fullVectorSearch(query, apiKey, topK, docs)
+ * Usage flow:
+ *   1. After vault load → buildIncremental(docs, apiKey, vaultPath)
+ *   2. On search → fullVectorSearch(query, apiKey, topK, docs)
  */
 
 import type { LoadedDocument, DocSection, SearchResult } from '@/types'
@@ -18,30 +18,30 @@ import type { EmbedProvider } from './vectorEmbedCache'
 import { logger } from './logger'
 
 /**
- * 이 값 초과 섹션을 가진 문서는 섹션별 임베딩, 이하는 문서 단위 임베딩.
+ * Documents with more sections than this are embedded per section; at or below, as a whole document.
  *
- * 3이었을 때 볼트 섹션 수 중앙값이 정확히 3이라 문서의 58.4%가
- * "문서 전체 = 벡터 1개" 경로를 탔다 — 긴 문서일수록 세부 내용이 희석된다.
- * 1로 낮춰 섹션이 2개 이상이면 섹션별로 임베딩한다.
+ * When it was 3, the vault's median section count was exactly 3, so 58.4% of documents
+ * took the "whole document = 1 vector" path — the longer the document, the more its details were diluted.
+ * Lowered to 1 so any document with 2+ sections is embedded per section.
  */
 const SECTION_EMBED_THRESHOLD = 1
 
 /**
- * 임베딩 텍스트 슬라이스 한도(문자).
- * 서버 MAXLEN 4096 토큰 × 한국어 1토큰≈1.2자 ≈ 4,900자. 안전하게 4,500자로 자른다.
+ * Embedding text slice limit (chars).
+ * Server MAXLEN 4096 tokens × Korean 1 token ≈ 1.2 chars ≈ 4,900 chars. Cut at 4,500 to be safe.
  */
 const EMBED_TEXT_MAX_CHARS = 4500
 
-// ── 내부 상태 ────────────────────────────────────────────────────────────────
+// ── Internal state ───────────────────────────────────────────────────────────
 
 interface EmbedState {
   embeddings: Map<string, Float32Array>  // sectionId → embedding vector (Float32 for 50% memory saving)
-  sectionDocMap: Map<string, string>     // sectionId → docId (캐시 저장용)
+  sectionDocMap: Map<string, string>     // sectionId → docId (for cache saving)
   built: boolean
   building: boolean
   progress: number  // 0~100
   lastError: string | null
-  generation: number  // reset() 호출마다 증가 — 구버전 빌드가 결과를 덮어쓰지 못하게
+  generation: number  // incremented on every reset() — prevents a stale build from overwriting results
 }
 
 const _state: EmbedState = {
@@ -54,35 +54,35 @@ const _state: EmbedState = {
   generation: 0,
 }
 
-// ── 섹션/문서 텍스트 추출 ─────────────────────────────────────────────────────
+// ── Section/document text extraction ─────────────────────────────────────────
 
-// 보일러플레이트 접두사(docTypePrefix / queryPrefix)는 제거했다.
-//   - type: spec 문서가 1,184개(볼트의 45%)라 그만큼의 임베딩 텍스트가
-//     문자 그대로 "게임 기획 문서: " 로 시작했다. 같은 문서의 모든 섹션이
-//     동일 접두사를 공유해 문서 단위 max-pooling 시 섹션 변별이 되지 않았다.
-//   - queryPrefix 제거만으로 Recall@5 가 3/6 → 5/6 으로 개선됐다.
-//   - 문서/쿼리 중 한쪽만 제거하면 분포가 어긋나 오히려 나빠진다. 반드시 함께 둔다.
-//   - tags/speaker 는 검색 필터·부스트에서 이미 쓰므로 임베딩 텍스트에서 뺀다.
+// The boilerplate prefixes (docTypePrefix / queryPrefix) were removed.
+//   - There are 1,184 type: spec documents (45% of the vault), so that much embedding text
+//     literally began with "게임 기획 문서: " (game design document). Every section of the same document
+//     shared the identical prefix, so sections could not be distinguished during document-level max-pooling.
+//   - Removing queryPrefix alone improved Recall@5 from 3/6 → 5/6.
+//   - Removing it on only one side (document/query) skews the distribution and makes things worse. Always keep them together.
+//   - tags/speaker are already used in search filters/boosts, so they are left out of the embedding text.
 
-/** 섹션 단위 임베딩 텍스트: 문서 제목 + 섹션 헤딩 + 본문 */
+/** Section-level embedding text: document title + section heading + body */
 function sectionText(section: DocSection, doc: LoadedDocument): string {
   const title = doc.filename.replace(/\.md$/i, '')
   return `${title}\n${section.heading}\n${section.body}`.slice(0, EMBED_TEXT_MAX_CHARS)
 }
 
-/** 문서 전체를 하나의 벡터로 — 섹션이 SECTION_EMBED_THRESHOLD 이하인 문서용 폴백 */
+/** Whole document as a single vector — fallback for documents with SECTION_EMBED_THRESHOLD or fewer sections */
 function docText(doc: LoadedDocument): string {
   const title = doc.filename.replace(/\.md$/i, '')
   const body = doc.sections.map(s => `${s.heading}\n${s.body}`).join('\n\n')
   return `${title}\n${body}`.slice(0, EMBED_TEXT_MAX_CHARS)
 }
 
-/** 쿼리 텍스트 — 접두사 없이 원문 그대로 (문서 쪽과 분포를 맞춘다) */
+/** Query text — raw, without a prefix (matches the distribution on the document side) */
 function queryText(query: string): string {
   return query
 }
 
-/** 임베딩 단위: 섹션이 SECTION_EMBED_THRESHOLD 초과면 섹션별, 아니면 문서 단위 */
+/** Embedding unit: per section if sections exceed SECTION_EMBED_THRESHOLD, otherwise per document */
 interface EmbedItem { id: string; text: string; docId: string }
 
 function extractEmbedItems(docs: LoadedDocument[]): EmbedItem[] {
@@ -93,14 +93,14 @@ function extractEmbedItems(docs: LoadedDocument[]): EmbedItem[] {
         items.push({ id: sec.id, text: sectionText(sec, doc), docId: doc.id })
       }
     } else {
-      // 섹션이 임계값 이하 — 문서 단위 (키는 docId)
+      // Sections at or below the threshold — document level (key is docId)
       items.push({ id: doc.id, text: docText(doc), docId: doc.id })
     }
   }
   return items
 }
 
-/** 문서 목록에서 docId → mtime 맵 생성 */
+/** Build a docId → mtime map from the document list */
 function buildDocMtimes(docs: LoadedDocument[]): Map<string, number> {
   const map = new Map<string, number>()
   for (const doc of docs) {
@@ -109,9 +109,9 @@ function buildDocMtimes(docs: LoadedDocument[]): Map<string, number> {
   return map
 }
 
-// ── Google Gemini 임베딩 API (gemini-embedding-001, 3072차원) ─────────────────
+// ── Google Gemini embedding API (gemini-embedding-001, 3072 dims) ─────────────
 
-/** Gemini taskType — 쿼리/문서 구분으로 임베딩 품질 향상 */
+/** Gemini taskType — distinguishing query/document improves embedding quality */
 type GeminiTaskType = 'RETRIEVAL_QUERY' | 'RETRIEVAL_DOCUMENT'
 
 async function embedSingle(text: string, apiKey: string, retries = 2, taskType?: GeminiTaskType): Promise<Float32Array> {
@@ -142,21 +142,21 @@ async function embedSingle(text: string, apiKey: string, retries = 2, taskType?:
   throw new Error('embedSingle: exhausted retries')
 }
 
-// ── 로컬 임베딩 서버 (BGE-M3, 1024차원) ───────────────────────────────────────
+// ── Local embedding server (BGE-M3, 1024 dims) ───────────────────────────────
 //
-// scripts/local_embed_server.py 가 떠 있으면 Gemini 대신 이쪽을 씁니다.
-// 사내 문서가 외부 API로 나가지 않고, 비용도 들지 않습니다.
+// If scripts/local_embed_server.py is running, it is used instead of Gemini.
+// Internal documents never leave for an external API, and there is no cost.
 //
-// 주의: 캐시(.vector_cache_v6.json)와 쿼리는 반드시 같은 제공자로 만들어야 합니다.
-// 제공자가 섞이면 차원이 달라지므로 cosineSim 이 0을 반환하도록 방어해 두었습니다.
+// Note: the cache (.vector_cache_v6.json) and queries must be produced by the same provider.
+// Mixing providers changes the dimension, so cosineSim is guarded to return 0.
 
 const LOCAL_EMBED_URL = 'http://127.0.0.1:8077'
 const LOCAL_PROBE_TIMEOUT_MS = 1500
 
-/** null = 아직 확인 안 함 */
+/** null = not checked yet */
 let _localEmbedAvailable: boolean | null = null
 
-/** 로컬 서버 가용성 확인 (프로세스당 1회) */
+/** Check local server availability (once per process) */
 async function probeLocalEmbed(): Promise<boolean> {
   if (_localEmbedAvailable !== null) return _localEmbedAvailable
   try {
@@ -167,7 +167,7 @@ async function probeLocalEmbed(): Promise<boolean> {
     _localEmbedAvailable = res.ok
     if (res.ok) {
       const info = await res.json().catch(() => ({})) as { model?: string; dim?: number }
-      logger.debug(`[vector] 로컬 임베딩 서버 사용: ${info.model} (${info.dim}차원)`)
+      logger.debug(`[vector] Using local embedding server: ${info.model} (${info.dim} dims)`)
     }
   } catch {
     _localEmbedAvailable = false
@@ -175,29 +175,29 @@ async function probeLocalEmbed(): Promise<boolean> {
   return _localEmbedAvailable
 }
 
-/** 가용성 캐시 초기화 — 서버를 나중에 띄운 경우 재확인용 */
+/** Reset the availability cache — for re-checking when the server is started later */
 export function resetLocalEmbedProbe(): void {
   _localEmbedAvailable = null
 }
 
 /**
- * 임베딩을 만들 수 있는 상태인지 — 로컬 서버가 떠 있거나 Gemini 키가 있으면 true.
+ * Whether embeddings can be produced — true if the local server is up or a Gemini key exists.
  *
- * 호출 지점들이 Gemini 키 유무만 보고 게이트하면, 로컬 서버만 띄우고 키를 두지 않은
- * 사용자(= 이 기능이 노리는 바로 그 경우)는 인덱스가 아예 빌드되지 않는다.
- * 게이트는 반드시 이 함수를 쓸 것.
+ * If call sites gate only on the presence of a Gemini key, a user who runs only the local server
+ * without a key (= exactly the case this feature targets) never gets an index built at all.
+ * Always gate through this function.
  */
 export async function isEmbeddingReady(apiKey?: string): Promise<boolean> {
   if (await probeLocalEmbed()) return true
   return Boolean(apiKey?.trim())
 }
 
-/** 마지막 프로브 결과 (동기). 프로브 전이면 false. UI 표시용. */
+/** Last probe result (synchronous). false before probing. For UI display. */
 export function isLocalEmbedReadySync(): boolean {
   return _localEmbedAvailable === true
 }
 
-/** 현재 활성 임베딩 제공자 — 캐시 무효화 판정에 쓴다. */
+/** Currently active embedding provider — used to decide cache invalidation. */
 export function activeEmbedProvider(): EmbedProvider {
   return _localEmbedAvailable === true ? 'local' : 'gemini'
 }
@@ -211,15 +211,15 @@ async function embedLocalBatch(texts: string[], taskType?: GeminiTaskType): Prom
       type: taskType === 'RETRIEVAL_QUERY' ? 'query' : 'document',
     }),
   })
-  if (!res.ok) throw new Error(`로컬 임베딩 서버 ${res.status}`)
+  if (!res.ok) throw new Error(`Local embedding server ${res.status}`)
   const json = await res.json() as { embeddings: number[][] }
   return json.embeddings.map(v => new Float32Array(v))
 }
 
 /**
- * texts 배열 임베딩.
- * 로컬 서버가 떠 있으면 로컬로, 아니면 Gemini API 로 처리합니다.
- * 로컬 모드에서는 Gemini 로 폴백하지 않습니다 — 차원이 섞이면 캐시가 무효해지기 때문입니다.
+ * Embeds an array of texts.
+ * Uses the local server if it is up, otherwise the Gemini API.
+ * Local mode does not fall back to Gemini — mixing dimensions would invalidate the cache.
  */
 async function embedBatch(texts: string[], apiKey: string, taskType?: GeminiTaskType): Promise<Float32Array[]> {
   if (await probeLocalEmbed()) {
@@ -238,19 +238,19 @@ async function embedBatch(texts: string[], apiKey: string, taskType?: GeminiTask
 // ── Reciprocal Rank Fusion (RRF) ─────────────────────────────────────────────
 
 /**
- * 서로 다른 스코어 분포를 가진 랭킹 리스트를 순위 기반으로 합산합니다.
- * ranks: 각 랭킹 리스트에서의 순위 (1-based). 리스트에 없으면 Infinity.
- * k: 감쇠 파라미터 (기본 60). 높을수록 순위 차이에 둔감.
+ * Combines ranking lists with different score distributions by rank.
+ * ranks: rank in each ranking list (1-based). Infinity if absent from a list.
+ * k: decay parameter (default 60). Higher = less sensitive to rank differences.
  */
 export function rrfScore(ranks: number[], k = 60): number {
   return ranks.reduce((sum, rank) => sum + 1 / (k + rank), 0)
 }
 
-// ── 코사인 유사도 ─────────────────────────────────────────────────────────────
+// ── Cosine similarity ────────────────────────────────────────────────────────
 
 function cosineSim(a: Float32Array, b: Float32Array): number {
-  // 차원 불일치 방어 — 임베딩 제공자가 바뀌면(로컬 1024 ↔ Gemini 3072)
-  // 캐시와 쿼리 벡터의 차원이 달라진다. 조용히 틀린 점수를 내지 않고 0을 반환한다.
+  // Dimension mismatch guard — when the embedding provider changes (local 1024 ↔ Gemini 3072)
+  // the cache and query vector dimensions differ. Return 0 instead of silently producing wrong scores.
   if (a.length !== b.length) return 0
   let dot = 0, na = 0, nb = 0
   for (let i = 0; i < a.length; i++) {
@@ -270,10 +270,10 @@ export const vectorEmbedIndex = {
   get lastError(): string | null { return _state.lastError },
 
   /**
-   * 증분 빌드: 변경된 문서만 재임베딩합니다.
-   * 1. 캐시 로드 → mtime 비교로 유효/무효 분류
-   * 2. 무효 문서만 API 호출하여 임베딩 생성
-   * 3. 유효 캐시 + 새 임베딩 머지하여 저장
+   * Incremental build: re-embeds only changed documents.
+   * 1. Load cache → classify valid/stale by mtime comparison
+   * 2. Call the API only for stale documents to generate embeddings
+   * 3. Merge valid cache + new embeddings and save
    */
   async buildIncremental(
     docs: LoadedDocument[],
@@ -284,54 +284,54 @@ export const vectorEmbedIndex = {
     _state.building = true
     _state.progress = 0
     _state.lastError = null
-    const myGen = ++_state.generation  // 새 세대 번호 할당
+    const myGen = ++_state.generation  // assign a new generation number
 
     try {
       const docMtimes = buildDocMtimes(docs)
 
-      // 1) 캐시 로드 — 변경되지 않은 문서의 임베딩 복원
+      // 1) Load cache — restore embeddings of unchanged documents
       const provider = activeEmbedProvider()
       const { cached, staleDocIds } = await loadVectorEmbedCacheIncremental(vaultPath, docMtimes, provider)
       if (_state.generation !== myGen) return
 
-      // sectionDocMap 구축 (캐시 저장용)
+      // Build sectionDocMap (for cache saving)
       const sectionDocMap = new Map<string, string>()
       const allItems = extractEmbedItems(docs)
       for (const item of allItems) {
         sectionDocMap.set(item.id, item.docId)
       }
 
-      // 2) stale 문서가 없으면 캐시 100% 히트 — 즉시 완료
+      // 2) No stale documents means a 100% cache hit — done immediately
       if (staleDocIds.size === 0 && cached.size > 0) {
         _state.embeddings = cached
         _state.sectionDocMap = sectionDocMap
         _state.built = true
         _state.progress = 100
-        logger.debug(`[vector] 캐시 100% 히트: ${cached.size}개 임베딩 복원`)
+        logger.debug(`[vector] 100% cache hit: restored ${cached.size} embeddings`)
         return
       }
 
-      // 3) 변경된 문서만 추출하여 임베딩
+      // 3) Extract only changed documents and embed them
       const staleItems = allItems.filter(it => staleDocIds.has(it.docId))
       const totalItems = allItems.length
       const cachedCount = totalItems - staleItems.length
 
-      logger.debug(`[vector] 증분 빌드: 캐시 ${cachedCount}개 유지, ${staleItems.length}개 재임베딩`)
+      logger.debug(`[vector] Incremental build: keeping ${cachedCount} cached, re-embedding ${staleItems.length}`)
 
-      // 캐시된 부분의 진행률 반영
+      // Reflect the cached portion in the progress
       _state.progress = totalItems > 0 ? Math.round((cachedCount / totalItems) * 100) : 0
 
-      const newEmbeddings = new Map(cached)  // 캐시 엔트리를 기반으로 시작
+      const newEmbeddings = new Map(cached)  // start from the cached entries
       let processed = cachedCount
       let firstError: string | null = null
       /**
-       * 임베딩에 실패한 항목이 속한 문서. 저장 시 docMtimes 에서 제외해
-       * 다음 실행에 stale 로 다시 잡히게 한다.
+       * Documents containing items whose embedding failed. Excluded from docMtimes on save
+       * so they are picked up as stale again on the next run.
        *
-       * 예전에는 실패한 배치를 경고만 찍고 넘어간 뒤 "전체 문서의 현재 mtime"으로
-       * 캐시를 저장했다. 그러면 다음 실행에서 살아남은 섹션이 mtime 일치로 판정되어
-       * 문서가 staleDocIds 에서 빠지고, 실패한 섹션은 파일을 고치기 전까지
-       * 영원히 재임베딩되지 않는다 (로그는 "캐시 100% 히트"라고 찍힌다).
+       * Previously a failed batch was only logged as a warning and then the cache was saved with
+       * "the current mtime of every document". On the next run the surviving sections were judged
+       * as mtime-matching, the document dropped out of staleDocIds, and the failed sections were
+       * never re-embedded until the file was touched (while the log said "100% cache hit").
        */
       const failedDocIds = new Set<string>()
       const BATCH = 20
@@ -350,16 +350,16 @@ export const vectorEmbedIndex = {
           }
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e)
-          logger.warn(`[vector] 배치 임베딩 실패 (${i}~${i + BATCH}):`, msg)
+          logger.warn(`[vector] Batch embedding failed (${i}~${i + BATCH}):`, msg)
           if (!firstError) firstError = msg
           for (const it of batch) failedDocIds.add(it.docId)
-          // 첫 배치 실패 시 중단 — API 키 오류 가능성이 높음
+          // Abort on first-batch failure — likely an API key error
           if (i === 0) {
-            // 남은 항목도 시도하지 않으므로 전부 실패로 표시한다
+            // The remaining items will not be attempted either, so mark them all as failed
             for (const it of staleItems.slice(i + BATCH)) failedDocIds.add(it.docId)
             _state.lastError = cached.size > 0
-              ? `일부 API 오류: ${msg}`
-              : `API 오류: ${msg}`
+              ? `Partial API error: ${msg}`
+              : `API error: ${msg}`
             break
           }
         }
@@ -367,7 +367,7 @@ export const vectorEmbedIndex = {
         processed += batch.length
         _state.progress = Math.round((processed / totalItems) * 100)
 
-        // Rate limit 방지
+        // Avoid rate limits
         if (i + BATCH < staleItems.length) await new Promise(r => setTimeout(r, 100))
       }
 
@@ -375,24 +375,24 @@ export const vectorEmbedIndex = {
 
       _state.embeddings = newEmbeddings
       _state.sectionDocMap = sectionDocMap
-      // 실패 항목이 하나라도 있으면 인덱스는 불완전하다 — built 로 표시하지 않는다
+      // If any item failed, the index is incomplete — do not mark it as built
       _state.built = newEmbeddings.size > 0 && failedDocIds.size === 0
       _state.progress = 100
 
       if (newEmbeddings.size > 0) {
-        if (firstError) _state.lastError = `일부 실패 (${newEmbeddings.size}개 성공): ${firstError}`
-        // 실패한 문서는 mtime 기록에서 빼서 다음 실행에 stale 로 잡히게 한다
+        if (firstError) _state.lastError = `Partial failure (${newEmbeddings.size} succeeded): ${firstError}`
+        // Remove failed documents from the mtime record so they are picked up as stale on the next run
         const saveMtimes = failedDocIds.size === 0
           ? docMtimes
           : new Map([...docMtimes].filter(([id]) => !failedDocIds.has(id)))
         if (failedDocIds.size > 0) {
-          logger.warn(`[vector] ${failedDocIds.size}개 문서를 캐시 mtime 에서 제외 — 다음 실행에 재시도`)
+          logger.warn(`[vector] Excluded ${failedDocIds.size} documents from cache mtimes — will retry on next run`)
         }
         saveVectorEmbedCacheIncremental(vaultPath, newEmbeddings, sectionDocMap, saveMtimes, provider)
-          .catch((e: unknown) => logger.warn('[vector] 캐시 저장 실패:', e))
-        logger.debug(`[vector] 임베딩 완료: ${newEmbeddings.size}개 섹션/문서`)
+          .catch((e: unknown) => logger.warn('[vector] Failed to save cache:', e))
+        logger.debug(`[vector] Embedding complete: ${newEmbeddings.size} sections/documents`)
       } else if (!_state.lastError) {
-        _state.lastError = firstError ?? '알 수 없는 오류 — 브라우저 콘솔 확인'
+        _state.lastError = firstError ?? 'Unknown error — check the browser console'
       }
     } finally {
       if (_state.generation === myGen) _state.building = false
@@ -400,23 +400,23 @@ export const vectorEmbedIndex = {
   },
 
   /**
-   * 전체 재빌드 (캐시 삭제 후). 설정 UI에서 수동 실행 시 사용.
+   * Full rebuild (after deleting the cache). Used for manual runs from the settings UI.
    */
   async buildFull(
     docs: LoadedDocument[],
     apiKey: string,
     vaultPath: string,
   ): Promise<void> {
-    resetLocalEmbedProbe()  // 서버를 나중에 띄웠을 수 있으므로 재확인
+    resetLocalEmbedProbe()  // re-check, since the server may have been started later
     await invalidateVectorEmbedCache(vaultPath)
     this.reset()
     return this.buildIncremental(docs, apiKey, vaultPath)
   },
 
   /**
-   * 전체 임베딩 대상 벡터 검색 (순수 의미 유사도).
-   * 섹션 벡터와 쿼리를 비교한 뒤 문서 단위로 집계 (max score).
-   * 인덱스 미빌드 또는 API 실패 시 null 반환 → 호출 측에서 BM25 폴백.
+   * Vector search over all embeddings (pure semantic similarity).
+   * Compares section vectors against the query, then aggregates per document (max score).
+   * Returns null if the index is not built or the API fails → caller falls back to BM25.
    */
   async fullVectorSearch(
     query: string,
@@ -433,10 +433,10 @@ export const vectorEmbedIndex = {
       return null
     }
 
-    // 문서 메타데이터 맵 (id → doc)
+    // Document metadata map (id → doc)
     const docMap = new Map(docs.map(d => [d.id, d]))
 
-    // sectionId → docId 매핑 + 섹션 메타
+    // sectionId → docId mapping + section metadata
     const sectionDocMapping = new Map<string, { docId: string; section: DocSection | null }>()
     for (const doc of docs) {
       if (doc.sections.length > SECTION_EMBED_THRESHOLD) {
@@ -444,12 +444,12 @@ export const vectorEmbedIndex = {
           sectionDocMapping.set(sec.id, { docId: doc.id, section: sec })
         }
       } else {
-        // 문서 단위 폴백 — 키가 docId
+        // Document-level fallback — key is docId
         sectionDocMapping.set(doc.id, { docId: doc.id, section: null })
       }
     }
 
-    // 섹션별 유사도 계산 후 문서 단위 max score 집계
+    // Compute per-section similarity, then aggregate the max score per document
     const docScores = new Map<string, { score: number; section: DocSection | null }>()
     for (const [embKey, embVec] of _state.embeddings) {
       const mapping = sectionDocMapping.get(embKey)
@@ -483,9 +483,9 @@ export const vectorEmbedIndex = {
       .slice(0, topK)
   },
 
-  /** 볼트 전환 시 상태 초기화 */
+  /** Reset state on vault switch */
   reset(): void {
-    _state.generation++  // 진행 중인 빌드를 무효화
+    _state.generation++  // invalidate any in-progress build
     _state.embeddings = new Map()
     _state.sectionDocMap = new Map()
     _state.built = false

@@ -66,8 +66,8 @@ export default function VaultSelector() {
             const file = { relativePath, absolutePath, content, mtime: Date.now() }
             const parsedDoc = parseMarkdownFile(file)
             const { loadedDocuments, setLoadedDocuments, setWatchDiff } = useVaultStore.getState()
-            // parseMarkdownFile 은 pushWithUniqueId 를 거치지 않아 충돌 해소된 id(`_2`)를
-            // 원본 id 로 되돌린다. 같은 경로의 기존 문서가 있으면 그 id 를 유지한다.
+            // parseMarkdownFile does not go through pushWithUniqueId, so it reverts a
+            // collision-resolved id (`_2`) to the raw id. Keep the existing id when a document at the same path exists.
             const existing = loadedDocuments?.find(d => d.absolutePath === absolutePath)
             const updatedDoc = existing ? { ...parsedDoc, id: existing.id } : parsedDoc
 
@@ -114,9 +114,9 @@ export default function VaultSelector() {
               )
               tfidfIndex.restore(serialized)
               tfidfIndex.setImplicitLinks(implicitLinks, adj)
-              // Date.now() fingerprint 로 저장하면 loadTfIdfCache 의 buildFingerprint(id:mtime)
-              // 와 절대 일치하지 않아 유효했던 캐시를 덮어쓰고 이후 매 시작마다 전체 재빌드가
-              // 된다. 무효화만 하고 다음 볼트 로드에서 올바른 지문으로 다시 쓰게 한다.
+              // Saving with a Date.now() fingerprint never matches loadTfIdfCache's
+              // buildFingerprint(id:mtime), overwriting a valid cache and forcing a full rebuild on
+              // every startup. Only invalidate, and let the next vault load rewrite it with the correct fingerprint.
               invalidateTfIdfCache(currentVaultPath).catch(() => {})
             }
             return  // Incremental update complete — full reload not needed

@@ -30,16 +30,16 @@ function ok(data: unknown) { return { content: [{ type: 'text' as const, text: J
 function err(msg: string) { return { content: [{ type: 'text' as const, text: `Error: ${msg}` }], isError: true as const } }
 
 /**
- * YAML frontmatter 안전 직렬화.
- * JSON.stringify 의 출력은 YAML double-quoted 스칼라와 호환된다 (\" \\ \n \t \uXXXX).
- * 이스케이프 없이 `title: "${제목}"` 을 만들면 제목에 `"` 하나만 있어도 gray-matter 가
- * throw 하고, 그러면 그 문서 하나 때문에 볼트 전체 로드가 실패한다.
+ * Safe YAML frontmatter serialization.
+ * JSON.stringify output is compatible with YAML double-quoted scalars (\" \\ \n \t \uXXXX).
+ * Building `title: "${title}"` without escaping makes gray-matter throw on a single `"` in the title,
+ * and then that one document fails the whole vault load.
  */
 function yamlStr(v: unknown): string {
   return JSON.stringify(v == null ? '' : String(v))
 }
 
-/** 파일명으로 쓸 수 없는 문자 제거 + 길이 제한 */
+/** Strip characters not allowed in filenames + limit length */
 function sanitizeFilenameBase(title: string): string {
   const base = title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[.\s]+$/, '').trim().slice(0, 150)
   return base || 'untitled'
@@ -72,8 +72,8 @@ const TOOLS = [
 
   // ─── Search ───
   { name: 'search_bm25', description: 'BM25 full-text search across vault documents', inputSchema: { type: 'object' as const, properties: { query: { type: 'string' }, topK: { type: 'number', description: 'Max results (default 10)' } }, required: ['query'] } },
-  { name: 'vector_build', description: '벡터 임베딩 인덱스를 빌드/갱신합니다. 로컬 BGE-M3 서버(http://127.0.0.1:8077, 1024차원)가 떠 있으면 그것을, 없으면 Gemini gemini-embedding-001(3072차원)로 폴백합니다. vault_reload 후 1회 실행하면 hybrid 검색(BM25 + 벡터 RRF 융합)이 활성화됩니다.', inputSchema: { type: 'object' as const, properties: {} } },
-  { name: 'vector_stats', description: '벡터 인덱스 상태 조회 — 제공자, 차원, 커버리지, 검색에 사용 가능한지 여부', inputSchema: { type: 'object' as const, properties: {} } },
+  { name: 'vector_build', description: 'Build or update the vector embedding index. Uses the local BGE-M3 server (http://127.0.0.1:8077, 1024 dims) if it is running, otherwise falls back to Gemini gemini-embedding-001 (3072 dims). Run once after vault_reload to enable hybrid search (BM25 + vector RRF fusion).', inputSchema: { type: 'object' as const, properties: {} } },
+  { name: 'vector_stats', description: 'Get vector index status — provider, dimensions, coverage, and whether it is usable for search', inputSchema: { type: 'object' as const, properties: {} } },
   { name: 'search_tags', description: 'Find documents by tag', inputSchema: { type: 'object' as const, properties: { tag: { type: 'string' } }, required: ['tag'] } },
   { name: 'search_speaker', description: 'Find documents by speaker/persona', inputSchema: { type: 'object' as const, properties: { speaker: { type: 'string' } }, required: ['speaker'] } },
 
@@ -97,15 +97,15 @@ const TOOLS = [
 
   // ─── Python Tools ───
   { name: 'python_run', description: 'Run a Python tool script from the tools/ directory', inputSchema: { type: 'object' as const, properties: { script: { type: 'string', description: 'Script name (e.g. check_quality.py)' }, args: { type: 'array', items: { type: 'string' }, description: 'Command-line arguments' } }, required: ['script'] } },
-  { name: 'jira_crosslink', description: 'Jira ↔ Active 볼트 교차 wikilink를 자동 주입합니다. Jira 이슈와 Confluence 문서를 의미 기반으로 연결합니다.', inputSchema: { type: 'object' as const, properties: { dry_run: { type: 'boolean', description: '미리보기만 (기본 true). false이면 실제 파일 수정.' } } } },
+  { name: 'jira_crosslink', description: 'Automatically injects cross-wikilinks between Jira and Active vault. Semantically connects Jira issues with Confluence documents.', inputSchema: { type: 'object' as const, properties: { dry_run: { type: 'boolean', description: 'Preview only (default true). If false, modifies actual files.' } } } },
 
   // ─── Confluence / Jira Sync ───
   { name: 'confluence_sync', description: 'Sync pages from Confluence to vault', inputSchema: { type: 'object' as const, properties: { spaceKey: { type: 'string', description: 'Override space key (optional)' }, dateFrom: { type: 'string', description: 'Override date filter (optional)' } } } },
   { name: 'jira_sync', description: 'Sync issues from Jira to vault', inputSchema: { type: 'object' as const, properties: { projectKey: { type: 'string', description: 'Override project key (optional)' }, jql: { type: 'string', description: 'Override JQL (optional)' } } } },
-  { name: 'jira_create_issue', description: 'Create a new Jira issue and optionally assign to a team member', inputSchema: { type: 'object' as const, properties: { summary: { type: 'string', description: '이슈 제목' }, description: { type: 'string', description: '이슈 설명' }, issuetype: { type: 'string', description: 'Task | Story | Bug | Sub-task (default: Task)' }, assigneeAccountId: { type: 'string', description: '담당자 Jira accountId' }, components: { type: 'array', items: { type: 'string' }, description: '컴포넌트 이름 목록 (예: ["[V1_아트실] 원화파트", "[V1_기획실]"]). jira-members.md의 component 필드 참조.' }, priority: { type: 'string', description: 'Highest | High | Medium | Low | Lowest (default: Medium)' }, labels: { type: 'array', items: { type: 'string' }, description: '레이블 목록' }, parentKey: { type: 'string', description: '상위 Epic/Story 키 (선택)' } }, required: ['summary'] } },
-  { name: 'jira_transition', description: 'Jira 이슈 상태를 전환합니다 (예: To Do → In Progress → Done)', inputSchema: { type: 'object' as const, properties: { issue_key: { type: 'string', description: '이슈 키 (예: PROJ-123)' }, transition_name: { type: 'string', description: '전환할 상태 이름 (예: "In Progress", "Done"). list_only=true이면 이 필드 불필요.' }, list_only: { type: 'boolean', description: 'true이면 전환 목록만 반환' } }, required: ['issue_key'] } },
+  { name: 'jira_create_issue', description: 'Create a new Jira issue and optionally assign to a team member', inputSchema: { type: 'object' as const, properties: { summary: { type: 'string', description: 'Issue title' }, description: { type: 'string', description: 'Issue description' }, issuetype: { type: 'string', description: 'Task | Story | Bug | Sub-task (default: Task)' }, assigneeAccountId: { type: 'string', description: 'Assignee Jira accountId' }, components: { type: 'array', items: { type: 'string' }, description: 'Component name list (e.g. ["[V1_Art] Concept Art", "[V1_Design]"]). See component field in jira-members.md.' }, priority: { type: 'string', description: 'Highest | High | Medium | Low | Lowest (default: Medium)' }, labels: { type: 'array', items: { type: 'string' }, description: 'Label list' }, parentKey: { type: 'string', description: 'Parent Epic/Story key (optional)' } }, required: ['summary'] } },
+  { name: 'jira_transition', description: 'Transition a Jira issue status (e.g. To Do → In Progress → Done)', inputSchema: { type: 'object' as const, properties: { issue_key: { type: 'string', description: 'Issue key (e.g. PROJ-123)' }, transition_name: { type: 'string', description: 'Target status name (e.g. "In Progress", "Done"). Not needed if list_only=true.' }, list_only: { type: 'boolean', description: 'If true, only returns the list of available transitions' } }, required: ['issue_key'] } },
   { name: 'jira_get_members', description: 'Get assignable members for the Jira project (with accountId)', inputSchema: { type: 'object' as const, properties: { projectKey: { type: 'string', description: 'Override project key (optional)' } } } },
-  { name: 'jira_sprint_move', description: '기존 Jira 이슈를 활성 스프린트(또는 지정 스프린트)로 이동합니다', inputSchema: { type: 'object' as const, properties: { issue_key: { type: 'string', description: '이슈 키 (예: SGEATF-11862)' }, sprint_id: { type: 'number', description: '스프린트 ID (미지정 시 활성 스프린트 자동 탐색)' } }, required: ['issue_key'] } },
+  { name: 'jira_sprint_move', description: 'Move an existing Jira issue to the active sprint (or a specified sprint)', inputSchema: { type: 'object' as const, properties: { issue_key: { type: 'string', description: 'Issue key (e.g. SGEATF-11862)' }, sprint_id: { type: 'number', description: 'Sprint ID (auto-detects active sprint if not specified)' } }, required: ['issue_key'] } },
 
   // ─── Confluence Write ───
   { name: 'confluence_write_page', description: 'Create or update a Confluence page with Markdown content', inputSchema: { type: 'object' as const, properties: { mode: { type: 'string', description: '"create" (new page) or "update" (existing page)' }, pageId: { type: 'string', description: 'Required for update mode — target page ID' }, title: { type: 'string', description: 'Page title' }, markdownContent: { type: 'string', description: 'Markdown content to publish' }, spaceKey: { type: 'string', description: 'Space key (create mode, optional — uses config default)' }, parentId: { type: 'string', description: 'Parent page ID (create mode, optional)' } }, required: ['mode', 'title', 'markdownContent'] } },
@@ -187,7 +187,7 @@ async function handleTool(name: string, args: Args): Promise<ToolResult> {
     }
     case 'vector_build': {
       const result = await buildVectorIndex()
-      // 제공자가 아예 없을 때만 에러 — 일부 실패는 통계와 함께 성공으로 반환
+      // Error only when there is no provider at all — partial failures return success with stats
       if (result.error && result.embedded === 0 && result.indexed === 0) return err(result.error)
       return ok(result)
     }
@@ -279,24 +279,24 @@ async function handleTool(name: string, args: Args): Promise<ToolResult> {
 
       const modelId = (args.model as string) ?? config.editAgent.modelId
       const instructions = args.instructions as string
-      const systemPrompt = `당신은 문서 편집 에이전트입니다. 사용자의 지시에 따라 문서를 수정합니다.
-지시사항을 정확히 따르고, 수정된 전체 문서를 반환하세요. 마크다운 형식을 유지하세요.
-${config.editAgent.refinementManual ? `\n편집 매뉴얼:\n${config.editAgent.refinementManual}` : ''}`
+      const systemPrompt = `You are a document editing agent. You modify documents according to user instructions.
+Follow the instructions exactly and return the full modified document. Maintain markdown formatting.
+${config.editAgent.refinementManual ? `\nEditing manual:\n${config.editAgent.refinementManual}` : ''}`
 
       const { text: result, stopReason } = await chatDetailed(modelId, systemPrompt, [
-        { role: 'user', content: `## 원본 문서\n\n${content}\n\n## 편집 지시\n\n${instructions}\n\n수정된 전체 문서를 반환하세요.` },
+        { role: 'user', content: `## Original Document\n\n${content}\n\n## Editing Instructions\n\n${instructions}\n\nReturn the full modified document.` },
       ], 'mcp_editAgent')
 
-      // 잘린 출력으로 원본을 덮어쓰면 문서 뒷부분이 영구 소실된다 — 저장을 거부한다
+      // Overwriting the original with truncated output would permanently lose the tail of the document — refuse to save
       if (stopReason === 'max_tokens') {
-        return err(`LLM 출력이 max_tokens 한도에서 잘렸습니다 (stop_reason=max_tokens). 원본을 덮어쓰지 않았습니다. 문서를 나눠 편집하거나 범위를 좁혀 다시 시도하세요. (생성 길이 ${result.length}자)`)
+        return err(`LLM output was truncated at the max_tokens limit (stop_reason=max_tokens). The original was not overwritten. Split the document or narrow the scope and try again. (generated length ${result.length} chars)`)
       }
       if (!result.trim()) {
-        return err('LLM 이 빈 응답을 반환했습니다 — 원본을 덮어쓰지 않았습니다')
+        return err('LLM returned an empty response — the original was not overwritten')
       }
 
       const saved = saveFile(abs, result)
-      if (!saved.success) return err(`파일 저장 실패: ${args.path}`)
+      if (!saved.success) return err(`Failed to save file: ${args.path}`)
       return ok({ path: args.path, message: 'Document refined and saved', stopReason, preview: result.slice(0, 500) })
     }
 
@@ -312,13 +312,13 @@ ${config.editAgent.refinementManual ? `\n편집 매뉴얼:\n${config.editAgent.r
       for (let round = 1; round <= rounds; round++) {
         for (const persona of personas) {
           const prompt = round === 1 && history.length === 0
-            ? `주제: "${topic}"\n\n이 주제에 대해 당신의 관점에서 의견을 제시하세요. 2-3문단으로 답변하세요.`
-            : `주제: "${topic}"\n\n이전 토론 내용을 참고하여 당신의 관점에서 추가 의견이나 반론을 제시하세요. 2-3문단으로 답변하세요.`
+            ? `Topic: "${topic}"\n\nPresent your opinion on this topic from your perspective. Answer in 2-3 paragraphs.`
+            : `Topic: "${topic}"\n\nReferring to the previous discussion, present additional opinions or counterarguments from your perspective. Answer in 2-3 paragraphs.`
 
           const response = await chatWithPersona(persona, prompt, history)
           transcript.push({ round, persona, message: response })
           history.push({ role: 'assistant', content: `[${persona}] ${response}` })
-          history.push({ role: 'user', content: '다음 참가자의 의견을 들어보겠습니다.' })
+          history.push({ role: 'user', content: 'Let us hear the next participant\'s opinion.' })
         }
       }
 
@@ -383,7 +383,7 @@ ${config.editAgent.refinementManual ? `\n편집 매뉴얼:\n${config.editAgent.r
       type ConfPage = { title: string; body: { storage: { value: string } }; version: { when: string } }
       const PAGE_LIMIT = 100
       let start = 0, synced = 0, hasMore = true
-      // 같은 파일명으로 정규화되는 서로 다른 페이지가 덮어써지지 않도록 접미사를 붙인다
+      // Add a suffix so different pages that normalize to the same filename do not overwrite each other
       const usedFilenames = new Set<string>()
       const renamed: { title: string; filename: string }[] = []
       const failed: string[] = []
@@ -450,7 +450,7 @@ ${config.editAgent.refinementManual ? `\n편집 매뉴얼:\n${config.editAgent.r
 
         for (const issue of data.issues ?? []) {
           const f = issue.fields
-          // 이슈 키는 고유하므로 충돌하지 않지만, frontmatter 는 반드시 이스케이프한다
+          // Issue keys are unique so they do not collide, but frontmatter must always be escaped
           const filename = `${sanitizeFilenameBase(issue.key)}.md`
           const content = `---\nsource: jira\ntitle: ${yamlStr(f.summary)}\ndate: ${yamlStr(f.updated.slice(0, 10))}\nstatus: ${yamlStr(f.status.name)}\n---\n\n# ${issue.key}: ${f.summary}\n\n**Status:** ${f.status.name}\n**Assignee:** ${f.assignee?.displayName ?? 'Unassigned'}\n\n${f.description ?? ''}`
           const saved = saveFile(join(targetDir, filename), content)
@@ -519,11 +519,11 @@ ${config.editAgent.refinementManual ? `\n편집 매뉴얼:\n${config.editAgent.r
       const data = await res.json() as { id: string; key: string }
       const issueKey = data.key
 
-      // ── 활성 스프린트 자동 배정 ───────────────────────────────────────────
+      // ── Auto-assign to active sprint ──────────────────────────────────────
       let sprintId: number | null = null
       try {
         const agileBase = `${jiraBase}/rest/agile/1.0`
-        // 설정에 boardId가 있으면 바로 사용, 없으면 scrum 보드 자동 탐색
+        // Use boardId from config if available, otherwise auto-detect scrum board
         let boardId: number | undefined = (cfg as Record<string, unknown>).boardId as number | undefined
         if (!boardId) {
           const boardRes = await fetch(`${agileBase}/board?projectKeyOrId=${encodeURIComponent(projectKey)}&type=scrum&maxResults=10`, { headers: authHeaders, signal: AbortSignal.timeout(EXT_TIMEOUT_MS) })
@@ -539,7 +539,7 @@ ${config.editAgent.refinementManual ? `\n편집 매뉴얼:\n${config.editAgent.r
             sprintId = sprintData?.values?.[0]?.id ?? null
           }
         }
-      } catch { /* 스프린트 조회 실패 시 백로그 유지 */ }
+      } catch { /* Keep in backlog if sprint lookup fails */ }
 
       if (sprintId) {
         try {
@@ -547,7 +547,7 @@ ${config.editAgent.refinementManual ? `\n편집 매뉴얼:\n${config.editAgent.r
             method: 'POST', headers: authHeaders, body: JSON.stringify({ issues: [issueKey] }),
             signal: AbortSignal.timeout(EXT_TIMEOUT_MS),
           })
-        } catch { /* 스프린트 배정 실패 시 무시 */ }
+        } catch { /* Ignore if sprint assignment fails */ }
       }
 
       return ok({ created: true, key: issueKey, id: data.id, url: `${jiraBase}/browse/${issueKey}`, sprintId })
@@ -569,7 +569,7 @@ ${config.editAgent.refinementManual ? `\n편집 매뉴얼:\n${config.editAgent.r
 
       let sprintId = args.sprint_id as number | undefined
       if (!sprintId) {
-        // 활성 스프린트 자동 탐색
+        // Auto-detect active sprint
         const boardId = (cfg as Record<string, unknown>).boardId as number | undefined
         let resolvedBoardId = boardId
         if (!resolvedBoardId) {
@@ -587,7 +587,7 @@ ${config.editAgent.refinementManual ? `\n편집 매뉴얼:\n${config.editAgent.r
           }
         }
       }
-      if (!sprintId) return err('활성 스프린트를 찾을 수 없습니다')
+      if (!sprintId) return err('Could not find an active sprint')
 
       const res = await fetch(`${agileBase}/sprint/${sprintId}/issue`, {
         method: 'POST', headers: authHeaders, body: JSON.stringify({ issues: [issueKey] }),
@@ -637,7 +637,7 @@ ${config.editAgent.refinementManual ? `\n편집 매뉴얼:\n${config.editAgent.r
         : 'Basic ' + Buffer.from(`${cfg.email}:${cfg.apiToken}`).toString('base64')
       const authHeaders = { 'Authorization': authHeader, 'Content-Type': 'application/json', 'Accept': 'application/json' }
 
-      // 전환 목록 조회
+      // Fetch available transitions
       const listRes = await fetch(`${restBase}/issue/${issueKey}/transitions`, { headers: authHeaders, signal: AbortSignal.timeout(EXT_TIMEOUT_MS) })
       if (!listRes.ok) return err(`Jira ${listRes.status}: ${await listRes.text()}`)
       const listData = await listRes.json() as { transitions: { id: string; name: string; to: { name: string } }[] }
@@ -647,10 +647,10 @@ ${config.editAgent.refinementManual ? `\n편집 매뉴얼:\n${config.editAgent.r
         return ok({ transitions: transitions.map(t => ({ id: t.id, name: t.name, to: t.to.name })) })
       }
 
-      // 이름 매칭 (대소문자 무시)
+      // Name matching (case-insensitive)
       const target = transitions.find(t => t.name.toLowerCase() === transitionName.toLowerCase())
       if (!target) {
-        return err(`전환 "${transitionName}"을 찾을 수 없습니다. 가능한 전환: ${transitions.map(t => t.name).join(', ')}`)
+        return err(`Transition "${transitionName}" not found. Available transitions: ${transitions.map(t => t.name).join(', ')}`)
       }
 
       const transRes = await fetch(`${restBase}/issue/${issueKey}/transitions`, {
@@ -728,8 +728,8 @@ ${config.editAgent.refinementManual ? `\n편집 매뉴얼:\n${config.editAgent.r
           return `<p>${t.replace(/\n/g, '<br />')}</p>`
         }).filter(Boolean)
         let result = parts.join('\n')
-        // 치환 **함수**를 써야 한다 — 문자열을 그대로 넘기면 코드블록 안의
-        // `$&` / `$1` / `$$` 이 치환 패턴으로 해석되어 코드가 망가진다.
+        // A replacement **function** is required — passing a plain string would let
+        // `$&` / `$1` / `$$` inside code blocks be interpreted as replacement patterns and corrupt the code.
         codeBlocks.forEach((code: string, i: number) => { result = result.replace(`\x00CODE${i}\x00`, () => code) })
         return result
       }
@@ -807,36 +807,36 @@ ${config.editAgent.refinementManual ? `\n편집 매뉴얼:\n${config.editAgent.r
 // ── MCP Gate Prompt ─────────────────────────────────────────────────────────
 // Injected when Claude Code connects — tells the model it's in MCP control mode.
 
-const GATE_PROMPT = `당신은 지금 **Strata Sync MCP 서버**에 연결되어 있습니다.
+const GATE_PROMPT = `You are now connected to the **Strata Sync MCP Server**.
 
-## 모드: MCP 풀 컨트롤
-- GUI의 API 키를 사용하지 않습니다. 모든 LLM 호출은 이 MCP 서버를 경유합니다.
-- 당신은 서브 에이전트를 통해 Strata Sync의 모든 기능을 직접 통제합니다.
-- vault CRUD, 그래프 분석, 채팅, 검색, Edit Agent, 토론, Python 도구,
-  Confluence/Jira 동기화, Slack 봇, 사용량 추적, 설정 — 전부 MCP 도구로 제어 가능합니다.
+## Mode: MCP Full Control
+- GUI API keys are not used. All LLM calls go through this MCP server.
+- You directly control all Strata Sync features through sub-agents.
+- Vault CRUD, graph analysis, chat, search, Edit Agent, debate, Python tools,
+  Confluence/Jira sync, Slack bot, usage tracking, settings — all controllable via MCP tools.
 
-## 사용 가능한 도구 (37개)
-| 카테고리 | 도구 |
+## Available Tools (37)
+| Category | Tools |
 |---------|------|
 | Vault CRUD | vault_reload, vault_list, vault_read, vault_write, vault_delete, vault_rename, vault_move, vault_mkdir |
-| 검색 | search_bm25, vector_build, vector_stats, search_tags, search_speaker |
-| 그래프 분석 | graph_stats, graph_pagerank, graph_clusters, graph_bridges, graph_implicit_links, graph_neighbors |
-| 채팅 / LLM | chat, chat_persona |
-| 편집 에이전트 | edit_agent_refine |
-| 토론 | debate_start |
-| Python 도구 | python_run |
-| 외부 연동 | confluence_sync, confluence_write_page, jira_sync, jira_create_issue, jira_get_members, slack_send |
-| 사용량 | usage_summary, usage_log |
-| 설정 | settings_get, settings_update |
+| Search | search_bm25, vector_build, vector_stats, search_tags, search_speaker |
+| Graph Analysis | graph_stats, graph_pagerank, graph_clusters, graph_bridges, graph_implicit_links, graph_neighbors |
+| Chat / LLM | chat, chat_persona |
+| Edit Agent | edit_agent_refine |
+| Debate | debate_start |
+| Python Tools | python_run |
+| External Integration | confluence_sync, confluence_write_page, jira_sync, jira_create_issue, jira_get_members, slack_send |
+| Usage | usage_summary, usage_log |
+| Settings | settings_get, settings_update |
 
-## 핵심 원칙
-1. **vault_reload를 먼저 호출** — 검색/그래프 도구 사용 전에 볼트를 로드하세요.
-2. **search_bm25로 컨텍스트 수집** → chat_persona로 페르소나 채팅 — RAG 파이프라인.
-3. **edit_agent_refine**으로 문서 자동 정제 — 지시사항만 주면 LLM이 수정 후 저장.
-4. **graph_stats → graph_pagerank → graph_clusters** — 볼트 구조 파악 순서.
-5. 비용 추적: usage_summary로 현재 세션 토큰/비용 확인.
+## Key Principles
+1. **Call vault_reload first** — Load the vault before using search/graph tools.
+2. **Collect context with search_bm25** → persona chat with chat_persona — RAG pipeline.
+3. **edit_agent_refine** for automatic document refinement — just provide instructions, LLM edits and saves.
+4. **graph_stats → graph_pagerank → graph_clusters** — recommended order for understanding vault structure.
+5. Cost tracking: check current session tokens/cost with usage_summary.
 
-이 프롬프트는 MCP 게이트를 통과할 때 자동 주입됩니다.`
+This prompt is automatically injected when passing through the MCP gate.`
 
 // ── Create server ───────────────────────────────────────────────────────────
 
@@ -890,7 +890,7 @@ export function createServer(): Server {
   server.setRequestHandler(ListPromptsRequestSchema, async () => ({
     prompts: [{
       name: 'strata-sync-gate',
-      description: 'Strata Sync MCP 풀 컨트롤 모드 — 연결 시 자동 주입되는 시스템 프롬프트',
+      description: 'Strata Sync MCP full control mode — system prompt auto-injected on connection',
     }],
   }))
 
@@ -900,7 +900,7 @@ export function createServer(): Server {
       throw new Error(`Unknown prompt: ${req.params.name}`)
     }
     return {
-      description: 'Strata Sync MCP 풀 컨트롤 모드',
+      description: 'Strata Sync MCP full control mode',
       messages: [{ role: 'user' as const, content: { type: 'text' as const, text: GATE_PROMPT } }],
     }
   })

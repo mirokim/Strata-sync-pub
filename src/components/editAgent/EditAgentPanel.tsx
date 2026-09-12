@@ -63,7 +63,7 @@ export default function EditAgentPanel() {
           {/* Vault refresh countdown badge */}
           {countdown !== null && (
             <span
-              title="편집된 파일을 반영하기 위해 볼트를 자동 새로고침합니다"
+              title="The vault will auto-refresh to pick up the edited files"
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 3,
                 fontSize: 9, fontWeight: 600, letterSpacing: '0.04em',

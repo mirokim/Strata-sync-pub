@@ -119,10 +119,10 @@ def test_prepare_chunks_all_ids_unique():
 
 
 def test_prepare_chunks_ids_unique_without_section_id():
-    """section_id 가 없는 같은 문서의 여러 섹션도 고유 ID 를 가져야 한다.
+    """Multiple sections of the same document without section_id must still get unique IDs.
 
-    doc_id 로 폴백하면 섹션마다 idx 가 0부터 다시 시작해 ID 가 충돌하고,
-    upsert 가 앞 섹션을 조용히 덮어쓴다.
+    Falling back to doc_id restarts idx from 0 for each section, so IDs collide
+    and upsert silently overwrites earlier sections.
     """
     docs = [
         {
@@ -138,12 +138,12 @@ def test_prepare_chunks_ids_unique_without_section_id():
     ]
     chunks = prepare_chunks(docs)
     ids = [c["id"] for c in chunks]
-    assert len(chunks) > 4  # 각 섹션이 여러 서브청크로 분할됨
-    assert len(ids) == len(set(ids)), "section_id 없는 섹션들의 ID 가 충돌한다"
+    assert len(chunks) > 4  # each section is split into multiple sub-chunks
+    assert len(ids) == len(set(ids)), "IDs collide for sections without section_id"
 
 
 def test_prepare_chunks_ids_are_stable_across_runs():
-    """같은 입력은 항상 같은 ID 집합을 만들어야 한다 (재인덱싱 멱등)."""
+    """The same input must always produce the same ID set (re-indexing is idempotent)."""
     docs = [
         {
             "doc_id": "d1", "filename": "a.md", "section_id": None,

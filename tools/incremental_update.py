@@ -11,7 +11,7 @@ Usage:
       --vault  /path/to/refined_vault \\
       --scripts /path/to/.manual/scripts
 
-  # 변환 후 자동으로 normalize + enhance + gen_index 실행
+  # Automatically run normalize + enhance + gen_index after conversion
   python incremental_update.py --src ... --vault ... --scripts ... --full-pipeline
 """
 
@@ -43,14 +43,14 @@ def find_new_html_files(src_dirs: list, existing_ids: set) -> list:
     for src_dir in src_dirs:
         src_path = Path(src_dir)
         if not src_path.is_dir():
-            print(f"  ⚠️  경로 없음: {src_dir}")
+            print(f"  ⚠️  Path not found: {src_dir}")
             continue
         for html in src_path.glob('*.html'):
-            # page_id를 파일명에서 추출 (숫자_제목.html 형식)
+            # Extract page_id from the filename (digits_title.html format)
             m = re.match(r'^(\d+)_', html.stem)
             page_id = m.group(1) if m else None
             if page_id and page_id in existing_ids:
-                continue  # 이미 존재
+                continue  # Already exists
             new_files.append(html)
     return new_files
 
@@ -63,15 +63,15 @@ def run_pipeline_step(script: Path, args: list):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='신규 HTML 증분 변환')
+    parser = argparse.ArgumentParser(description='Incremental conversion of new HTML files')
     parser.add_argument('--src', nargs='+', required=True,
-                        help='downloaded_pages 폴더 경로 (여러 개 가능)')
+                        help='downloaded_pages folder path(s) (multiple allowed)')
     parser.add_argument('--vault', required=True,
-                        help='refined_vault/ 폴더 경로')
+                        help='refined_vault/ folder path')
     parser.add_argument('--scripts', required=True,
-                        help='.manual/scripts/ 폴더 경로')
+                        help='.manual/scripts/ folder path')
     parser.add_argument('--full-pipeline', action='store_true',
-                        help='변환 후 normalize + enhance + gen_index 실행')
+                        help='Run normalize + enhance + gen_index after conversion')
     args = parser.parse_args()
 
     vault = Path(args.vault)
@@ -84,29 +84,29 @@ def main():
 
     print("Collecting existing page_ids...")
     existing = get_existing_page_ids(active_dir)
-    print(f"  Existing files: {len(existing)}개")
+    print(f"  Existing files: {len(existing)}")
 
     print("Searching for new HTML files...")
     new_html = find_new_html_files(args.src, existing)
-    print(f"  New files: {len(new_html)}개")
+    print(f"  New files: {len(new_html)}")
 
     if not new_html:
         print("No new files. Exiting.")
         return
 
-    # 임시 폴더에 신규 파일 모아서 변환
+    # Gather the new files in a temporary folder and convert
     import tempfile, shutil
     with tempfile.TemporaryDirectory() as tmp:
         tmp_src = Path(tmp) / 'new_html'
         tmp_src.mkdir()
         for html in new_html:
-            # files 폴더도 같이 복사
+            # Copy the files folder along with it
             shutil.copy2(html, tmp_src / html.name)
             files_dir = html.parent / f'{html.stem}_files'
             if files_dir.is_dir():
                 shutil.copytree(files_dir, tmp_src / files_dir.name)
 
-        print(f"\nStarting conversion ({len(new_html)}개)...")
+        print(f"\nStarting conversion ({len(new_html)} files)...")
         ret = run_pipeline_step(
             scripts_dir / 'refine_html_to_md.py',
             [str(tmp_src), str(active_dir), str(vault / 'attachments')]
@@ -116,7 +116,7 @@ def main():
             sys.exit(ret)
 
     if args.full_pipeline:
-        print("\nPipeline 추가 단계 실행...")
+        print("\nRunning additional pipeline steps...")
 
         print("  normalize_frontmatter.py ...")
         run_pipeline_step(scripts_dir / 'normalize_frontmatter.py', [str(active_dir)])
@@ -137,7 +137,7 @@ def main():
         print("  gen_index.py ...")
         run_pipeline_step(scripts_dir / 'gen_index.py', [str(active_dir)])
 
-    print("\n✅ 증분 업데이트 Complete")
+    print("\n✅ Incremental update Complete")
 
 
 if __name__ == '__main__':

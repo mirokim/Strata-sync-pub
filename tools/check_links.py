@@ -93,7 +93,7 @@ def scan_file(md: Path, all_stems: set, attachments_dir: Path
 
 
 def fix_bad_bangs(md: Path) -> int:
-    """C 유형: ![[stem]] → [[stem]] (! 제거)."""
+    """Type C: ![[stem]] → [[stem]] (remove !)."""
     content = md.read_text(encoding='utf-8', errors='replace')
     fixed = 0
 
@@ -141,15 +141,15 @@ def run(active_dir: Path, attachments_dir: Path,
 
 def print_report(results: dict, totals: dict, fix: bool, verbose: bool):
     print(f"\n{'='*58}")
-    print(f"§13.1.1 check_links 결과  ({'--fix 적용' if fix else 'DRY-RUN'})")
+    print(f"§13.1.1 check_links results  ({'--fix applied' if fix else 'DRY-RUN'})")
     print(f"{'='*58}")
-    print(f"  Files checked: {totals['files_checked']}개")
-    print(f"  정상 이미지 Links: {totals['ok_images']}개")
+    print(f"  Files checked: {totals['files_checked']}")
+    print(f"  Valid image links: {totals['ok_images']}")
     print()
 
     # A
-    print(f"  [A] 깨진 이미지 링크 (![[img.png]] → attachments 없음): "
-          f"{totals['broken_images']}개")
+    print(f"  [A] Broken image links (![[img.png]] → missing in attachments): "
+          f"{totals['broken_images']}")
     if verbose or totals['broken_images']:
         for fname, r in results.items():
             if r['broken_images']:
@@ -157,11 +157,11 @@ def print_report(results: dict, totals: dict, fix: bool, verbose: bool):
                 for img in r['broken_images'][:5]:
                     print(f"        ![[{img[:50]}]]")
                 if len(r['broken_images']) > 5:
-                    print(f"        ... 외 {len(r['broken_images'])-5}개")
+                    print(f"        ... and {len(r['broken_images'])-5} more")
 
     # B
-    print(f"\n  [B] 깨진 문서 링크 ([[stem]] → active 없음): "
-          f"{totals['broken_docs']}개")
+    print(f"\n  [B] Broken document links ([[stem]] → missing in active): "
+          f"{totals['broken_docs']}")
     if verbose or totals['broken_docs']:
         for fname, r in results.items():
             if r['broken_docs']:
@@ -169,15 +169,15 @@ def print_report(results: dict, totals: dict, fix: bool, verbose: bool):
                 for stem in r['broken_docs'][:5]:
                     print(f"        [[{stem[:50]}]]")
                 if len(r['broken_docs']) > 5:
-                    print(f"        ... 외 {len(r['broken_docs'])-5}개")
+                    print(f"        ... and {len(r['broken_docs'])-5} more")
 
     # C
-    print(f"\n  [C] 잘못된 패턴 (![[stem]] 이미지 확장자 없음): "
-          f"{totals['bad_bangs']}개")
+    print(f"\n  [C] Bad patterns (![[stem]] without an image extension): "
+          f"{totals['bad_bangs']}")
     if fix:
-        print(f"      → {totals['bang_fixed']}개 자동 수정 (! 제거)")
+        print(f"      → {totals['bang_fixed']} auto-fixed (! removed)")
     else:
-        print(f"      → --fix 옵션 추가 시 자동 수정")
+        print(f"      → add --fix to fix automatically")
     if verbose or totals['bad_bangs']:
         for fname, r in results.items():
             if r['bad_bangs']:
@@ -189,19 +189,19 @@ def print_report(results: dict, totals: dict, fix: bool, verbose: bool):
     a_ok = totals['broken_images'] == 0
     b_ok = totals['broken_docs'] == 0
     c_ok = totals['bad_bangs'] == 0
-    print(f"  깨진 이미지 Links: {totals['broken_images']}개  {'✅' if a_ok else '❌ (attachments 폴더 확인 필요)'}")
-    print(f"  깨진 문서 Links:   {totals['broken_docs']}개  {'✅' if b_ok else '❌'}")
-    print(f"  잘못된 ! 패턴:    {totals['bad_bangs']}개  {'✅' if c_ok else '❌ (--fix 로 수정 가능)'}")
+    print(f"  Broken image links:    {totals['broken_images']}  {'✅' if a_ok else '❌ (check the attachments folder)'}")
+    print(f"  Broken document links: {totals['broken_docs']}  {'✅' if b_ok else '❌'}")
+    print(f"  Bad ! patterns:        {totals['bad_bangs']}  {'✅' if c_ok else '❌ (fixable with --fix)'}")
 
     if a_ok and b_ok and c_ok:
         print("\n  🎉 All links valid!")
 
 
 def main():
-    parser = argparse.ArgumentParser(description='§13.1.1 이미지/문서 링크 분리 점검')
+    parser = argparse.ArgumentParser(description='§13.1.1 Separate image/document link check')
     parser.add_argument('active_dir', help='active/ folder path')
-    parser.add_argument('--attachments', help='attachments 폴더 경로 (기본: active/../attachments)')
-    parser.add_argument('--fix', action='store_true', help='C 유형 ![[stem]] → [[stem]] 자동 수정')
+    parser.add_argument('--attachments', help='attachments folder path (default: active/../attachments)')
+    parser.add_argument('--fix', action='store_true', help='Auto-fix type C ![[stem]] → [[stem]]')
     parser.add_argument('--verbose', '-v', action='store_true', help='Detailed output of all items')
     args = parser.parse_args()
 
@@ -214,7 +214,7 @@ def main():
 
     print(f"§13.1.1 check_links starting...")
     print(f"  active:      {active_dir}")
-    print(f"  attachments: {attachments_dir} ({'존재' if attachments_dir.exists() else '없음'})")
+    print(f"  attachments: {attachments_dir} ({'exists' if attachments_dir.exists() else 'missing'})")
 
     results, totals = run(active_dir, attachments_dir, fix=args.fix, verbose=args.verbose)
     print_report(results, totals, fix=args.fix, verbose=args.verbose)

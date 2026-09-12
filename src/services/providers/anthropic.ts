@@ -6,14 +6,14 @@ const API_URL = 'https://api.anthropic.com/v1/messages'
 const API_VERSION = '2023-06-01'
 
 function getMaxTokens(model: string): number {
-  // Extended Thinking 지원 모델은 더 큰 출력 상한을 가짐
+  // Models that support Extended Thinking have a larger output ceiling
   if (model.includes('claude-3-7') || model.includes('opus-4') || model.includes('sonnet-4')) return 16000
   if (model.includes('opus')) return 8192
   if (model.includes('sonnet')) return 8192
   return 4096 // haiku and others
 }
 
-/** Extended Thinking은 Haiku 계열에서 지원되지 않음 */
+/** Extended Thinking is not supported on the Haiku family */
 function supportsThinking(model: string): boolean {
   return !model.includes('haiku')
 }
@@ -131,7 +131,7 @@ export async function streamCompletion(
    */
   let inputTokens = 0
   let outputTokens = 0
-  let inThinkingBlock = false  // Extended Thinking 블록 진행 중 여부
+  let inThinkingBlock = false  // whether an Extended Thinking block is in progress
 
   function extractChunk(data: string): string | null {
     const parsed = JSON.parse(data) as {
@@ -151,7 +151,7 @@ export async function streamCompletion(
     } else if (parsed.type === 'content_block_stop') {
       inThinkingBlock = false
     } else if (parsed.type === 'content_block_delta') {
-      if (inThinkingBlock) return null  // thinking 블록 내용은 사용자에게 노출하지 않음
+      if (inThinkingBlock) return null  // thinking block content is not exposed to the user
       if (parsed.delta?.type === 'text_delta' && parsed.delta.text) {
         return parsed.delta.text
       }

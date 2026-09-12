@@ -16,7 +16,7 @@ export default function LoadingOverlay() {
   const graphLayoutReady = useGraphStore(s => s.graphLayoutReady)
   const { setParagraphRenderQuality } = useSettingsStore()
 
-  // 백그라운드 로딩(bgLoadingInfo)은 오버레이를 블로킹하지 않음 — UI 클릭 허용
+  // Background loading (bgLoadingInfo) does not block the overlay — UI clicks allowed
   const shouldShow = isLoading
     || (vaultPath !== null && !vaultReady)
   const isBgOnly = !shouldShow && bgLoadingInfo !== null
@@ -70,7 +70,7 @@ export default function LoadingOverlay() {
     return () => { if (pulseRef.current) clearInterval(pulseRef.current) }
   }, [bgLoadingInfo, isLoading])
 
-  // 백그라운드 인덱싱만 진행 중 — 하단 미니 바만 표시 (UI 블로킹 없음)
+  // Only background indexing in progress — show just the bottom mini bar (no UI blocking)
   if (!visible && isBgOnly) {
     return (
       <div style={{
@@ -86,7 +86,7 @@ export default function LoadingOverlay() {
           }} />
         </div>
         <span style={{ fontSize: 10, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
-          {bgLoadingInfo!.done + 1}/{bgLoadingInfo!.total} 인덱싱
+          Indexing {bgLoadingInfo!.done + 1}/{bgLoadingInfo!.total}
         </span>
       </div>
     )
@@ -169,7 +169,7 @@ export default function LoadingOverlay() {
                 fontSize: 10, fontWeight: 700, letterSpacing: '0.07em',
                 textTransform: 'uppercase', color: 'var(--color-text-muted)',
               }}>
-                볼트 준비 현황
+                Vault Ready Status
               </span>
               <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
                 {readyCount} / {vaultEntries.length}
@@ -220,9 +220,9 @@ export default function LoadingOverlay() {
                   </span>
                   <span style={{ fontSize: 11, color: 'var(--color-text-muted)', flexShrink: 0 }}>
                     {isCurrentlyLoading ? `${loadingProgress}%`
-                      : isBgLoadingThis ? '인덱싱 중...'
-                      : isDone ? `${docCount}개`
-                      : '대기 중'}
+                      : isBgLoadingThis ? 'Indexing...'
+                      : isDone ? `${docCount} docs`
+                      : 'Waiting'}
                   </span>
                 </div>
               )
@@ -260,8 +260,8 @@ export default function LoadingOverlay() {
         }}>
           <span>
             {isBgLoading
-              ? `백그라운드 인덱싱 중... (${bgLoadingInfo!.done + 1}/${bgLoadingInfo!.total})`
-              : (loadingPhase || '볼트 로딩 중...')}
+              ? `Background indexing... (${bgLoadingInfo!.done + 1}/${bgLoadingInfo!.total})`
+              : (loadingPhase || 'Loading vault...')}
           </span>
           {!isBgLoading && loadingProgress > 0 && <span>{loadingProgress}%</span>}
         </div>

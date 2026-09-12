@@ -1,7 +1,7 @@
 /**
- * SlackBotTab — Slack 봇 프로세스 관리 탭.
- * Electron main 프로세스의 bot:start / bot:stop IPC를 통해
- * bot/bot.py --headless 를 spawn/kill 하고 로그를 실시간으로 표시합니다.
+ * SlackBotTab — Slack bot process management tab.
+ * Uses the bot:start / bot:stop IPC of the Electron main process to
+ * spawn/kill bot/bot.py --headless and shows its logs in real time.
  */
 
 import { useState, useEffect, useRef } from 'react'
@@ -22,7 +22,7 @@ export default function SlackBotTab() {
     setLogs(prev => [...prev.slice(-500), { id: crypto.randomUUID(), text: msg }])
   const logEndRef = useRef<HTMLDivElement>(null)
 
-  // 초기 상태 동기화 + 버퍼된 로그 불러오기
+  // Initial state sync + load buffered logs
   useEffect(() => {
     window.botAPI?.getStatus().then(s => setRunning(s.running)).catch(() => {})
     window.botAPI?.getLogs?.().then((lines: string[]) => {
@@ -30,14 +30,14 @@ export default function SlackBotTab() {
     }).catch(() => {})
   }, [setRunning])
 
-  // 로그 + 종료 이벤트 구독
+  // Subscribe to log + exit events
   useEffect(() => {
     const offLog     = window.botAPI?.onLog(line => addLog(line))
     const offStopped = window.botAPI?.onStopped(() => setRunning(false))
     return () => { offLog?.(); offStopped?.() }
   }, [setRunning])
 
-  // mcp-config.json 자동 동기화 (1초 디바운스)
+  // Auto-sync mcp-config.json (1s debounce)
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     if (!slackBotConfig.botToken && !slackBotConfig.appToken) return
@@ -46,7 +46,7 @@ export default function SlackBotTab() {
     return () => { if (syncTimer.current) clearTimeout(syncTimer.current) }
   }, [slackBotConfig])
 
-  // 로그 자동 스크롤
+  // Auto-scroll logs
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [logs])
@@ -54,18 +54,18 @@ export default function SlackBotTab() {
   const handleStart = async () => {
     const result = await startBot()
     if (result.ok) {
-      addLog('▶ 봇 시작됨')
+      addLog('▶ Bot started')
     } else {
-      addLog(`❌ 시작 실패: ${result.error}`)
+      addLog(`❌ Start failed: ${result.error}`)
     }
   }
 
   const handleStop = async () => {
     const result = await stopBot()
     if (!result?.ok) {
-      addLog(`■ 봇 정지 실패: ${'알 수 없는 오류'}`)
+      addLog(`■ Bot stop failed: ${'Unknown error'}`)
     } else {
-      addLog('■ 봇 정지됨')
+      addLog('■ Bot stopped')
     }
   }
 
@@ -95,11 +95,11 @@ export default function SlackBotTab() {
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: running ? 'var(--color-accent)' : 'var(--color-text-primary)', lineHeight: 1.3 }}>
-            {running ? 'Slack 봇 실행 중' : 'Slack 봇'}
+            {running ? 'Slack Bot running' : 'Slack Bot'}
           </div>
           {!canStart && !running && (
             <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
-              토큰을 먼저 입력하세요
+              Enter the tokens first
             </div>
           )}
         </div>
@@ -118,7 +118,7 @@ export default function SlackBotTab() {
             flexShrink: 0, whiteSpace: 'nowrap',
           }}
         >
-          {running ? <><Square size={11} /> 정지</> : <><Play size={11} /> 시작</>}
+          {running ? <><Square size={11} /> Stop</> : <><Play size={11} /> Start</>}
         </button>
       </div>
 
@@ -127,7 +127,7 @@ export default function SlackBotTab() {
       {/* Credentials */}
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 10 }}>
-          연결 설정
+          Connection Settings
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 14, borderRadius: 2, background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}>
           <div>
@@ -153,7 +153,7 @@ export default function SlackBotTab() {
             />
           </div>
           <div>
-            <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', display: 'block', marginBottom: 5 }}>응답 모델</label>
+            <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', display: 'block', marginBottom: 5 }}>Response Model</label>
             <select
               value={slackBotConfig.model}
               onChange={e => setSlackBotConfig({ model: e.target.value })}
@@ -166,8 +166,8 @@ export default function SlackBotTab() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
-              <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)' }}>이미지 업로드</div>
-              <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>볼트 이미지를 Slack에 자동 첨부</div>
+              <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)' }}>Image Upload</div>
+              <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>Auto-attach vault images to Slack</div>
             </div>
             <input
               type="checkbox"
@@ -183,14 +183,14 @@ export default function SlackBotTab() {
       <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
           <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
-            로그
+            Logs
           </div>
           {logs.length > 0 && (
             <button
               onClick={() => setLogs([])}
               style={{ fontSize: 11, color: 'var(--color-text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', borderRadius: 4 }}
             >
-              지우기
+              Clear
             </button>
           )}
         </div>
@@ -203,7 +203,7 @@ export default function SlackBotTab() {
           color: 'var(--color-text-secondary)',
         }}>
           {logs.length === 0
-            ? <span style={{ color: 'var(--color-text-muted)' }}>봇을 시작하면 로그가 표시됩니다.</span>
+            ? <span style={{ color: 'var(--color-text-muted)' }}>Logs will appear once the bot is started.</span>
             : logs.map(entry => (
               <div key={entry.id} style={{
                 lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-all',

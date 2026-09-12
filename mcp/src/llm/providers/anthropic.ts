@@ -29,7 +29,7 @@ export async function streamCompletion(
   const decoder = new TextDecoder()
   let buf = ''
   let inputTokens = 0, outputTokens = 0
-  // max_tokens 로 잘렸는지 호출 측이 알아야 한다 — 잘린 출력으로 원본을 덮어쓰면 안 된다
+  // The caller must know if output was truncated by max_tokens — truncated output must not overwrite the original
   let stopReason: string | null = null
 
   while (true) {

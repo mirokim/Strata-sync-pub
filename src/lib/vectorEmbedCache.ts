@@ -1,31 +1,31 @@
 /**
- * vectorEmbedCache.ts — 파일 기반 벡터 임베딩 캐시 (v5: 증분 캐시)
+ * vectorEmbedCache.ts — File-based vector embedding cache (v5: incremental cache)
  *
- * v4까지는 전체 fingerprint 일치 방식 → 문서 1개만 수정해도 전량 재빌드.
- * v5부터 문서별 mtime을 개별 저장하여, 변경된 문서만 재임베딩합니다.
+ * Up to v4 the whole-fingerprint match approach meant editing a single document triggered a full rebuild.
+ * From v5, per-document mtimes are stored individually so only changed documents are re-embedded.
  *
- * dot 파일은 vault 로더가 무시하므로 볼트 문서 목록에 노출되지 않습니다.
+ * The vault loader ignores dot files, so the cache is not exposed in the vault document list.
  */
 
-/** 개별 임베딩 엔트리 — sectionId별 벡터 + 소속 문서의 mtime */
+/** Individual embedding entry — vector per sectionId + mtime of the owning document */
 interface CacheEntry {
   embedding: number[]
   docId: string
   mtime: number
 }
 
-/** 임베딩 제공자 — 제공자마다 차원과 벡터 공간이 다르므로 캐시에 기록한다. */
+/** Embedding provider — recorded in the cache because dimension and vector space differ per provider. */
 export type EmbedProvider = 'gemini' | 'local'
 
 interface VectorCacheV6 {
   version: 6
-  /** chunker 버전 — parseSections 로직이 바뀌면 이 값 상승 → 자동 무효화 */
+  /** chunker version — bump this when parseSections logic changes → automatic invalidation */
   chunkerVersion: number
   /**
-   * 임베딩 제공자와 차원. 없으면 구버전 캐시로 보고 무효화한다.
+   * Embedding provider and dimension. If absent, the cache is treated as an old version and invalidated.
    *
-   * 이게 없으면 제공자를 바꿔도 mtime 이 그대로라 캐시가 100% 히트로 복원되고,
-   * 쿼리 벡터만 차원이 달라져 모든 유사도가 0 이 된다 — 경고 없이 벡터 검색이 죽는다.
+   * Without this, switching providers leaves mtimes unchanged so the cache restores with a 100% hit rate,
+   * only the query vector has a different dimension, and every similarity becomes 0 — vector search dies silently.
    */
   provider?: EmbedProvider
   dim?: number
@@ -45,13 +45,13 @@ function oldCachePath(vaultPath: string): string {
 }
 
 /**
- * 캐시를 로드하고, 현재 문서 목록과 비교하여 유효한 엔트리만 반환합니다.
- * @returns { cached: 유효한 임베딩 맵, staleDocIds: 재임베딩 필요한 문서 ID 목록 }
+ * Loads the cache and returns only the entries still valid against the current document list.
+ * @returns { cached: map of valid embeddings, staleDocIds: document IDs that need re-embedding }
  */
 export async function loadVectorEmbedCacheIncremental(
   vaultPath: string,
   docMtimes: Map<string, number>,  // docId → mtime
-  provider?: EmbedProvider,        // 현재 활성 제공자 — 불일치 시 전량 재빌드
+  provider?: EmbedProvider,        // currently active provider — full rebuild on mismatch
 ): Promise<{
   cached: Map<string, Float32Array>
   staleDocIds: Set<string>
@@ -63,48 +63,48 @@ export async function loadVectorEmbedCacheIncremental(
     const raw = await window.vaultAPI?.readFile(cachePath(vaultPath))
     if (!raw) return result
     const record = JSON.parse(raw) as VectorCacheV6
-    // chunker 버전 불일치 시 전량 재빌드 (section ID 체계가 달라짐)
+    // Full rebuild on chunker version mismatch (section ID scheme differs)
     if (record.version !== 6 || !record.entries) return result
     if (record.chunkerVersion !== CHUNKER_VERSION) return result
-    // 제공자 불일치 시 전량 재빌드 (벡터 공간과 차원이 다름)
+    // Full rebuild on provider mismatch (different vector space and dimension)
     if (provider && record.provider !== provider) {
-      logger.debug(`[vector] 임베딩 제공자 변경 (${record.provider ?? '미기록'} → ${provider}) — 전량 재빌드`)
+      logger.debug(`[vector] Embedding provider changed (${record.provider ?? 'unrecorded'} → ${provider}) — full rebuild`)
       return result
     }
 
-    // docId → 현재 mtime 매핑으로 유효성 검증
+    // Validate against the docId → current mtime mapping
     const freshDocIds = new Set<string>()
 
     for (const [sectionId, entry] of Object.entries(record.entries)) {
       const currentMtime = docMtimes.get(entry.docId)
-      // 문서가 존재하고 mtime이 같으면 캐시 유효
+      // Cache entry is valid if the document exists and the mtime matches
       if (currentMtime !== undefined && currentMtime === entry.mtime) {
         result.cached.set(sectionId, new Float32Array(entry.embedding))
         freshDocIds.add(entry.docId)
       }
     }
 
-    // staleDocIds = 전체 문서 - 캐시에서 유효하게 복원된 문서
+    // staleDocIds = all documents - documents validly restored from cache
     result.staleDocIds = new Set(
       [...docMtimes.keys()].filter(id => !freshDocIds.has(id)),
     )
   } catch {
-    // 캐시 파싱 실패 → 전량 재빌드
+    // Cache parse failure → full rebuild
   }
 
   return result
 }
 
 /**
- * 증분 저장: 기존 캐시에 새 임베딩을 머지하여 저장합니다.
- * 삭제된 문서(docMtimes에 없는)의 엔트리는 정리됩니다.
+ * Incremental save: merges new embeddings into the existing cache and saves.
+ * Entries for deleted documents (not in docMtimes) are cleaned up.
  */
 export async function saveVectorEmbedCacheIncremental(
   vaultPath: string,
   embeddings: Map<string, Float32Array>,
   sectionDocMap: Map<string, string>,  // sectionId → docId
   docMtimes: Map<string, number>,      // docId → mtime
-  provider?: EmbedProvider,            // 이 캐시를 만든 제공자
+  provider?: EmbedProvider,            // provider that produced this cache
 ): Promise<void> {
   if (!vaultPath) return
   try {
@@ -113,7 +113,7 @@ export async function saveVectorEmbedCacheIncremental(
       const docId = sectionDocMap.get(sectionId)
       if (!docId) continue
       const mtime = docMtimes.get(docId)
-      if (mtime === undefined) continue  // 삭제된 문서 제외
+      if (mtime === undefined) continue  // skip deleted documents
       entries[sectionId] = {
         embedding: Array.from(vec),
         docId,
@@ -130,11 +130,11 @@ export async function saveVectorEmbedCacheIncremental(
     }
     await window.vaultAPI?.saveFile(cachePath(vaultPath), JSON.stringify(record))
   } catch {
-    // 캐시 저장 실패는 silent
+    // Cache save failure is silent
   }
 }
 
-/** 캐시 파일 삭제 (전체 초기화 시에만 사용) */
+/** Delete the cache file (only used for a full reset) */
 export async function invalidateVectorEmbedCache(vaultPath: string): Promise<void> {
   if (!vaultPath) return
   try {
@@ -142,7 +142,7 @@ export async function invalidateVectorEmbedCache(vaultPath: string): Promise<voi
   } catch {
     // silent
   }
-  // v4 구버전 캐시도 정리
+  // Also clean up the legacy v4 cache
   try {
     await window.vaultAPI?.deleteFile(oldCachePath(vaultPath))
   } catch {

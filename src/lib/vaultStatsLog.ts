@@ -1,15 +1,15 @@
 /**
- * vaultStatsLog.ts — 볼트 문서 통계 스냅샷 로그
+ * vaultStatsLog.ts — Vault document statistics snapshot log
  *
- * 볼트 로드 시마다 항목별 문서 수를 JSONL로 기록.
- * StatsTab에서 시계열 차트로 시각화.
+ * Records per-category document counts as JSONL on every vault load.
+ * Visualized as a time-series chart in StatsTab.
  */
 
 import type { LoadedDocument } from '@/types'
 import { logger } from '@/lib/logger'
 
 const STATS_FILE = '.strata-sync/vault-stats.jsonl'
-const MAX_ENTRIES = 365  // 최대 1년치 보관
+const MAX_ENTRIES = 365  // keep at most 1 year
 
 export interface VaultStatsSnapshot {
   date: string           // YYYY-MM-DD
@@ -24,7 +24,7 @@ export interface VaultStatsSnapshot {
   orphanCount: number
 }
 
-/** 현재 문서 목록에서 스냅샷 생성 */
+/** Build a snapshot from the current document list */
 export function buildStatsSnapshot(docs: LoadedDocument[]): VaultStatsSnapshot {
   const today = new Date()
   const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
@@ -55,14 +55,14 @@ export function buildStatsSnapshot(docs: LoadedDocument[]): VaultStatsSnapshot {
 
     totalChars += d.rawContent?.length ?? 0
 
-    // d.links 는 frontmatter `links:` 필드만 담는다. 실측 볼트(2,635문서)에서
-    // frontmatter links 보유 문서는 0개, 본문 위키링크 보유 문서는 1,543개 —
-    // 즉 예전 코드는 매일 totalLinks: 0 / orphanCount: 전체(고아율 100%)를 기록했다.
-    // 본문 위키링크를 정규화·중복 제거하여 집계한다.
+    // d.links only holds the frontmatter `links:` field. In a real vault (2,635 docs),
+    // 0 docs had frontmatter links while 1,543 had body wikilinks —
+    // i.e. the old code recorded totalLinks: 0 / orphanCount: all (100% orphan rate) every day.
+    // Aggregate body wikilinks after normalizing and de-duplicating them.
     const unique = new Set<string>()
     for (const s of d.sections) {
       for (const raw of s.wikiLinks) {
-        // [[target|display]] / [[target#heading]] 정규화
+        // Normalize [[target|display]] / [[target#heading]]
         const t = raw.split('|')[0].split('#')[0].trim().replace(/[/\\]+$/, '').trim().toLowerCase()
         if (t) unique.add(t)
       }
@@ -79,7 +79,7 @@ export function buildStatsSnapshot(docs: LoadedDocument[]): VaultStatsSnapshot {
   return { date, total: docs.length, byOrigin, byType, byStatus, bySpeaker, byFolder, totalChars, totalLinks, orphanCount }
 }
 
-/** 스냅샷을 파일에 추가 (같은 날짜면 덮어쓰기) */
+/** Append a snapshot to the file (overwrites an entry with the same date) */
 export async function saveStatsSnapshot(vaultPath: string, snapshot: VaultStatsSnapshot): Promise<void> {
   if (!window.vaultAPI) return
   try {
@@ -87,23 +87,23 @@ export async function saveStatsSnapshot(vaultPath: string, snapshot: VaultStatsS
     const existing = (await window.vaultAPI.readFile(logPath)) ?? ''
     const lines = existing.split('\n').filter(l => l.trim())
 
-    // 같은 날짜 항목 제거 (하루 1개만 유지)
+    // Remove entries with the same date (keep only one per day)
     const filtered = lines.filter(l => {
       try { return JSON.parse(l).date !== snapshot.date } catch { return true }
     })
 
     filtered.push(JSON.stringify(snapshot))
 
-    // MAX_ENTRIES 초과 시 오래된 것 제거
+    // Drop the oldest entries when exceeding MAX_ENTRIES
     while (filtered.length > MAX_ENTRIES) filtered.shift()
 
     await window.vaultAPI.saveFile(logPath, filtered.join('\n') + '\n')
   } catch (e) {
-    logger.warn('[vaultStatsLog] 저장 실패:', e)
+    logger.warn('[vaultStatsLog] Failed to save:', e)
   }
 }
 
-/** 저장된 스냅샷 로그 전체 로드 */
+/** Load the entire saved snapshot log */
 export async function loadStatsLog(vaultPath: string): Promise<VaultStatsSnapshot[]> {
   if (!window.vaultAPI) return []
   try {

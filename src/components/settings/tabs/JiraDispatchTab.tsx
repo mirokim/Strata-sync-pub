@@ -1,10 +1,10 @@
 /**
- * JiraDispatchTab — AI 인사이트 기반 팀원 Jira 일감 발행
+ * JiraDispatchTab — Dispatch Jira tasks to team members based on AI insights
  *
- * 섹션:
- *   1. 팀원 카드 (Jira 조회 → 자동 생성, vault 파일 저장, 역할/업무 편집)
- *   2. AI 일감 생성 (피드백 → LLM → 초안 카드)
- *   3. 초안 검토 + 발행
+ * Sections:
+ *   1. Team member cards (fetched from Jira → auto-created, saved to a vault file, role/duties editable)
+ *   2. AI task generation (feedback → LLM → draft cards)
+ *   3. Draft review + publish
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react'
@@ -31,7 +31,7 @@ function formatMembersFile(members: JiraTeamMember[], projectKey: string): strin
     `synced: ${new Date().toISOString()}`,
     '---',
     '',
-    '<!-- Strata Sync이 자동 관리합니다. 역할/담당업무는 직접 수정해도 됩니다. -->',
+    '<!-- Managed automatically by Strata Sync. Roles/responsibilities may be edited by hand. -->',
     '',
     '```json',
     JSON.stringify(members, null, 2),
@@ -95,13 +95,13 @@ function MemberCard({
       borderRadius: 6, padding: 12, background: 'var(--color-bg-surface)',
       display: 'flex', flexDirection: 'column', gap: 8, position: 'relative',
     }}>
-      {/* 이름 + accountId badge + 삭제 */}
+      {/* Name + accountId badge + delete */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
         <div style={{ flex: 1 }}>
           <input
             value={member.name}
             onChange={e => inp('name', e.target.value)}
-            placeholder="이름"
+            placeholder="Name"
             style={{ ...inputStyle, fontWeight: 600, fontSize: 13 }}
           />
         </div>
@@ -122,46 +122,46 @@ function MemberCard({
         <input
           value={member.jiraAccountId}
           onChange={e => inp('jiraAccountId', e.target.value)}
-          placeholder="Jira accountId (조회 후 자동 입력)"
+          placeholder="Jira accountId (filled automatically after fetch)"
           style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 10, color: 'var(--color-text-muted)' }}
         />
       </div>
 
-      {/* 역할 */}
+      {/* Role */}
       <input
         value={member.role}
         onChange={e => inp('role', e.target.value)}
-        placeholder="역할 (예: 아트디렉터)"
+        placeholder="Role (e.g. Art Director)"
         style={{ ...inputStyle }}
       />
 
-      {/* 담당 업무 */}
+      {/* Responsibilities */}
       <textarea
         value={member.responsibilities}
         onChange={e => inp('responsibilities', e.target.value)}
-        placeholder="담당 업무 (예: 캐릭터 원화 감수, 외주 관리)"
+        placeholder="Responsibilities (e.g. character concept art review, outsourcing management)"
         rows={2}
         style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5, fontFamily: 'inherit' }}
       />
 
-      {/* 컴포넌트 */}
+      {/* Component */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ fontSize: 10, color: 'var(--color-text-muted)', flexShrink: 0 }}>컴포넌트</span>
+        <span style={{ fontSize: 10, color: 'var(--color-text-muted)', flexShrink: 0 }}>Component</span>
         <input
           value={member.component ?? ''}
           onChange={e => inp('component', e.target.value)}
-          placeholder="Jira 컴포넌트 (예: [V1_아트실] 원화파트)"
+          placeholder="Jira component (e.g. [V1_Art] Concept Art)"
           style={{ ...inputStyle, fontSize: 11 }}
         />
       </div>
 
-      {/* 매핑 상태 */}
+      {/* Mapping status */}
       {hasMapped && (
         <span style={{
           position: 'absolute', top: 8, right: 28,
           fontSize: 9, color: 'var(--color-accent)',
           fontWeight: 600, letterSpacing: '0.05em',
-        }}>매핑됨</span>
+        }}>Mapped</span>
       )}
     </div>
   )
@@ -202,21 +202,21 @@ function DraftCard({
       <input
         value={draft.summary}
         onChange={e => onUpdate({ summary: e.target.value })}
-        placeholder="이슈 제목"
+        placeholder="Issue summary"
         style={{ ...inputStyle, fontWeight: 600, fontSize: 13, marginBottom: 8 }}
       />
 
       <textarea
         value={draft.description}
         onChange={e => onUpdate({ description: e.target.value })}
-        placeholder="이슈 설명"
+        placeholder="Issue description"
         rows={3}
         style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6, marginBottom: 8 }}
       />
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
         <div style={{ flex: 1 }}>
-          <label style={{ fontSize: 10, color: 'var(--color-text-muted)', display: 'block', marginBottom: 3 }}>담당자</label>
+          <label style={{ fontSize: 10, color: 'var(--color-text-muted)', display: 'block', marginBottom: 3 }}>Assignee</label>
           <select
             value={draft.assigneeName}
             onChange={e => {
@@ -225,14 +225,14 @@ function DraftCard({
             }}
             style={inputStyle}
           >
-            <option value="">-- 미지정 --</option>
+            <option value="">-- Unassigned --</option>
             {teamMembers.map(m => (
               <option key={m.id} value={m.name}>{m.name}{m.role ? ` (${m.role})` : ''}</option>
             ))}
           </select>
         </div>
         <div style={{ width: 120 }}>
-          <label style={{ fontSize: 10, color: 'var(--color-text-muted)', display: 'block', marginBottom: 3 }}>우선순위</label>
+          <label style={{ fontSize: 10, color: 'var(--color-text-muted)', display: 'block', marginBottom: 3 }}>Priority</label>
           <select
             value={draft.priority}
             onChange={e => onUpdate({ priority: e.target.value as DraftIssue['priority'] })}
@@ -248,7 +248,7 @@ function DraftCard({
       <input
         value={draft.labels.join(', ')}
         onChange={e => onUpdate({ labels: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
-        placeholder="레이블 (쉼표 구분)"
+        placeholder="Labels (comma-separated)"
         style={{ ...inputStyle, marginBottom: 10, fontSize: 11 }}
       />
 
@@ -264,7 +264,7 @@ function DraftCard({
                 display: 'flex', alignItems: 'center', gap: 4,
               }}
             >
-              <CheckCircle size={12} /> 수락
+              <CheckCircle size={12} /> Accept
             </button>
             <button
               onClick={() => onUpdate({ accepted: false })}
@@ -275,7 +275,7 @@ function DraftCard({
                 display: 'flex', alignItems: 'center', gap: 4,
               }}
             >
-              <XCircle size={12} /> 거절
+              <XCircle size={12} /> Reject
             </button>
           </>
         )}
@@ -293,13 +293,13 @@ function DraftCard({
             }}
           >
             {publishing ? <Loader size={11} className="animate-spin" /> : <Send size={11} />}
-            발행
+            Publish
           </button>
         )}
 
         {isPublished && (
           <span style={{ fontSize: 11, color: '#4ade80', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
-            <CheckCircle size={12} /> {draft.publishedKey} 발행 완료
+            <CheckCircle size={12} /> {draft.publishedKey} published
           </span>
         )}
         {draft.publishError && (
@@ -323,7 +323,7 @@ export default function JiraDispatchTab() {
   const jiraCfg = (activeVaultId ? jiraConfigs[activeVaultId] : undefined)
     ?? jiraConfigs[MIGRATED_CONFIG_KEY]
 
-  // ── Vault file 로드 (마운트 시 1회) ──────────────────────────────────────
+  // ── Load vault file (once on mount) ─────────────────────────────────────
 
   const [fileLoaded, setFileLoaded] = useState(false)
   useEffect(() => {
@@ -338,7 +338,7 @@ export default function JiraDispatchTab() {
     }).catch(() => setFileLoaded(true))
   }, [vaultPath, fileLoaded, setJiraTeamMembers])
 
-  // ── Vault file 저장 (멤버 변경 시 debounce) ──────────────────────────────
+  // ── Save vault file (debounced on member changes) ───────────────────────
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
@@ -356,7 +356,7 @@ export default function JiraDispatchTab() {
     }, 600)
   }, [vaultPath, jiraCfg?.projectKey])
 
-  // ── 멤버 CRUD ──────────────────────────────────────────────────────────
+  // ── Member CRUD ────────────────────────────────────────────────────────
 
   const updateMember = useCallback((id: string, m: JiraTeamMember) => {
     const next = jiraTeamMembers.map(x => x.id === id ? m : x)
@@ -376,7 +376,7 @@ export default function JiraDispatchTab() {
     saveToVault(next)
   }
 
-  // ── Jira 멤버 조회 ────────────────────────────────────────────────────
+  // ── Fetch Jira members ─────────────────────────────────────────────────
 
   const [syncStatus, setSyncStatus] = useState<'idle' | 'loading' | 'ok' | 'err'>('idle')
   const [syncError, setSyncError] = useState('')
@@ -384,12 +384,12 @@ export default function JiraDispatchTab() {
   const handleSync = async () => {
     if (!jiraCfg?.baseUrl || !jiraCfg?.apiToken) {
       setSyncStatus('err')
-      setSyncError('Jira 연결 설정이 없습니다. 설정 › Jira 가져오기에서 먼저 설정하세요.')
+      setSyncError('Jira connection is not configured. Set it up under Settings › Jira Import first.')
       return
     }
     if (!jiraCfg.projectKey) {
       setSyncStatus('err')
-      setSyncError('Project Key가 없습니다. 프로젝트 없이 조회하면 전사 사용자가 나와 엉뚱한 사람에게 일감이 발행될 수 있습니다.')
+      setSyncError('No Project Key. Fetching without a project returns every user in the company, so tasks could be dispatched to the wrong person.')
       return
     }
     setSyncStatus('loading')
@@ -404,7 +404,7 @@ export default function JiraDispatchTab() {
         bypassSSL: jiraCfg.bypassSSL,
       })
 
-      // 기존 카드 보존 (이름 매칭으로 role/responsibilities 유지)
+      // Preserve existing cards (keep role/responsibilities by matching on name)
       const merged: JiraTeamMember[] = fetched.map(r => {
         const existing = jiraTeamMembers.find(m =>
           m.name === r.displayName ||
@@ -426,7 +426,7 @@ export default function JiraDispatchTab() {
       setSyncStatus('ok')
     } catch (e: any) {
       setSyncStatus('err')
-      setSyncError(e?.message ?? '조회 실패')
+      setSyncError(e?.message ?? 'Fetch failed')
     }
   }
 
@@ -435,12 +435,12 @@ export default function JiraDispatchTab() {
     setSyncStatus('idle')
     setSyncError('')
     if (vaultPath) {
-      // 파일 내용 비우기 (삭제 대신 빈 파일로)
+      // Empty the file contents (write an empty file instead of deleting)
       await window.vaultAPI?.saveFile(`${vaultPath}/${MEMBERS_FILENAME}`, '<!-- cleared -->\n')
     }
   }
 
-  // ── AI 일감 생성 ──────────────────────────────────────────────────────
+  // ── AI task generation ─────────────────────────────────────────────────
 
   const [feedbackText, setFeedbackText] = useState('')
   const [drafts, setDrafts] = useState<DraftIssue[]>([])
@@ -452,7 +452,7 @@ export default function JiraDispatchTab() {
   const handleGenerate = async () => {
     if (!feedbackText.trim()) return
     if (jiraTeamMembers.length === 0) {
-      setGenerateError('팀원 카드가 없습니다. 먼저 Jira 멤버를 조회하세요.')
+      setGenerateError('No team member cards. Fetch Jira members first.')
       return
     }
     setGenerating(true)
@@ -460,22 +460,22 @@ export default function JiraDispatchTab() {
     setDrafts([])
 
     const teamRoster = jiraTeamMembers.map(m =>
-      `- ${m.name} (${m.role || '역할 미기재'}): ${m.responsibilities || '담당 업무 미기재'}`
+      `- ${m.name} (${m.role || 'role not specified'}): ${m.responsibilities || 'responsibilities not specified'}`
     ).join('\n')
 
     const systemPrompt =
-`당신은 프로젝트 매니저입니다. 아래 팀원 목록과 역할을 참고하여, 피드백에서 액션 아이템을 추출하고 각 팀원에게 적합한 Jira 이슈를 생성하세요.
+`You are a project manager. Using the team roster and roles below, extract action items from the feedback and create a suitable Jira issue for each team member.
 
-[팀원 목록]
+[Team roster]
 ${teamRoster}
 
-[출력 규칙]
-- 반드시 JSON 배열만 반환하세요. 코드 블록(\`\`\`)이나 다른 텍스트를 포함하지 마세요.
-- 각 객체 필드: summary(string), description(string), assigneeName(string, 위 팀원 이름 중 하나), priority("Highest"|"High"|"Medium"|"Low"|"Lowest"), labels(string[])
-- 모든 텍스트는 한국어로 작성하세요.
-- 이슈가 없으면 빈 배열 []을 반환하세요.`
+[Output rules]
+- Return ONLY a JSON array. Do not include code fences (\`\`\`) or any other text.
+- Fields per object: summary(string), description(string), assigneeName(string, one of the team member names above), priority("Highest"|"High"|"Medium"|"Low"|"Lowest"), labels(string[])
+- Write all text in Korean.
+- If there are no issues, return an empty array [].`
 
-    const userMsg = `[피드백]\n${feedbackText.trim()}\n\n위 피드백에서 액션 아이템을 추출하여 Jira 이슈 JSON 배열을 반환하세요.`
+    const userMsg = `[Feedback]\n${feedbackText.trim()}\n\nExtract action items from the feedback above and return a JSON array of Jira issues.`
 
     let accumulated = ''
     try {
@@ -504,13 +504,13 @@ ${teamRoster}
         }
       }))
     } catch (e: any) {
-      setGenerateError(`생성 실패: ${e?.message ?? '알 수 없는 오류'}. 원본: ${accumulated.slice(0, 200)}`)
+      setGenerateError(`Generation failed: ${e?.message ?? 'Unknown error'}. Raw: ${accumulated.slice(0, 200)}`)
     } finally {
       setGenerating(false)
     }
   }
 
-  // ── 발행 ──────────────────────────────────────────────────────────────
+  // ── Publish ────────────────────────────────────────────────────────────
 
   const updateDraft = useCallback((localId: string, patch: Partial<DraftIssue>) => {
     setDrafts(ds => ds.map(d => d.localId === localId ? { ...d, ...patch } : d))
@@ -518,7 +518,7 @@ ${teamRoster}
 
   const publishOne = async (draft: DraftIssue) => {
     if (!jiraCfg?.baseUrl || !jiraCfg?.apiToken) {
-      updateDraft(draft.localId, { publishError: 'Jira 설정이 없습니다.' })
+      updateDraft(draft.localId, { publishError: 'Jira is not configured.' })
       return
     }
     setPublishingIds(prev => new Set(prev).add(draft.localId))
@@ -530,7 +530,7 @@ ${teamRoster}
       )
       updateDraft(draft.localId, { publishedKey: result.key })
     } catch (e: any) {
-      updateDraft(draft.localId, { publishError: e?.message ?? '발행 실패' })
+      updateDraft(draft.localId, { publishError: e?.message ?? 'Publish failed' })
     } finally {
       setPublishingIds(prev => { const s = new Set(prev); s.delete(draft.localId); return s })
     }
@@ -554,27 +554,27 @@ ${teamRoster}
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-      {/* ── 1. 팀원 카드 ──────────────────────────────────────────────── */}
+      {/* ── 1. Team member cards ─────────────────────────────────────── */}
       <section>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <SectionTitle>팀원 {jiraTeamMembers.length > 0 ? `(${jiraTeamMembers.length}명)` : ''}</SectionTitle>
+          <SectionTitle>Team Members {jiraTeamMembers.length > 0 ? `(${jiraTeamMembers.length})` : ''}</SectionTitle>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {/* 저장 상태 */}
+            {/* Save status */}
             {saveState === 'saving' && (
               <span style={{ fontSize: 10, color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 3 }}>
-                <Loader size={9} className="animate-spin" /> 저장 중
+                <Loader size={9} className="animate-spin" /> Saving
               </span>
             )}
             {saveState === 'saved' && (
               <span style={{ fontSize: 10, color: '#4ade80', display: 'flex', alignItems: 'center', gap: 3 }}>
-                <CheckCircle size={9} /> 저장됨
+                <CheckCircle size={9} /> Saved
               </span>
             )}
-            {/* Jira 조회 버튼 */}
+            {/* Jira fetch button */}
             <button
               onClick={handleSync}
               disabled={syncStatus === 'loading' || !canSync}
-              title={!jiraConfigured ? 'Jira 설정 필요' : !projectKey ? 'Project Key 필요 (설정 › Jira 가져오기)' : ''}
+              title={!jiraConfigured ? 'Jira setup required' : !projectKey ? 'Project Key required (Settings › Jira Import)' : ''}
               style={{
                 fontSize: 11, padding: '4px 12px', borderRadius: 2,
                 cursor: canSync ? 'pointer' : 'not-allowed',
@@ -586,10 +586,10 @@ ${teamRoster}
               }}
             >
               {syncStatus === 'loading'
-                ? <><Loader size={10} className="animate-spin" /> 조회 중…</>
-                : <><RefreshCw size={10} /> {projectKey ? `${projectKey} 멤버 조회` : 'Jira 멤버 조회'}</>}
+                ? <><Loader size={10} className="animate-spin" /> Fetching…</>
+                : <><RefreshCw size={10} /> {projectKey ? `Fetch ${projectKey} Members` : 'Fetch Jira Members'}</>}
             </button>
-            {/* 전체 초기화 */}
+            {/* Reset all */}
             {jiraTeamMembers.length > 0 && (
               <button
                 onClick={handleClearAll}
@@ -598,9 +598,9 @@ ${teamRoster}
                   border: '1px solid var(--color-border)', background: 'transparent',
                   color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 4,
                 }}
-                title="팀원 카드 전체 초기화 (vault 파일도 비워짐)"
+                title="Reset all team member cards (also empties the vault file)"
               >
-                <XCircle size={10} /> 초기화
+                <XCircle size={10} /> Reset
               </button>
             )}
           </div>
@@ -608,12 +608,12 @@ ${teamRoster}
 
         {!jiraConfigured && (
           <p style={{ fontSize: 11, color: 'var(--color-warning)', marginBottom: 10 }}>
-            ⚠ Jira 설정이 없습니다. 설정 › Jira 가져오기에서 연결 설정 후 사용하세요.
+            ⚠ Jira is not configured. Set up the connection under Settings › Jira Import first.
           </p>
         )}
         {jiraConfigured && !projectKey && (
           <p style={{ fontSize: 11, color: 'var(--color-warning)', marginBottom: 10 }}>
-            ⚠ Project Key 미설정. 전사 사용자 전체 조회를 방지하려면 설정 › Jira 가져오기 › Project Key를 입력하세요.
+            ⚠ Project Key not set. To avoid fetching every user in the company, enter a Project Key under Settings › Jira Import.
           </p>
         )}
         {syncStatus === 'err' && (
@@ -621,14 +621,14 @@ ${teamRoster}
         )}
         {syncStatus === 'ok' && (
           <p style={{ fontSize: 11, color: '#4ade80', marginBottom: 10 }}>
-            {jiraTeamMembers.length}명 조회 완료 · jira-members.md에 저장됨
+            {jiraTeamMembers.length} members fetched · saved to jira-members.md
           </p>
         )}
 
         {jiraTeamMembers.length === 0 ? (
           <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 10 }}>
-            "{projectKey || 'Jira'} 멤버 조회" 버튼으로 프로젝트 멤버를 불러오세요.
-            조회한 멤버는 vault에 저장되어 다음에도 유지됩니다.
+            Use the "Fetch {projectKey || 'Jira'} Members" button to load project members.
+            Fetched members are saved to the vault and persist across sessions.
           </p>
         ) : (
           <div style={{
@@ -647,7 +647,7 @@ ${teamRoster}
           </div>
         )}
 
-        {/* 수동 추가 */}
+        {/* Manual add */}
         <button
           onClick={addMember}
           style={{
@@ -657,23 +657,23 @@ ${teamRoster}
             display: 'flex', alignItems: 'center', gap: 4,
           }}
         >
-          <Plus size={11} /> 직접 추가
+          <Plus size={11} /> Add Manually
         </button>
       </section>
 
       <div style={{ borderTop: '1px solid var(--color-border)' }} />
 
-      {/* ── 2. AI 일감 생성 ────────────────────────────────────────────── */}
+      {/* ── 2. AI task generation ────────────────────────────────────── */}
       <section>
-        <SectionTitle>AI 일감 생성</SectionTitle>
+        <SectionTitle>AI Task Generation</SectionTitle>
         <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 10, lineHeight: 1.6 }}>
-          피드백·회의록·이슈 내용을 입력하면 AI가 팀원별 Jira 일감 초안을 생성합니다.
+          Paste feedback, meeting notes or issues and the AI drafts Jira tasks for each team member.
         </p>
 
         <textarea
           value={feedbackText}
           onChange={e => setFeedbackText(e.target.value)}
-          placeholder="피드백, 회의록, 이슈 등을 붙여넣으세요..."
+          placeholder="Paste feedback, meeting notes, issues, etc..."
           rows={6}
           style={{
             width: '100%', fontSize: 12, padding: '8px 10px', borderRadius: 4,
@@ -697,10 +697,10 @@ ${teamRoster}
               opacity: generating ? 0.7 : 1,
             }}
           >
-            {generating ? <><Loader size={13} className="animate-spin" /> 분석 중…</> : '✦ AI 분석 → 초안 생성'}
+            {generating ? <><Loader size={13} className="animate-spin" /> Analyzing…</> : '✦ AI Analysis → Generate Drafts'}
           </button>
           <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>
-            모델: {editAgentConfig.modelId || 'claude-sonnet-4-6'}
+            Model: {editAgentConfig.modelId || 'claude-sonnet-4-6'}
           </span>
         </div>
 
@@ -709,16 +709,16 @@ ${teamRoster}
         )}
       </section>
 
-      {/* ── 3. 초안 검토 + 발행 ──────────────────────────────────────────── */}
+      {/* ── 3. Draft review + publish ────────────────────────────────────── */}
       {drafts.length > 0 && (
         <>
           <div style={{ borderTop: '1px solid var(--color-border)' }} />
           <section>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <SectionTitle>{drafts.length}개 초안 검토</SectionTitle>
+              <SectionTitle>Review {drafts.length} Drafts</SectionTitle>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-                  수락 {acceptedCount} / 발행완료 {publishedCount}
+                  Accepted {acceptedCount} / Published {publishedCount}
                 </span>
                 {pendingPublish > 0 && (
                   <button
@@ -733,8 +733,8 @@ ${teamRoster}
                     }}
                   >
                     {publishAllRunning
-                      ? <><Loader size={11} className="animate-spin" /> 발행 중…</>
-                      : <><Send size={11} /> 수락된 {pendingPublish}개 일괄 발행</>}
+                      ? <><Loader size={11} className="animate-spin" /> Publishing…</>
+                      : <><Send size={11} /> Publish {pendingPublish} Accepted</>}
                   </button>
                 )}
               </div>
@@ -742,7 +742,7 @@ ${teamRoster}
 
             {!jiraConfigured && (
               <p style={{ fontSize: 11, color: 'var(--color-warning)', marginBottom: 10 }}>
-                ⚠ Jira 설정이 없습니다.
+                ⚠ Jira is not configured.
               </p>
             )}
 

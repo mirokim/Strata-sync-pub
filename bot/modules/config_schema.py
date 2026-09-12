@@ -1,10 +1,10 @@
 """
 config_schema.py — BotConfig TypedDict (SSOT)
 
-config.json 의 스키마를 타입으로 정의합니다.
-bot.py 의 cfg: dict → cfg: BotConfig 로 점진적으로 전환할 때 참조하세요.
+Defines the schema of config.json as types.
+Reference this when gradually migrating bot.py from cfg: dict → cfg: BotConfig.
 
-total=False: 모든 키가 선택적 (로드 시 일부만 존재할 수 있음)
+total=False: every key is optional (only some may exist at load time)
 """
 from typing import TypedDict
 
@@ -12,36 +12,36 @@ from .constants import DEFAULT_HAIKU_MODEL, KEYWORD_INDEX_REL_PATH
 
 
 class BotConfig(TypedDict, total=False):
-    # ── 볼트 ──────────────────────────────────────────────────────────────────
-    vault_path:                 str    # Obsidian 볼트 절대 경로
-    keyword_index_path:         str    # 볼트 내 키워드 인덱스 상대 경로 (기본: KEYWORD_INDEX_REL_PATH)
-    max_files_per_keyword_scan: int    # 키워드 스캔 최대 파일 수 (기본: 20)
+    # ── Vault ─────────────────────────────────────────────────────────────────
+    vault_path:                 str    # absolute path to the Obsidian vault
+    keyword_index_path:         str    # keyword index path relative to the vault (default: KEYWORD_INDEX_REL_PATH)
+    max_files_per_keyword_scan: int    # max files per keyword scan (default: 20)
 
-    # ── API 키 (시크릿 — .env 또는 UI 입력) ──────────────────────────────────
-    claude_api_key:   str   # Anthropic API 키
-    slack_bot_token:  str   # Slack Bot OAuth 토큰
-    slack_app_token:  str   # Slack App-Level 토큰 (Socket Mode)
+    # ── API keys (secrets — .env or UI input) ────────────────────────────────
+    claude_api_key:   str   # Anthropic API key
+    slack_bot_token:  str   # Slack Bot OAuth token
+    slack_app_token:  str   # Slack App-Level token (Socket Mode)
 
-    # ── Slack 봇 동작 ─────────────────────────────────────────────────────────
-    slack_notify_channel: str   # 알림 채널 ID
-    slack_rag_top_n:      int   # RAG 검색 결과 상위 N개 (기본: 5)
+    # ── Slack bot behaviour ───────────────────────────────────────────────────
+    slack_notify_channel: str   # notification channel ID
+    slack_rag_top_n:      int   # top N RAG search results (default: 5)
 
-    # ── 스케줄러 ─────────────────────────────────────────────────────────────
-    interval_hours: int    # 자동 실행 주기 (시간)
-    auto_run:       bool   # 시작 시 자동 실행 여부
+    # ── Scheduler ────────────────────────────────────────────────────────────
+    interval_hours: int    # auto-run interval (hours)
+    auto_run:       bool   # whether to auto-run on startup
 
-    # ── 모델 ──────────────────────────────────────────────────────────────────
-    worker_model: str   # Worker LLM 모델 ID (기본: DEFAULT_HAIKU_MODEL)
+    # ── Model ─────────────────────────────────────────────────────────────────
+    worker_model: str   # Worker LLM model ID (default: DEFAULT_HAIKU_MODEL)
 
-    # ── 이미지 ────────────────────────────────────────────────────────────────
-    sendImages: bool   # 볼트 이미지 Slack 업로드 여부 (기본: True)
+    # ── Images ────────────────────────────────────────────────────────────────
+    sendImages: bool   # whether to upload vault images to Slack (default: True)
 
-    # ── 외부 도구 ─────────────────────────────────────────────────────────────
-    wkhtmltopdf_path: str   # PDF 변환 도구 경로 (Windows 기본값 존재)
+    # ── External tools ────────────────────────────────────────────────────────
+    wkhtmltopdf_path: str   # PDF conversion tool path (has a Windows default)
 
 
 def default_config() -> BotConfig:
-    """config.json 로드 전 기본값 딕셔너리 반환."""
+    """Return the default values dict used before config.json is loaded."""
     return BotConfig(
         vault_path                 = "",
         claude_api_key             = "",

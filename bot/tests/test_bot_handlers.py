@@ -17,7 +17,7 @@ from modules.slack_utils import extract_slack_files
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# handle_dm 필터 로직 (bot.py의 handle_dm 조건 추출)
+# handle_dm filter logic (handle_dm conditions extracted from bot.py)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _dm_should_process(event: dict) -> bool:
@@ -143,7 +143,7 @@ class TestConvHistoryManagement(unittest.TestCase):
     def test_history_truncated_at_40(self):
         h = {}
         history: list = []
-        for i in range(30):  # 30턴 = 60 메시지 → 40으로 truncate
+        for i in range(30):  # 30 turns = 60 messages → truncated to 40
             self._apply_history_update(h, "k", history, f"q{i}", f"a{i}")
             history = h["k"]
         self.assertEqual(len(h["k"]), 40)
@@ -173,7 +173,7 @@ class TestConvHistoryManagement(unittest.TestCase):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# respond()의 image_files 필터 (mimetype 확인)
+# image_files filter in respond() (mimetype check)
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestImageFilesFilter(unittest.TestCase):
@@ -211,7 +211,7 @@ class TestImageFilesFilter(unittest.TestCase):
         self.assertEqual(self._get_image_files(None), [])
 
     def test_missing_mimetype_excluded(self):
-        files = [{"id": "F1"}]  # mimetype 없음
+        files = [{"id": "F1"}]  # no mimetype
         self.assertEqual(self._get_image_files(files), [])
 
 
@@ -271,7 +271,7 @@ class TestImageRequestDetection(unittest.TestCase):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# _upload_images_to_slack 업로드 로직
+# _upload_images_to_slack upload logic
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestUploadImagesToSlack(unittest.TestCase):

@@ -1,14 +1,14 @@
 /**
- * StatsChart.tsx — SVG 기반 볼트 통계 트렌드 차트
+ * StatsChart.tsx — SVG-based vault statistics trend charts
  *
- * 외부 라이브러리 없이 순수 SVG로 구현.
- * StatsTab에서 import하여 사용.
+ * Implemented in pure SVG without external libraries.
+ * Imported and used by StatsTab.
  */
 import { useState, useEffect, useMemo } from 'react'
 import { useVaultStore } from '@/stores/vaultStore'
 import { loadStatsLog, type VaultStatsSnapshot } from '@/lib/vaultStatsLog'
 
-// ── 색상 팔레트 ──────────────────────────────────────────────────────────────
+// ── Color palette ────────────────────────────────────────────────────────────
 
 const ORIGIN_COLORS: Record<string, string> = {
   manual: '#60a5fa',
@@ -21,7 +21,7 @@ const CATEGORY_COLORS = [
   '#fb923c', '#34d399', '#818cf8', '#fbbf24', '#6ee7b7',
 ]
 
-// ── 미니 SVG 라인 차트 ──────────────────────────────────────────────────────
+// ── Mini SVG line chart ─────────────────────────────────────────────────────
 
 function MiniLineChart({ data, color, width = 280, height = 60 }: {
   data: number[]
@@ -42,7 +42,7 @@ function MiniLineChart({ data, color, width = 280, height = 60 }: {
     return `${x},${y}`
   }).join(' ')
 
-  // 면적 fill
+  // Area fill
   const first = `${padX},${height - padY}`
   const last = `${padX + ((data.length - 1) / (data.length - 1)) * (width - padX * 2)},${height - padY}`
   const areaPoints = `${first} ${points} ${last}`
@@ -51,7 +51,7 @@ function MiniLineChart({ data, color, width = 280, height = 60 }: {
     <svg width={width} height={height} style={{ display: 'block' }}>
       <polygon points={areaPoints} fill={color} opacity={0.1} />
       <polyline points={points} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" />
-      {/* 마지막 점 강조 */}
+      {/* Highlight the last point */}
       {data.length > 0 && (() => {
         const lastX = padX + ((data.length - 1) / (data.length - 1)) * (width - padX * 2)
         const lastY = padY + (1 - (data[data.length - 1] - min) / range) * (height - padY * 2)
@@ -61,7 +61,7 @@ function MiniLineChart({ data, color, width = 280, height = 60 }: {
   )
 }
 
-// ── 스택드 바 차트 ──────────────────────────────────────────────────────────
+// ── Stacked bar chart ───────────────────────────────────────────────────────
 
 function StackedBarChart({ snapshots, field, colorMap, width = 280, height = 120 }: {
   snapshots: VaultStatsSnapshot[]
@@ -72,14 +72,14 @@ function StackedBarChart({ snapshots, field, colorMap, width = 280, height = 120
 }) {
   if (snapshots.length === 0) return null
 
-  // 모든 카테고리 수집
+  // Collect all categories
   const allKeys = new Set<string>()
   for (const s of snapshots) {
     for (const k of Object.keys(s[field])) allKeys.add(k)
   }
   const keys = [...allKeys]
 
-  // 색상 할당
+  // Assign colors
   const colors: Record<string, string> = {}
   keys.forEach((k, i) => {
     colors[k] = colorMap?.[k] ?? CATEGORY_COLORS[i % CATEGORY_COLORS.length]
@@ -94,7 +94,7 @@ function StackedBarChart({ snapshots, field, colorMap, width = 280, height = 120
   return (
     <div>
       <svg width={width} height={height} style={{ display: 'block' }}>
-        {/* Y축 눈금 */}
+        {/* Y-axis ticks */}
         {[0, 0.5, 1].map(ratio => {
           const y = padY + (1 - ratio) * chartH
           const val = Math.round(maxTotal * ratio)
@@ -107,7 +107,7 @@ function StackedBarChart({ snapshots, field, colorMap, width = 280, height = 120
           )
         })}
 
-        {/* 바 */}
+        {/* Bars */}
         {snapshots.map((s, i) => {
           const x = padX + 8 + i * (barWidth + 2)
           let yOffset = 0
@@ -125,7 +125,7 @@ function StackedBarChart({ snapshots, field, colorMap, width = 280, height = 120
                   </rect>
                 )
               })}
-              {/* X축 날짜 (간격 조절) */}
+              {/* X-axis dates (spaced out) */}
               {(i === 0 || i === snapshots.length - 1 || snapshots.length <= 10 || i % Math.ceil(snapshots.length / 6) === 0) && (
                 <text x={x + barWidth / 2} y={height - 2} textAnchor="middle"
                   style={{ fontSize: 8, fill: 'var(--color-text-muted)' }}>
@@ -137,7 +137,7 @@ function StackedBarChart({ snapshots, field, colorMap, width = 280, height = 120
         })}
       </svg>
 
-      {/* 범례 */}
+      {/* Legend */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginTop: 4 }}>
         {keys.map(k => (
           <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--color-text-muted)' }}>
@@ -150,7 +150,7 @@ function StackedBarChart({ snapshots, field, colorMap, width = 280, height = 120
   )
 }
 
-// ── 변화량 뱃지 ─────────────────────────────────────────────────────────────
+// ── Delta badge ─────────────────────────────────────────────────────────────
 
 function DeltaBadge({ current, previous }: { current: number; previous: number }) {
   const delta = current - previous
@@ -163,7 +163,7 @@ function DeltaBadge({ current, previous }: { current: number; previous: number }
   )
 }
 
-// ── 메인 컴포넌트 ────────────────────────────────────────────────────────────
+// ── Main component ───────────────────────────────────────────────────────────
 
 export default function StatsChart() {
   const vaultPath = useVaultStore(s => s.vaultPath)
@@ -195,7 +195,7 @@ export default function StatsChart() {
   if (snapshots.length < 2) {
     return (
       <div style={{ fontSize: 11, color: 'var(--color-text-muted)', padding: '8px 0' }}>
-        트렌드 차트는 2일 이상의 데이터가 필요합니다. 매일 볼트를 로드하면 자동으로 기록됩니다.
+        Trend charts need at least 2 days of data. A snapshot is recorded automatically each day the vault is loaded.
       </div>
     )
   }
@@ -203,11 +203,11 @@ export default function StatsChart() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-      {/* 총 문서 수 트렌드 */}
+      {/* Total document count trend */}
       <div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 6 }}>
           <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-            총 문서 수
+            Total Documents
           </span>
           {latest && <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)' }}>{latest.total}</span>}
           {latest && prev && <DeltaBadge current={latest.total} previous={prev.total} />}
@@ -215,64 +215,64 @@ export default function StatsChart() {
         <MiniLineChart data={totalTrend} color="#60a5fa" width={chartWidth} />
       </div>
 
-      {/* 출처별 추이 */}
+      {/* Trend by source */}
       <div>
         <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-          출처별 추이
+          By Source
         </span>
         <div style={{ marginTop: 6 }}>
           <StackedBarChart snapshots={snapshots} field="byOrigin" colorMap={ORIGIN_COLORS} width={chartWidth} />
         </div>
       </div>
 
-      {/* 유형별 추이 */}
+      {/* Trend by type */}
       <div>
         <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-          유형별 추이
+          By Type
         </span>
         <div style={{ marginTop: 6 }}>
           <StackedBarChart snapshots={snapshots} field="byType" width={chartWidth} />
         </div>
       </div>
 
-      {/* 폴더별 추이 */}
+      {/* Trend by folder */}
       <div>
         <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-          폴더별 추이
+          By Folder
         </span>
         <div style={{ marginTop: 6 }}>
           <StackedBarChart snapshots={snapshots} field="byFolder" width={chartWidth} />
         </div>
       </div>
 
-      {/* 총 글자 / 링크 / 고립 문서 미니 차트 */}
+      {/* Total chars / links / orphan docs mini charts */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
         <div>
           <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginBottom: 4 }}>
-            총 글자(KB)
+            Total Chars (KB)
             {latest && prev && <DeltaBadge current={Math.round(latest.totalChars / 1024)} previous={Math.round(prev.totalChars / 1024)} />}
           </div>
           <MiniLineChart data={charsTrend} color="#f59e0b" width={90} height={40} />
         </div>
         <div>
           <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginBottom: 4 }}>
-            총 링크
+            Total Links
             {latest && prev && <DeltaBadge current={latest.totalLinks} previous={prev.totalLinks} />}
           </div>
           <MiniLineChart data={linksTrend} color="#10b981" width={90} height={40} />
         </div>
         <div>
           <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginBottom: 4 }}>
-            고립 문서
+            Orphan Docs
             {latest && prev && <DeltaBadge current={latest.orphanCount} previous={prev.orphanCount} />}
           </div>
           <MiniLineChart data={orphanTrend} color="#ef4444" width={90} height={40} />
         </div>
       </div>
 
-      {/* 기간 표시 */}
+      {/* Date range */}
       <div style={{ fontSize: 9, color: 'var(--color-text-muted)', opacity: 0.6 }}>
-        {snapshots[0].date} ~ {snapshots[snapshots.length - 1].date} ({snapshots.length}일 기록)
+        {snapshots[0].date} ~ {snapshots[snapshots.length - 1].date} ({snapshots.length} days recorded)
       </div>
     </div>
   )

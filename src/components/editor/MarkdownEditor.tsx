@@ -264,7 +264,7 @@ export default function MarkdownEditor() {
       }
     } catch (e) {
       console.error('[MarkdownEditor] rename failed:', e)
-      showToast(`이름 변경 실패: ${e instanceof Error ? e.message : String(e)}`, 'error')
+      showToast(`Rename failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
     }
   }, [vaultPath, setLoadedDocuments, setNodes, setLinks, openInEditor])
 
@@ -290,11 +290,11 @@ export default function MarkdownEditor() {
           content: text,
           mtime: Date.now(),
         })
-        // parseVaultFiles는 pushWithUniqueId로 docId 충돌을 "_2" 접미사로 해소한다.
-        // parseMarkdownFile 단독 호출은 그 고유화를 모르므로 비고유화된 원본 id를 돌려준다 —
-        // 그대로 쓰면 loadedDocuments에 같은 id 문서가 2개 생기고
-        // BM25 인덱스(rawTermFreqs.set(doc.id, ...))가 서로를 덮어쓰며 N이 어긋난다.
-        // (실제 볼트에 "active\3월.md" vs "active\3월..md" 같은 충돌 쌍이 존재)
+        // parseVaultFiles resolves docId collisions with a "_2" suffix via pushWithUniqueId.
+        // A standalone parseMarkdownFile call knows nothing about that and returns the raw, non-unique id —
+        // using it as-is leaves two documents with the same id in loadedDocuments, and the
+        // BM25 index (rawTermFreqs.set(doc.id, ...)) overwrites one with the other, skewing N.
+        // (Real vaults contain colliding pairs such as "active\3월.md" vs "active\3월..md")
         reparsed.id = currentDoc.id
 
         const updated = loadedDocsRef.current.map(d =>
@@ -313,7 +313,7 @@ export default function MarkdownEditor() {
         // BM25 incremental update — reprocess only the saved document
         if (tfidfIndex.isBuilt) {
           try {
-            // 메모리 전용 지문 — 디스크에 저장하지 않는다 (아래 주석 참조)
+            // In-memory fingerprint only — not persisted to disk (see the comment below)
             const fingerprint = `edit:${Date.now()}`
             const adj = buildAdjacencyMap(graphLinks)
             const { serialized, implicitLinks } = await updateDocInWorker(
@@ -321,12 +321,12 @@ export default function MarkdownEditor() {
             )
             tfidfIndex.restore(serialized)
             tfidfIndex.setImplicitLinks(implicitLinks, adj)
-            // 캐시는 저장하지 않고 무효화한다.
-            // loadTfIdfCache는 buildFingerprint(docs) = "id:mtime" 목록과 대조하는데,
-            // 저장 직후 파일의 실제 디스크 mtime을 알 수 없어 일치하는 지문을 만들 수 없다.
-            // 기존 코드는 String(Date.now())를 지문으로 박아 유효한 캐시를 덮어썼고,
-            // 그 결과 이후 모든 시작에서 영구 캐시 미스 + 전체 재빌드가 발생했다.
-            // 무효화하면 다음 볼트 로드에서 1회 재빌드 후 올바른 지문으로 다시 캐시된다.
+            // Invalidate the cache instead of saving it.
+            // loadTfIdfCache compares against buildFingerprint(docs) = a list of "id:mtime",
+            // and right after a save the file's real on-disk mtime is unknown, so no matching fingerprint can be built.
+            // The old code stamped String(Date.now()) as the fingerprint, overwriting a valid cache,
+            // which caused a permanent cache miss + full rebuild on every subsequent startup.
+            // Invalidating means one rebuild on the next vault load, then it is re-cached with the correct fingerprint.
             const vaultRoot = useVaultStore.getState().vaultPath
             if (vaultRoot) invalidateTfIdfCache(vaultRoot).catch(() => {})
           } catch {
@@ -340,7 +340,7 @@ export default function MarkdownEditor() {
       setTimeout(() => setSaveStatus('idle'), 2000)
     } catch (e) {
       console.error('[MarkdownEditor] save failed:', e)
-      showToast(`파일 저장 실패: ${e instanceof Error ? e.message : String(e)}`, 'error')
+      showToast(`File save failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
       setSaveStatus('error')
     }
   }, [setLoadedDocuments, setNodes, setLinks])

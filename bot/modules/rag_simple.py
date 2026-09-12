@@ -1,5 +1,5 @@
 """
-rag_simple.py — Slack 봇용 간단 키워드 RAG
+rag_simple.py — simple keyword RAG for the Slack bot
 """
 import json
 import logging
@@ -26,10 +26,10 @@ class RagResult(TypedDict):
     tags: list[str]
     doc_type: str   # VaultDoc.doc_type — "reference" | "daily" | etc.
 
-# ── scan_vault 메모리 캐시 (TTL 60초) ─────────────────────────────────────────
-# 매 검색마다 전체 .md 파싱을 방지. 60초 내 동일 볼트 재검색 시 캐시 반환.
-# corpus_idf: 문서와 동일한 TTL 로 IDF 도 캐시 (쿼리마다 전 코퍼스 재토크나이즈 방지).
-#   {active_only: (docs, corpus, idf)} — docs 는 재스캔 감지용 identity 체크에 사용.
+# ── scan_vault in-memory cache (TTL 60s) ──────────────────────────────────────
+# Avoids re-parsing every .md on each search. Re-searching the same vault within 60s returns the cache.
+# corpus_idf: IDF is cached with the same TTL as the docs (avoids re-tokenizing the whole corpus per query).
+#   {active_only: (docs, corpus, idf)} — docs is used for an identity check to detect a rescan.
 _vault_cache: dict = {}
 _VAULT_CACHE_TTL = 60.0
 _VAULT_CACHE_LOCK = threading.Lock()
@@ -43,7 +43,7 @@ def _get_cached_docs(vault_path: str) -> list[VaultDoc]:
             return _vault_cache["docs"]
     docs = scan_vault(vault_path)
     with _VAULT_CACHE_LOCK:
-        # 재스캔 → 파생 캐시(IDF) 무효화
+        # Rescan → invalidate derived cache (IDF)
         _vault_cache.update({
             "path": vault_path, "docs": docs, "ts": time.time(), "corpus_idf": {},
         })
@@ -53,24 +53,24 @@ def _get_cached_docs(vault_path: str) -> list[VaultDoc]:
 def _get_corpus_and_idf(
     vault_path: str, active_only: bool
 ) -> tuple[list[VaultDoc], dict[str, float]]:
-    """검색 대상 코퍼스와 IDF 를 문서 캐시와 같은 TTL 로 캐시해 반환.
+    """Return the search corpus and IDF, cached with the same TTL as the doc cache.
 
-    IDF 계산은 코퍼스 전체 재토크나이즈라 쿼리당 수백 ms 가 든다.
-    문서 목록이 바뀌지 않는 한 재사용한다.
+    Computing IDF re-tokenizes the whole corpus, costing hundreds of ms per query.
+    Reused as long as the document list has not changed.
     """
     docs = _get_cached_docs(vault_path)
 
     with _VAULT_CACHE_LOCK:
         if _vault_cache.get("path") == vault_path:
             cached = (_vault_cache.get("corpus_idf") or {}).get(active_only)
-            # docs identity 로 재스캔 여부 확인 (TTL 만료 후 갱신 시 자동 미스)
+            # Check for a rescan via docs identity (automatic miss after a refresh past TTL)
             if cached is not None and cached[0] is docs:
                 return cached[1], cached[2]
 
     corpus_docs = docs
     if active_only:
         active_set = {str(Path(f).resolve()) for f in find_active_folders(vault_path)}
-        # parent_resolved 는 스캔 시 미리 계산됨 — 쿼리마다 문서 수만큼 resolve() 하지 않는다
+        # parent_resolved is precomputed at scan time — no per-query resolve() for every document
         corpus_docs = [d for d in docs if d.parent_resolved in active_set]
 
     corpus = [d for d in corpus_docs if not d.stem.startswith("index_")]
@@ -83,14 +83,14 @@ def _get_corpus_and_idf(
     return corpus, idf
 
 
-# ── 핫스코어 (OpenViking memory_lifecycle 기반) ───────────────────────────────
-# 자주/최근 참조된 문서에 보너스를 부여해 검색 결과 재정렬.
-# 공식: sigmoid(log1p(접근횟수)) × exp(-decay × 경과일수)
+# ── Hotness score (based on OpenViking memory_lifecycle) ─────────────────────
+# Re-ranks search results by giving a bonus to frequently/recently referenced documents.
+# Formula: sigmoid(log1p(access_count)) × exp(-decay × age_days)
 
 _HOTNESS_HALF_LIFE_DAYS: float = 7.0
-_HOTNESS_ALPHA: float = 0.15  # 검색점수 85% + 핫스코어 15%
+_HOTNESS_ALPHA: float = 0.15  # search score 85% + hotness score 15%
 _ACCESS_STORE_PATH = VAULT_ACCESS_PATH
-_ACCESS_STORE_LOCK = threading.Lock()  # 동시 read-modify-write 보호
+_ACCESS_STORE_LOCK = threading.Lock()  # guards concurrent read-modify-write
 
 
 def _load_access_store() -> dict:
@@ -107,18 +107,18 @@ def _save_access_store(store: dict) -> None:
         tmp_path = _ACCESS_STORE_PATH + ".tmp"
         with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(store, f, ensure_ascii=False)
-        os.replace(tmp_path, _ACCESS_STORE_PATH)  # atomic rename — concurrent write 안전
+        os.replace(tmp_path, _ACCESS_STORE_PATH)  # atomic rename — safe against concurrent writes
     except PermissionError:
-        logger.error("권한 오류: vault_access.json 쓰기 실패 (%s)", _ACCESS_STORE_PATH)
+        logger.error("Permission error: failed to write vault_access.json (%s)", _ACCESS_STORE_PATH)
     except OSError as e:
-        logger.error("파일 시스템 오류: vault_access.json 저장 실패: %s", e)
+        logger.error("File system error: failed to save vault_access.json: %s", e)
     except Exception:
-        logger.exception("예상치 못한 오류: _save_access_store")
+        logger.exception("Unexpected error: _save_access_store")
 
 
 def record_doc_access(stems: list[str]) -> None:
-    """검색 결과로 반환된 문서 stem 목록의 접근 횟수를 기록."""
-    # stems: vault-relative 파일명 (확장자 없음)
+    """Record access counts for the document stems returned as search results."""
+    # stems: vault-relative file names (without extension)
     if not stems:
         return
     with _ACCESS_STORE_LOCK:
@@ -133,7 +133,7 @@ def record_doc_access(stems: list[str]) -> None:
 
 
 def _hotness_score(active_count: int, updated_at_iso: str | None) -> float:
-    """OpenViking 공식: sigmoid(log1p(count)) × exp(-decay × age_days)"""
+    """OpenViking formula: sigmoid(log1p(count)) × exp(-decay × age_days)"""
     if not updated_at_iso:
         return 0.0
     try:
@@ -151,7 +151,7 @@ def _hotness_score(active_count: int, updated_at_iso: str | None) -> float:
 
 
 def apply_hotness_rerank(results: list[RagResult]) -> list[RagResult]:
-    """검색 결과에 핫스코어를 블렌딩해 재정렬. 원본 score 필드를 업데이트."""
+    """Blend the hotness score into search results and re-rank. Updates the original score field."""
     if not results:
         return results
     with _ACCESS_STORE_LOCK:
@@ -167,7 +167,7 @@ def apply_hotness_rerank(results: list[RagResult]) -> list[RagResult]:
     return results
 
 
-# 프론트엔드 stemKorean()과 동일한 한국어 조사 목록
+# Korean particle list, identical to the frontend stemKorean()
 _KO_SUFFIXES = [
     '이라는', '이라고', '에서는', '에게서', '한테서', '으로서', '으로써', '으로는',
     '에서의', '으로의', '에서도', '으로도',
@@ -177,13 +177,13 @@ _KO_SUFFIXES = [
     '에', '도', '만', '의', '로',
 ]
 
-# 한글 음절 범위: 가(0xAC00) ~ 힣(0xD7A3)
+# Hangul syllable range: 가(0xAC00) ~ 힣(0xD7A3)
 def _ko_syllables(s: str) -> list[str]:
     return [ch for ch in s if '\uAC00' <= ch <= '\uD7A3']
 
 
 def _stem_korean(token: str) -> list[str]:
-    """프론트엔드 stemKorean()과 동일 로직: 조사 제거 + 2-gram 서브토큰."""
+    """Same logic as the frontend stemKorean(): particle stripping + 2-gram sub-tokens."""
     results = [token]
     stem = token
     for suffix in _KO_SUFFIXES:
@@ -191,25 +191,25 @@ def _stem_korean(token: str) -> list[str]:
             stem = token[:-len(suffix)]
             results.append(stem)
             break
-    # 3음절 이상이면 2-gram 서브토큰 추가
+    # Add 2-gram sub-tokens for 3+ syllables
     syllables = _ko_syllables(stem)
     if len(syllables) >= 3:
         for i in range(len(syllables) - 1):
             results.append(syllables[i] + syllables[i + 1])
-    return list(dict.fromkeys(results))  # 순서 유지 중복 제거
+    return list(dict.fromkeys(results))  # order-preserving dedup
 
 
 def _tokenize_raw(text: str) -> list[str]:
-    """텍스트를 소문자 토큰 리스트로 분리 (공백·특수문자 기준). 형태소 분석 미적용."""
-    # 문장부호(?!:;)도 구분자 — 빠지면 "밸런스는?" 같은 토큰에서 조사 제거가 실패한다
+    """Split text into a list of lowercase tokens (on whitespace/special chars). No morphological analysis."""
+    # Punctuation (?!:;) is a separator too — otherwise particle stripping fails on tokens like "밸런스는?"
     tokens = re.split(r"[\s\[\](),./|_\-?!:;]+", text.lower())
-    # 1글자라도 동의어 맵에 있으면 유지 (예: '몹', '적')
+    # Keep single-char tokens if they are in the synonym map (e.g. '몹', '적')
     return [t for t in tokens if len(t) >= 2 or t in _SYNONYM_MAP]
 
 
 def _tokenize(text: str) -> list[str]:
-    """텍스트를 소문자 토큰 리스트로 분리 + 한국어 형태소 분석.
-    조사 제거 + 복합명사 2-gram 분해를 적용하여 원본 토큰과 함께 반환.
+    """Split text into a list of lowercase tokens + Korean morphological analysis.
+    Applies particle stripping + compound-noun 2-gram decomposition and returns them alongside the original tokens.
     """
     result: list[str] = []
     for t in _tokenize_raw(text):
@@ -218,8 +218,8 @@ def _tokenize(text: str) -> list[str]:
 
 
 def _expand_synonyms(tokens: list[str]) -> list[str]:
-    """토큰 리스트에 동의어 확장 적용 (2-hop). TypeScript expandTerms()와 동일 로직."""
-    expanded = dict.fromkeys(tokens)  # 순서 유지 집합
+    """Apply synonym expansion to a token list (2-hop). Same logic as the TypeScript expandTerms()."""
+    expanded = dict.fromkeys(tokens)  # order-preserving set
     first_hop: list[str] = []
     for t in tokens:
         for syn in _SYNONYM_MAP.get(t, ()):
@@ -233,13 +233,13 @@ def _expand_synonyms(tokens: list[str]) -> list[str]:
     return list(expanded)
 
 
-# mcp/src/synonyms.ts 및 src/lib/synonyms.ts 와 동기화 필요
+# Must be kept in sync with mcp/src/synonyms.ts and src/lib/synonyms.ts
 _SYNONYM_MAP: dict[str, tuple[str, ...]] = {
-    # ── 약어 확장 ──
+    # ── Abbreviation expansion ──
     '배틀로얄':    ('br', 'br모드'),
     'br':          ('배틀로얄', 'br모드'),
 
-    # ── 사운드 그룹 ──
+    # ── Sound group ──
     '음향':        ('사운드',),
     '효과음':      ('사운드', 'sfx'),
     '배경음':      ('bgm', '사운드'),
@@ -247,61 +247,61 @@ _SYNONYM_MAP: dict[str, tuple[str, ...]] = {
     '오디오':      ('사운드',),
     '소리':        ('사운드',),
 
-    # ── 서버 그룹 ──
+    # ── Server group ──
     '전용서버':    ('데디케이트',),
     '독립서버':    ('데디케이트',),
     '데디케이트':  ('전용서버', '클라서버'),
 
-    # ── 맵/지도 ──
+    # ── Map ──
     '지도':        ('맵', 'world_map'),
     '세계지도':    ('맵', 'world_map', '월드맵'),
 
-    # ── 스킬 ──
+    # ── Skill ──
     '능력':        ('스킬',),
     '특수능력':    ('스킬',),
 
-    # ── 몬스터/NPC ──
+    # ── Monster/NPC ──
     '적':          ('몬스터', 'npc'),
     '적군':        ('몬스터', 'npc'),
     '보스':        ('몬스터', '레이드보스'),
     '몹':          ('몬스터', 'npc'),
 
-    # ── 조합/제작 ──
+    # ── Crafting ──
     '조합':        ('레시피', '크래프팅'),
     '제작':        ('레시피', '크래프팅'),
 
-    # ── 각성 ──
+    # ── Awakening ──
     '각성':        ('성장', '강화'),
     '눈뜨기':      ('각성',),
 
-    # ── 안전지대 ──
+    # ── Safe zone ──
     '세이프존':    ('안전지대', '안전 지대'),
     '안전구역':    ('안전지대', '안전 지대'),
     '안전지대':    ('안전 지대', '세이프존'),
 
-    # ── 궁극기 ──
+    # ── Ultimate ──
     '얼티밋':      ('궁극기', 'ultimate'),
     '필살기':      ('궁극기',),
     '궁극기':      ('얼티밋', 'ultimate'),
     'ultimate':    ('궁극기', '얼티밋'),
 
-    # ── 온보딩 ──
+    # ── Onboarding ──
     '온보딩':      ('튜토리얼', '신규 입사자'),
     '신입':        ('신규 입사자', '튜토리얼'),
 
-    # ── 보고/회의 ──
+    # ── Reports/meetings ──
     '리포트':      ('보고', '보고서', '정례보고'),
     '위클리':      ('정례', '주간'),
     '주간보고':    ('정례보고', '정례'),
     '임원':        ('이사장', '의장', '회장'),
     '경영진':      ('이사장', '의장'),
 
-    # ── 외주 ──
+    # ── Outsourcing ──
     '아웃소싱':    ('외주',),
     '협력사':      ('외주',),
     '외주':        ('아웃소싱', '협력사'),
 
-    # ── 게임 모드 ──
+    # ── Game modes ──
     '컨퀘스트':    ('점령전',),
     '점령전':      ('컨퀘스트', 'conquest'),
     'conquest':    ('점령전',),
@@ -311,18 +311,18 @@ _SYNONYM_MAP: dict[str, tuple[str, ...]] = {
     '레이드':      ('레이드보스',),
     '보스전':      ('레이드보스', '레이드'),
 
-    # ── 아트/비주얼 ──
+    # ── Art/visual ──
     '일러스트':    ('원화', '컨셉아트'),
     '비주얼':      ('아트',),
     '시네마틱':    ('연출', '컷씬'),
     '컷씬':        ('연출', '시네마틱'),
 
-    # ── 블록/복셀 ──
+    # ── Block/voxel ──
     '건축':        ('블록', '복셀', '빌딩'),
     '빌딩':        ('블록', '복셀', '건축'),
     '복셀':        ('블록', '복셀엔진'),
 
-    # ── 기획 문서 ──
+    # ── Design documents ──
     'gdd':         ('기획서', '기획'),
     '스펙':        ('기획', '상세기획'),
     '설계':        ('기획',),
@@ -330,17 +330,17 @@ _SYNONYM_MAP: dict[str, tuple[str, ...]] = {
     '프레젠테이션': ('정례보고', '시연'),
     '로드맵':      ('마일스톤', '릴리즈'),
 
-    # ── QA/이슈 ──
+    # ── QA/issues ──
     '버그':        ('이슈', '결함'),
     '이슈':        ('버그', '결함'),
     'qa':          ('테스트', '품질'),
 
-    # ── 렌더링 ──
+    # ── Rendering ──
     '렌더파이프라인': ('hdrp',),
     '렌더링':      ('hdrp',),
     '렌더':        ('hdrp', '렌더링'),
 
-    # ── 추가 매핑 (2차 테스트 보완) ──
+    # ── Additional mappings (added after 2nd test round) ──
     '챔피언':      ('캐릭터', '영웅'),
     '히어로':      ('캐릭터', '영웅'),
     '영웅':        ('캐릭터', '히어로'),
@@ -358,7 +358,7 @@ _SYNONYM_MAP: dict[str, tuple[str, ...]] = {
     '에프엑스':    ('fx', '이펙트'),
     'fx':          ('이펙트', '에프엑스'),
 
-    # ── 캐릭터 영한 매핑 ──
+    # ── Character English↔Korean mapping ──
     'daizan':      ('캐릭터G',),
     'taizan':      ('캐릭터G',),
     '캐릭터G':      ('daizan', 'taizan'),
@@ -377,7 +377,7 @@ _SYNONYM_MAP: dict[str, tuple[str, ...]] = {
     'borhu':       ('캐릭터I',),
     '캐릭터I':      ('borhu',),
 
-    # ── 영문 게임 용어 → 한국어 ──
+    # ── English game terms → Korean ──
     'skill':       ('스킬',),
     'balance':     ('밸런스',),
     'character':   ('캐릭터',),
@@ -399,7 +399,7 @@ _SYNONYM_MAP: dict[str, tuple[str, ...]] = {
     'animation':   ('애니메이션', '모션'),
     'shader':      ('쉐이더',),
 
-    # ── 외래어 표기 변형 ──
+    # ── Loanword spelling variants ──
     '셰이더':      ('쉐이더',),
     '대미지':      ('데미지', 'damage'),
     '데미지':      ('대미지', 'damage'),
@@ -407,7 +407,7 @@ _SYNONYM_MAP: dict[str, tuple[str, ...]] = {
     '이팩트':      ('이펙트', 'effect'),
     '이펙트':      ('이팩트', 'effect'),
 
-    # ── 역방향 매핑 ──
+    # ── Reverse mappings ──
     '사운드':      ('음향', '효과음', 'bgm', 'sfx', 'sound'),
     'sfx':         ('효과음', '사운드'),
     'bgm':         ('배경음', '배경음악', '사운드'),
@@ -436,14 +436,14 @@ _SYNONYM_MAP: dict[str, tuple[str, ...]] = {
 
 
 def _build_idf(docs: list[VaultDoc]) -> dict[str, float]:
-    """코퍼스 전체에서 각 토큰의 IDF 값을 계산.
+    """Compute the IDF value of each token across the whole corpus.
 
-    IDF = log(1 + (N - df + 0.5) / (df + 0.5))  — BM25 스무딩
-    단순 log(N/df) 는 전 문서에 등장하는 용어를 IDF=0 으로 만들어 완전히 무시하고,
-    문서가 1개뿐인 코퍼스에서는 모든 용어가 0이 되어 검색 결과가 항상 0건이 된다.
-    스무딩을 넣으면 흔한 용어도 작지만 양수 가중치를 유지한다.
+    IDF = log(1 + (N - df + 0.5) / (df + 0.5))  — BM25 smoothing
+    Plain log(N/df) gives IDF=0 to terms that appear in every document, ignoring them entirely,
+    and in a single-document corpus every term becomes 0, so searches always return nothing.
+    With smoothing, common terms keep a small but positive weight.
 
-    원본 토큰 기준으로 IDF를 계산 (형태소 확장은 쿼리 측에서만 적용).
+    IDF is computed on raw tokens (morphological expansion is applied only on the query side).
     """
     N = len(docs)
     if N == 0:
@@ -460,8 +460,8 @@ def _build_idf(docs: list[VaultDoc]) -> dict[str, float]:
 
 
 def _score_doc(doc: VaultDoc, query_tokens: list[str], idf: dict[str, float]) -> float:
-    """TF-IDF 기반 문서 점수.
-    제목·파일명·본문에 가중치를 다르게 적용하되, IDF로 공통 단어 억제.
+    """TF-IDF based document score.
+    Title, file name and body are weighted differently, with IDF suppressing common words.
     """
     title_lower = doc.title.lower()
     stem_lower  = doc.stem.lower()
@@ -470,7 +470,7 @@ def _score_doc(doc: VaultDoc, query_tokens: list[str], idf: dict[str, float]) ->
     for token in query_tokens:
         idf_val = idf.get(token, 0.0)
         if idf_val <= 0:
-            continue  # 전 문서에 등장 → 변별력 없음, 스킵
+            continue  # appears in every document → no discriminative power, skip
         if token in title_lower:
             score += 3.0 * idf_val
         if token in stem_lower:
@@ -491,7 +491,7 @@ def search_vault(
     if not query_tokens:
         return []
 
-    # 코퍼스 + IDF 는 문서 캐시와 같은 TTL 로 재사용 (index_ 파일 제외)
+    # Corpus + IDF are reused with the same TTL as the doc cache (index_ files excluded)
     corpus, idf = _get_corpus_and_idf(vault_path, active_only)
 
     scored = []
@@ -520,7 +520,7 @@ def build_rag_context(results: list[RagResult], max_chars: int = 12000) -> str:
     if not results:
         return ""
 
-    parts = ["## 참고 문서\n"]
+    parts = ["## Reference Documents\n"]
     total = 0
     for r in results:
         tag_str = " ".join(f"`{t}`" for t in (r["tags"] or []))

@@ -1,28 +1,28 @@
 """
-Graph RAG 최신성 버그 점검 스크립트 (check_outdated.py)  v1.0
+Graph RAG freshness bug check script (check_outdated.py)  v1.0
 ────────────────────────────────────────────────────────────
-기능:
-  Graph RAG 봇이 오래된 데이터를 응답하는 버그의 주요 원인을
-  자동으로 점검하고 보고한다.
+Function:
+  Automatically checks for and reports the main causes of the bug where
+  the Graph RAG bot answers with stale data.
 
-점검 항목:
-  ① status: outdated 인데 superseded_by 없는 파일
-     → --fix 옵션 시 .archive/ 자동 이동
-  ② 최근 N일 이내 신규 문서 중 역링크 0개인 고립 파일
-     → gen_year_hubs.py 재실행 또는 수동 링크 추가 필요
-  ③ currentSituation.md / _index.md 의 date 필드가 N일 초과 시 경고
-  ④ chief persona.md 연도 허브 순서 점검
-     → 최신 연도가 맨 위가 아니면 경고
+Check items:
+  ① Files with status: outdated but no superseded_by
+     → moved to .archive/ automatically with the --fix option
+  ② Isolated files: new documents within the last N days with 0 backlinks
+     → rerun gen_year_hubs.py or add links manually
+  ③ Warn when the date field of currentSituation.md / _index.md is older than N days
+  ④ Check the yearly hub order in chief persona.md
+     → warn if the latest year is not at the top
 
-추가 옵션:
-  --batch-check   동일 날짜를 가진 파일이 5개 이상인 날짜 목록 출력
-                  (Confluence 배치 동기화 날짜 오염 진단용)
+Extra options:
+  --batch-check   List dates shared by 5 or more files
+                  (diagnoses date contamination from Confluence batch sync)
 
-사용법:
+Usage:
     python check_outdated.py <vault_dir> [--vault <vault_root>]
                              [--days N] [--fix] [--batch-check]
 
-의존 패키지:
+Dependencies:
     pip install PyYAML
 """
 
@@ -79,12 +79,12 @@ def run(active_dir: str, vault_root: str | None = None,
     total = len(md_files)
 
     print(f"\n{'='*60}")
-    print(f" Graph RAG 최신성 점검 보고서  v1.0")
-    print(f" 대상: {active_dir}")
-    print(f" 파일 수: {total}개  |  점검 기준일: {today.strftime('%Y-%m-%d')} (최근 {days}일)")
+    print(f" Graph RAG freshness check report  v1.0")
+    print(f" Target: {active_dir}")
+    print(f" Files: {total}  |  Reference date: {today.strftime('%Y-%m-%d')} (last {days} days)")
     print(f"{'='*60}\n")
 
-    # 전체 stem 집합 및 역링크 카운터
+    # Full stem set and backlink counter
     all_stems: set[str] = set()
     for root, dirs, files in os.walk(vault_root):
         dirs[:] = [d for d in dirs if not d.startswith('.')]
@@ -107,30 +107,30 @@ def run(active_dir: str, vault_root: str | None = None,
         fm, body = split_fm(text)
         records.append((stem, fm, body))
 
-        # 역링크 집계
+        # Count backlinks
         for m in WIKILINK_PAT.finditer(body):
             target = m.group(1).split('|')[0].strip()
             if target in all_stems:
                 backlink_count[target] += 1
 
-        # 날짜 집계 (batch-check용)
+        # Count dates (for batch-check)
         if batch_check:
             dt = get_date(fm)
             if dt:
                 date_counter[dt.strftime('%Y-%m-%d')] += 1
 
-    # ── ① outdated 파일 (superseded_by 없음) ──────────────────────────────────
+    # ── ① outdated files (no superseded_by) ─────────────────────────────────
     outdated_no_sup: list[str] = []
     for stem, fm, _ in records:
         if str(fm.get('status', '')).lower() == 'outdated' and not fm.get('superseded_by'):
             outdated_no_sup.append(stem)
 
     status = 'WARN' if outdated_no_sup else 'PASS'
-    print(f"[{status}] ① status:outdated + superseded_by 없음: {len(outdated_no_sup)}건")
+    print(f"[{status}] ① status:outdated + no superseded_by: {len(outdated_no_sup)}")
     for s in outdated_no_sup[:5]:
         print(f"       - {s[:70]}")
     if len(outdated_no_sup) > 5:
-        print(f"       ... 외 {len(outdated_no_sup)-5}건")
+        print(f"       ... and {len(outdated_no_sup)-5} more")
     print()
 
     if fix and outdated_no_sup:
@@ -143,9 +143,9 @@ def run(active_dir: str, vault_root: str | None = None,
             if os.path.exists(src):
                 shutil.move(src, dst)
                 moved += 1
-        print(f"  [FIX] {moved}개 파일 → .archive/ 이동\n")
+        print(f"  [FIX] {moved} files moved → .archive/\n")
 
-    # ── ② 최근 N일 신규 문서 중 역링크 0개인 고립 파일 ───────────────────────
+    # ── ② Isolated new documents (last N days) with 0 backlinks ────────────
     isolated_new: list[tuple[str, str]] = []
     for stem, fm, _ in records:
         dt = get_date(fm)
@@ -155,34 +155,34 @@ def run(active_dir: str, vault_root: str | None = None,
                 isolated_new.append((stem, dt.strftime('%Y-%m-%d')))
 
     status = 'WARN' if isolated_new else 'PASS'
-    print(f"[{status}] ② 최근 {days}일 신규 문서 중 역링크 0개 (고립): {len(isolated_new)}건")
+    print(f"[{status}] ② New documents in the last {days} days with 0 backlinks (isolated): {len(isolated_new)}")
     for s, d in isolated_new[:5]:
         print(f"       - {s[:55]} ({d})")
     if len(isolated_new) > 5:
-        print(f"       ... 외 {len(isolated_new)-5}건")
+        print(f"       ... and {len(isolated_new)-5} more")
     print()
 
-    # ── ③ currentSituation.md / _index.md date 필드 최신성 ───────────────────
+    # ── ③ currentSituation.md / _index.md date field freshness ─────────────
     hub_targets = ['currentSituation', '_index']
     stale_hubs: list[tuple[str, str]] = []
     for stem, fm, _ in records:
         if stem in hub_targets:
             dt = get_date(fm)
             if dt is None:
-                stale_hubs.append((stem, 'date 필드 없음'))
+                stale_hubs.append((stem, 'no date field'))
             elif dt < cutoff:
                 delta = (today - dt).days
-                stale_hubs.append((stem, f'{delta}일 경과 (마지막: {dt.strftime("%Y-%m-%d")})'))
+                stale_hubs.append((stem, f'{delta} days old (last: {dt.strftime("%Y-%m-%d")})'))
 
     status = 'WARN' if stale_hubs else 'PASS'
-    print(f"[{status}] ③ 허브 문서 최신성 ({days}일 기준):")
+    print(f"[{status}] ③ Hub document freshness ({days}-day threshold):")
     for name, msg in stale_hubs:
         print(f"       - {name}.md: {msg}")
     if not stale_hubs:
-        print("       - 이상 없음")
+        print("       - No issues")
     print()
 
-    # ── ④ chief persona.md 연도 허브 순서 점검 ────────────────────────────────
+    # ── ④ chief persona.md yearly hub order check ──────────────────────────
     chief_path = None
     for candidate in CHIEF_PERSONAS:
         p = os.path.join(active_dir, candidate)
@@ -202,41 +202,41 @@ def run(active_dir: str, vault_root: str | None = None,
         if years_found:
             sorted_years = sorted(set(years_found), reverse=True)
             first_occurrence = {y: years_found.index(y) for y in set(years_found)}
-            # 가장 먼저 등장한 연도가 최신 연도여야 함
+            # The first year to appear must be the latest year
             first_year = years_found[0]
             expected_first = sorted_years[0]
             if first_year != expected_first:
-                print(f"[WARN] ④ chief persona.md 연도 허브 순서 오류")
-                print(f"       - 첫 등장 연도: {first_year}  |  최신 연도: {expected_first}")
-                print(f"       - gen_year_hubs.py 재실행 필요\n")
+                print(f"[WARN] ④ chief persona.md yearly hub order is wrong")
+                print(f"       - First year listed: {first_year}  |  Latest year: {expected_first}")
+                print(f"       - Rerun gen_year_hubs.py\n")
             else:
-                print(f"[PASS] ④ chief persona.md 연도 허브 순서: {sorted_years[0]} 최신 위치 정상\n")
+                print(f"[PASS] ④ chief persona.md yearly hub order: {sorted_years[0]} correctly at the top\n")
         else:
-            print(f"[WARN] ④ chief persona.md 에서 연도 허브 링크 미발견\n")
+            print(f"[WARN] ④ No yearly hub links found in chief persona.md\n")
     else:
-        print(f"[INFO] ④ chief persona.md 파일 없음 — 점검 스킵\n")
+        print(f"[INFO] ④ chief persona.md not found — check skipped\n")
 
-    # ── --batch-check: 배치 동기화 날짜 오염 진단 ─────────────────────────────
+    # ── --batch-check: batch sync date contamination diagnosis ─────────────
     if batch_check:
-        print(f"[INFO] 배치 날짜 오염 진단 (5개 이상 집중된 날짜):")
+        print(f"[INFO] Batch date contamination diagnosis (dates with 5+ files):")
         suspicious = [(date, cnt) for date, cnt in date_counter.most_common() if cnt >= 5]
         if suspicious:
-            print(f"       {'날짜':<15} {'파일 수':>8}")
+            print(f"       {'Date':<15} {'Files':>8}")
             print(f"       {'-'*25}")
             for date, cnt in suspicious[:15]:
-                flag = ' ← 의심' if cnt >= 10 else ''
-                print(f"       {date:<15} {cnt:>8}개{flag}")
+                flag = ' ← suspicious' if cnt >= 10 else ''
+                print(f"       {date:<15} {cnt:>8}{flag}")
             if len(suspicious) > 15:
-                print(f"       ... 외 {len(suspicious)-15}개 날짜")
+                print(f"       ... and {len(suspicious)-15} more dates")
         else:
-            print("       동일 날짜 5개 이상 집중 없음 (배치 오염 미탐지)")
+            print("       No date shared by 5+ files (no batch contamination detected)")
         print()
 
     total_issues = len(outdated_no_sup) + len(isolated_new) + len(stale_hubs)
     print(f"{'='*60}")
-    print(f" 수정 권장 이슈: {total_issues}건")
+    print(f" Issues recommended for fixing: {total_issues}")
     if outdated_no_sup and not fix:
-        print(f" (--fix 옵션으로 outdated 파일 {len(outdated_no_sup)}개 자동 .archive/ 이동 가능)")
+        print(f" (use --fix to move {len(outdated_no_sup)} outdated files to .archive/ automatically)")
     print(f"{'='*60}\n")
 
 

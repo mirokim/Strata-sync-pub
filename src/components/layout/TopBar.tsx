@@ -206,7 +206,7 @@ export default function TopBar() {
             onClick={() => setCenterTab(centerTab === 'slack-logs' ? 'graph' : 'slack-logs')}
             className={cn('flex items-center justify-center w-7 h-7 rounded transition-colors', 'hover:bg-[var(--color-bg-hover)]')}
             style={{ color: centerTab === 'slack-logs' ? 'var(--color-accent)' : 'var(--color-text-muted)' }}
-            title="슬랙 로그"
+            title="Slack logs"
             aria-label="Slack logs"
           >
             <ScrollText size={13} />

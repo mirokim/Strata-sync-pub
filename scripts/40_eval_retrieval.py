@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-40_eval_retrieval.py — 벡터 검색 품질 정량 평가
+40_eval_retrieval.py — quantitative evaluation of vector search quality
 
-.vector_cache_v6.json + 로컬 임베딩 서버로 앱의 fullVectorSearch 경로를 재현해
-골든셋에 대한 Recall@5 / Recall@10 / 환각 분리도를 측정한다.
+Replicates the app's fullVectorSearch path using .vector_cache_v6.json + the local embedding server
+and measures Recall@5 / Recall@10 / hallucination separation against a golden set.
 
-실행: python scripts/40_eval_retrieval.py
+Run: python scripts/40_eval_retrieval.py
 """
 import json, re, urllib.request
 from pathlib import Path
@@ -14,7 +14,7 @@ import numpy as np
 CACHE = Path(r"C:\dev2\refined_vault\.vector_cache_v6.json")
 URL = "http://127.0.0.1:8077"
 
-# (질의, 정답 docId 정규식 | None=정답 없음)
+# (query, expected docId regex | None = no correct answer)
 CASES = [
     ("루모 전지가 뭐야?",            r"용어의_정의"),
     ("루모 결정은 어떻게 만들어지나",   r"용어의_정의"),
@@ -44,8 +44,8 @@ def main():
     for _sid, e in rec["entries"].items():
         docids.append(e["docId"]); mat.append(e["embedding"])
     M = np.asarray(mat, dtype=np.float32)
-    print(f"캐시 v{rec['version']} chunker{rec['chunkerVersion']} "
-          f"provider={rec.get('provider')} dim={rec.get('dim')} / 엔트리 {len(docids):,}")
+    print(f"Cache v{rec['version']} chunker{rec['chunkerVersion']} "
+          f"provider={rec.get('provider')} dim={rec.get('dim')} / {len(docids):,} entries")
 
     Q = embed([q for q, _ in CASES])
 
@@ -63,14 +63,14 @@ def main():
 
     hit5 = hit10 = npos = 0
     pos_top, neg_top = [], []
-    print(f"\n{'질의':<32}{'@5':>5}{'@10':>5}{'최고점':>9}  1위 문서")
+    print(f"\n{'Query':<32}{'@5':>5}{'@10':>5}{'Top score':>9}  Top-1 document")
     print("-" * 100)
     for (q, pat), qv in zip(CASES, Q):
         top = top_docs(qv, 10)
         best = top[0]
         if pat is None:
             neg_top.append(best[1])
-            print(f"{q:<32}{'—':>5}{'—':>5}{best[1]:>9.3f}  (정답없음) {best[0][:40]}")
+            print(f"{q:<32}{'—':>5}{'—':>5}{best[1]:>9.3f}  (no answer) {best[0][:40]}")
             continue
         npos += 1
         pos_top.append(best[1])
@@ -81,10 +81,10 @@ def main():
               f"{best[1]:>9.3f}  {best[0][:46]}")
     print("-" * 100)
     print(f"Recall@5  {hit5}/{npos} ({hit5/npos:.0%})    Recall@10 {hit10}/{npos} ({hit10/npos:.0%})")
-    print(f"정답있음 최고점 평균 {np.mean(pos_top):.3f} (최저 {min(pos_top):.3f})")
-    print(f"정답없음 최고점 평균 {np.mean(neg_top):.3f} (최고 {max(neg_top):.3f})")
+    print(f"Mean top score with answer    {np.mean(pos_top):.3f} (min {min(pos_top):.3f})")
+    print(f"Mean top score without answer {np.mean(neg_top):.3f} (max {max(neg_top):.3f})")
     gap = min(pos_top) - max(neg_top)
-    print(f"분리 여유 {gap:+.3f}  → {'임계값으로 분리 가능' if gap > 0 else '겹침 (임계값 단독으로는 환각 차단 불가)'}")
+    print(f"Separation margin {gap:+.3f}  → {'separable by threshold' if gap > 0 else 'overlap (threshold alone cannot block hallucinations)'}")
 
 if __name__ == "__main__":
     main()

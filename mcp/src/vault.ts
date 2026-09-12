@@ -23,7 +23,7 @@ export function listFiles(vaultPath?: string, folder?: string): { files: VaultFi
 
   function walk(dir: string) {
     let entries: ReturnType<typeof readdirSync>
-    // withFileTypes 로 디렉터리 판정 — 항목마다 statSync 를 부르지 않는다
+    // Use withFileTypes to detect directories — avoids calling statSync per entry
     try { entries = readdirSync(dir, { withFileTypes: true }) as unknown as ReturnType<typeof readdirSync> } catch { return }
     for (const e of entries as unknown as { name: string; isDirectory(): boolean }[]) {
       if (e.name.startsWith('.') || e.name === 'node_modules') continue
@@ -47,7 +47,7 @@ export function listFiles(vaultPath?: string, folder?: string): { files: VaultFi
   return { files, folders }
 }
 
-/** 비동기 재귀 탐색 — 디렉터리를 병렬로 읽고 stat 은 하지 않는다 (mtime 은 읽을 때 함께 얻음) */
+/** Async recursive traversal — reads directories in parallel and skips stat (mtime is obtained when reading) */
 async function walkAsync(
   root: string, dir: string,
   files: { relativePath: string; absolutePath: string }[],
@@ -120,8 +120,8 @@ export function moveFile(absPath: string, destFolder: string): { success: boolea
 
 /**
  * Load and parse all .md files into LoadedDocument[].
- * 배치 병렬 비동기 I/O + 파일별 try/catch — frontmatter 가 깨진 문서 하나가
- * 볼트 전체 로드를 실패시키지 않는다 (gray-matter 는 `title: "a"b"` 에서 throw 한다).
+ * Batched parallel async I/O + per-file try/catch — a single document with broken frontmatter
+ * must not fail the whole vault load (gray-matter throws on `title: "a"b"`).
  */
 export async function loadVaultDocuments(vaultPath?: string): Promise<LoadedDocument[]> {
   const root = vaultPath ?? getConfig().vaultPath
@@ -131,7 +131,7 @@ export async function loadVaultDocuments(vaultPath?: string): Promise<LoadedDocu
   const folders: string[] = []
   await walkAsync(root, root, files, folders)
 
-  // 병렬 탐색이라 순서가 비결정적 — 정렬해서 문서 순서(=지문)를 안정화한다
+  // Parallel traversal makes the order non-deterministic — sort to stabilize document order (= fingerprint)
   const mdFiles = files
     .filter(f => extname(f.relativePath).toLowerCase() === '.md')
     .sort((a, b) => (a.relativePath < b.relativePath ? -1 : a.relativePath > b.relativePath ? 1 : 0))
@@ -169,13 +169,13 @@ export async function loadVaultDocuments(vaultPath?: string): Promise<LoadedDocu
         if (doc) docs.push(doc)
       } catch (e) {
         parseFailed.push(item.f.relativePath)
-        console.error(`[vault] 파싱 실패 (건너뜀): ${item.f.relativePath} — ${e instanceof Error ? e.message : e}`)
+        console.error(`[vault] Parse failed (skipped): ${item.f.relativePath} — ${e instanceof Error ? e.message : e}`)
       }
     }
   }
 
   if (readFailed > 0 || parseFailed.length > 0) {
-    console.error(`[vault] ${mdFiles.length}개 중 ${readFailed}개 읽기 실패, ${parseFailed.length}개 파싱 실패 — 나머지는 정상 로드됨`)
+    console.error(`[vault] ${readFailed} of ${mdFiles.length} failed to read, ${parseFailed.length} failed to parse — the rest loaded normally`)
   }
   return docs
 }

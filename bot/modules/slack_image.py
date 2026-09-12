@@ -1,7 +1,7 @@
-"""Slack 이미지 처리 모듈
+"""Slack image handling module
 
-다운로드, 리사이즈, Claude Vision 묘사, 볼트 이미지 업로드 등
-이미지 관련 작업을 SlackImageHandler 클래스로 캡슐화합니다.
+Encapsulates image-related work — download, resize, Claude Vision description,
+vault image upload, etc. — in the SlackImageHandler class.
 """
 from __future__ import annotations
 
@@ -14,24 +14,24 @@ _PILImage.MAX_IMAGE_PIXELS = 50_000_000
 
 from modules.constants import DEFAULT_SONNET_MODEL
 
-# ── 상수 ────────────────────────────────────────────────────────────────────
-_VISION_MODEL = DEFAULT_SONNET_MODEL  # 항상 Claude 사용 (GPT/Gemini 설정 무시)
+# ── Constants ────────────────────────────────────────────────────────────────
+_VISION_MODEL = DEFAULT_SONNET_MODEL  # always use Claude (ignores GPT/Gemini settings)
 
 # Slack CDN domains — only fetch images from these trusted hosts
 _SLACK_CDN_DOMAINS = ("files.slack.com", "slack-files.com", "slack-edge.com", "files.slack-edge.com")
 
-# Anthropic base64 이미지 한도: 5MB base64 ≈ 3.75MB raw → 여유분 포함 3.5MB
+# Anthropic base64 image limit: 5MB base64 ≈ 3.75MB raw → 3.5MB with headroom
 _MAX_IMG_BYTES = 3_500_000
 
 _IMAGE_WORDS = ["이미지", "사진", "그림", "원화", "일러스트", "레퍼런스", "image", "photo", "pic"]
-# 이미지 검색 시 제거할 동작/수량 단어 (주제어만 남기기 위함)
+# Action/quantity words stripped from image searches (to keep only the topic words)
 _ACTION_WORDS = ["보여줘", "보여주세요", "찾아줘", "찾아주세요", "보내줘", "보내주세요",
                  "줘", "주세요", "검색해줘", "있어", "있나요", "있어요",
                  "하나", "한장", "몇개", "주", "좀", "제발", "꼭"]
 
 
 class SlackImageHandler:
-    """Slack 이미지 다운로드, 리사이즈, Vision 묘사, 업로드를 담당하는 클래스."""
+    """Class responsible for Slack image download, resize, Vision description, and upload."""
 
     def __init__(self, web_client, bot_token: str, api_key: str, log_fn: Callable[[str], None]):
         self._web = web_client
@@ -53,9 +53,9 @@ class SlackImageHandler:
 
     def fetch_via_files_info(self, file_id: str) -> bytes | None:
         """
-        Enterprise Grid 폴백: files.info API로 썸네일 URL을 받아 다운로드.
-        url_private_download는 SSO에 막히지만 thumb_* URL은 별도 CDN에서 서빙되어
-        봇 토큰 Authorization 헤더로 접근 가능한 경우가 많음.
+        Enterprise Grid fallback: fetch a thumbnail URL via the files.info API and download it.
+        url_private_download is blocked by SSO, but thumb_* URLs are served from a separate CDN
+        and are often accessible with the bot token Authorization header.
         """
         import requests as _req
         try:
@@ -69,9 +69,9 @@ class SlackImageHandler:
                     continue
                 # SSRF guard: only fetch from Slack's own CDN domains
                 if not self.is_safe_slack_url(thumb_url):
-                    self._log(f"[Vision] SSRF 차단: 허용되지 않은 URL {thumb_url[:80]}")
+                    self._log(f"[Vision] SSRF blocked: disallowed URL {thumb_url[:80]}")
                     continue
-                self._log(f"[Vision] Enterprise thumb 시도: {key}")
+                self._log(f"[Vision] Trying Enterprise thumb: {key}")
                 r = _req.get(
                     thumb_url,
                     headers={"Authorization": f"Bearer {self._bot_token}"},
@@ -79,28 +79,28 @@ class SlackImageHandler:
                     timeout=15,
                 )
                 if r.ok and r.content and r.content[:1] != b"<":
-                    self._log(f"[Vision] thumb 다운로드 완료: {len(r.content)}바이트")
+                    self._log(f"[Vision] thumb download complete: {len(r.content)} bytes")
                     return r.content
         except Exception as e:
-            self._log(f"[Vision] files.info 실패: {e}")
+            self._log(f"[Vision] files.info failed: {e}")
         return None
 
     def shrink_image(self, raw: bytes, mimetype: str, file_id: str | None) -> tuple[bytes, str] | None:
-        """이미지를 Anthropic 허용 범위(≤3.5MB)로 줄임. PIL 리사이즈 → Slack thumb 순 폴백."""
-        # PIL 리사이즈 시도
+        """Shrink an image to the Anthropic limit (≤3.5MB). Fallback order: PIL resize → Slack thumb."""
+        # Try PIL resize
         try:
             from PIL import Image
             import io as _io
             # Decompression bomb protection: limit to 50MP
             if len(raw) > 20_000_000:
-                self._log(f"[Vision] 이미지 크기 초과 ({len(raw)//1024//1024}MB), 건너뜀")
+                self._log(f"[Vision] Image too large ({len(raw)//1024//1024}MB), skipping")
                 raise ValueError("raw image too large")
             img = Image.open(_io.BytesIO(raw))
-            # 장변 1568px 이하로 축소 (Anthropic 권장 최대치)
+            # Shrink the long edge to ≤1568px (Anthropic recommended maximum)
             if max(img.size) > 1568:
                 ratio = 1568 / max(img.size)
                 img = img.resize((int(img.size[0] * ratio), int(img.size[1] * ratio)), Image.LANCZOS)
-            # 투명도 채널 처리 후 JPEG 변환 (용량 절감)
+            # Handle the alpha channel, then convert to JPEG (reduces size)
             if img.mode == "RGBA":
                 background = Image.new("RGB", img.size, (255, 255, 255))
                 background.paste(img, mask=img.split()[3])
@@ -110,24 +110,24 @@ class SlackImageHandler:
             buf = _io.BytesIO()
             img.save(buf, format="JPEG", quality=85, optimize=True)
             result = buf.getvalue()
-            self._log(f"[Vision] PIL 리사이즈 완료: {len(result)//1024}KB")
+            self._log(f"[Vision] PIL resize complete: {len(result)//1024}KB")
             return result, "image/jpeg"
         except ImportError:
-            self._log("[Vision] PIL 없음 → Slack thumb 시도")
+            self._log("[Vision] PIL not available → trying Slack thumb")
         except Exception as e:
-            self._log(f"[Vision] PIL 오류: {e}")
-        # Slack thumb 폴백 (files.info → thumb_1024/720/480)
+            self._log(f"[Vision] PIL error: {e}")
+        # Slack thumb fallback (files.info → thumb_1024/720/480)
         if file_id:
             thumb = self.fetch_via_files_info(file_id)
             if thumb:
-                self._log(f"[Vision] Slack thumb 사용: {len(thumb)//1024}KB")
+                self._log(f"[Vision] Using Slack thumb: {len(thumb)//1024}KB")
                 return thumb, "image/jpeg"
         return None
 
     def download_images(self, image_files: list, download_fn: Callable) -> list[dict]:
-        """이미지 다운로드 → [{"data": base64, "mediaType": str}] 리스트 반환.
+        """Download images → returns a list of [{"data": base64, "mediaType": str}].
 
-        download_fn: slack_utils.download_slack_file 함수 (bot_token 바인딩 필요)
+        download_fn: the slack_utils.download_slack_file function (bot_token must be bound)
         """
         import base64 as _b64
         results = []
@@ -135,19 +135,19 @@ class SlackImageHandler:
             url = f.get("url_private_download") or f.get("url_private")
             raw = download_fn(url or "", self._bot_token, log_fn=self._log) if url else None
             file_id = f.get("id")
-            # Enterprise Grid 폴백: SSO 차단 시 files.info → thumb URL 시도
+            # Enterprise Grid fallback: when blocked by SSO, try files.info → thumb URL
             if not raw and file_id:
                 raw = self.fetch_via_files_info(file_id)
             if not raw:
-                self._log("[Vision] 다운로드 실패")
+                self._log("[Vision] Download failed")
                 continue
             mimetype = f.get("mimetype") or "image/png"
-            # 너무 크면 리사이즈 (Anthropic 5MB base64 한도)
+            # Resize if too large (Anthropic 5MB base64 limit)
             if len(raw) > _MAX_IMG_BYTES:
-                self._log(f"[Vision] {len(raw)//1024}KB 초과 → 리사이즈")
+                self._log(f"[Vision] {len(raw)//1024}KB exceeds limit → resizing")
                 shrunk = self.shrink_image(raw, mimetype, file_id)
                 if not shrunk:
-                    self._log("[Vision] 리사이즈 실패 → 스킵")
+                    self._log("[Vision] Resize failed → skipping")
                     continue
                 raw, mimetype = shrunk
             self._log(f"[Vision] {len(raw)//1024}KB magic={raw[:4].hex()}")
@@ -155,7 +155,7 @@ class SlackImageHandler:
         return results
 
     def describe_images(self, downloaded: list[dict], query: str) -> str | None:
-        """다운로드된 이미지들을 Claude로 묘사 (RAG 쿼리 보강용). 실패 시 None."""
+        """Describe downloaded images with Claude (to enrich the RAG query). None on failure."""
         if not self._api_key:
             return None
         content_parts: list = [
@@ -164,8 +164,8 @@ class SlackImageHandler:
         ]
         desc_prompt = (
             f"{query}\n\n"
-            "이미지에서 보이는 캐릭터의 외형(복장, 색상, 헤어, 표정, 분위기, 소품 등)을 "
-            "구체적으로 묘사해주세요. 묘사만 출력, 평가나 결론은 제외."
+            "Describe in detail the appearance of the character shown in the image (outfit, colors, hair, "
+            "expression, mood, props, etc.). Output only the description; no evaluation or conclusions."
         )
         content_parts.append({"type": "text", "text": desc_prompt})
         try:
@@ -173,34 +173,34 @@ class SlackImageHandler:
             msg = _ant.Anthropic(api_key=self._api_key).messages.create(
                 model=_VISION_MODEL,
                 max_tokens=800,
-                system="당신은 게임 캐릭터 아트 분석 전문가입니다. 이미지를 객관적으로 묘사합니다.",
+                system="You are a game character art analysis expert. Describe images objectively.",
                 messages=[{"role": "user", "content": content_parts}],
             )
             return msg.content[0].text
         except Exception as e:
-            self._log(f"[Vision] 묘사 오류: {e}")
+            self._log(f"[Vision] Description error: {e}")
             return None
 
     def resolve_open_path(self, raw: str) -> str | None:
         """
-        한글 파일명 Errno 22 방어: NFC → NFD → 원본 순으로 존재하는 경로 반환.
-        abspath() 는 한국어 경로에서 OS 레벨 변환 오류를 일으킬 수 있어 사용하지 않음.
+        Guard against Errno 22 on Korean filenames: return the first existing path in NFC → NFD → original order.
+        abspath() is not used because it can trigger OS-level conversion errors on Korean paths.
         """
         for norm in ("NFC", "NFD", None):
             p = unicodedata.normalize(norm, raw) if norm else raw
             if os.path.exists(p):
                 return p
-        return None  # 파일 없음
+        return None  # file not found
 
     def upload_images_to_slack(self, image_paths: list[str], channel: str, thread_ts: str | None) -> int:
-        """볼트 이미지를 Slack에 업로드. 업로드 성공 건수 반환."""
+        """Upload vault images to Slack. Returns the number of successful uploads."""
         import requests as _req
         uploaded = 0
         for path in image_paths[:3]:
             try:
                 open_path = self.resolve_open_path(path)
                 if open_path is None:
-                    self._log(f"[Image] 파일 없음 (경로 확인 필요): {os.path.basename(path)}")
+                    self._log(f"[Image] File not found (check path): {os.path.basename(path)}")
                     continue
                 with open(open_path, "rb") as f:
                     content = f.read()
@@ -214,7 +214,7 @@ class SlackImageHandler:
                     kw["thread_ts"] = thread_ts
                 self._web.files_completeUploadExternal(**kw)
                 uploaded += 1
-                self._log(f"[Image] 업로드 완료: {filename}")
+                self._log(f"[Image] Upload complete: {filename}")
             except Exception as e:
-                self._log(f"[Image] 업로드 실패 ({os.path.basename(path)}): {e}")
+                self._log(f"[Image] Upload failed ({os.path.basename(path)}): {e}")
         return uploaded

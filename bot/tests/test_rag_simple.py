@@ -1,7 +1,7 @@
 """
-tests/test_rag_simple.py — rag_simple.py 유닛 테스트
+tests/test_rag_simple.py — unit tests for rag_simple.py
 
-실행: python -m pytest bot/tests/ -v
+Run: python -m pytest bot/tests/ -v
 """
 import math
 import sys
@@ -56,34 +56,34 @@ class TestTokenize(unittest.TestCase):
 
 class TestBuildIdf(unittest.TestCase):
     def test_rare_term_higher_idf(self):
-        """드문 단어가 공통 단어보다 IDF가 높아야 한다."""
+        """A rare term must have a higher IDF than a common term."""
         docs = [
             _make_doc("게임 프로젝트", "doc1", "게임 개발 로직"),
             _make_doc("게임 디자인", "doc2", "게임 아트 제작"),
-            _make_doc("특수 기능", "doc3", "독특한 메커니즘"),  # '게임' 없음
+            _make_doc("특수 기능", "doc3", "독특한 메커니즘"),  # no '게임'
         ]
         idf = _build_idf(docs)
-        # '게임'은 3개 중 2개 문서에 등장 → IDF = log(3/2) ≈ 0.405
-        # '독특한'은 3개 중 1개 문서에만 등장 → IDF = log(3/1) ≈ 1.099
+        # '게임' appears in 2 of 3 documents → IDF = log(3/2) ≈ 0.405
+        # '독특한' appears in only 1 of 3 documents → IDF = log(3/1) ≈ 1.099
         game_idf = idf.get("게임", 0)
         unique_idf = idf.get("독특한", 0)
         self.assertGreater(unique_idf, game_idf)
 
     def test_universal_term_low_idf(self):
-        """전 문서에 등장하는 단어도 스무딩 덕에 0이 아닌 작은 IDF 를 갖는다."""
+        """A term appearing in every document still gets a small non-zero IDF thanks to smoothing."""
         docs = [
             _make_doc("문서", "doc1", "공통 단어 포함"),
             _make_doc("문서", "doc2", "공통 단어 희귀"),
         ]
         idf = _build_idf(docs)
-        # "문서"는 모든 문서(2/2)에 등장 → log(1 + 0.5/2.5) ≈ 0.182 (>0, 무시되지 않음)
+        # "문서" appears in all documents (2/2) → log(1 + 0.5/2.5) ≈ 0.182 (>0, not ignored)
         universal_idf = idf.get("문서", 0)
         self.assertGreater(universal_idf, 0.0)
-        # 1개 문서에만 등장하는 단어보다는 낮아야 한다
+        # Must be lower than a term that appears in only one document
         self.assertLess(universal_idf, idf.get("희귀", 0))
 
     def test_single_doc_corpus_has_positive_idf(self):
-        """문서 1개짜리 코퍼스도 IDF > 0 (log(N/df) 였다면 항상 0건 반환)."""
+        """A single-document corpus also has IDF > 0 (with log(N/df) it would always return 0 results)."""
         idf = _build_idf([_make_doc("전투", "d1", "전투 로직")])
         self.assertGreater(idf.get("전투", 0), 0.0)
 
@@ -101,7 +101,7 @@ class TestScoreDoc(unittest.TestCase):
         self.idf = _build_idf(self.docs)
 
     def test_title_match_scores_higher(self):
-        """제목에 있는 토큰이 본문에만 있는 것보다 점수가 높아야 한다."""
+        """A token in the title must score higher than one only in the body."""
         title_doc = _make_doc("전투 시스템", "combat_a", "일반적인 내용")
         body_doc  = _make_doc("일반 문서", "other_b", "전투에 관한 내용")
         idf = _build_idf([title_doc, body_doc])
@@ -111,8 +111,8 @@ class TestScoreDoc(unittest.TestCase):
         self.assertGreater(score_title, score_body)
 
     def test_common_word_penalized(self):
-        """전 문서 공통 단어는 희귀 단어보다 점수 기여가 낮아야 한다."""
-        # 두 토큰 모두 본문에만 등장 → 위치 가중치를 동일하게 두고 IDF 만 비교
+        """A term common to all documents must contribute less to the score than a rare term."""
+        # Both tokens appear only in the body → same position weight, compare IDF only
         docs = [
             _make_doc("문서1", "d1", "공통 단어 희소값"),
             _make_doc("문서2", "d2", "공통 단어"),
@@ -162,7 +162,7 @@ class TestApplyHotnessRerank(unittest.TestCase):
         }
         with patch("modules.rag_simple._load_access_store", return_value=store):
             reranked = apply_hotness_rerank(results)
-        # recent_hot이 hotness 보너스로 역전할 수 있음 (알파 블렌딩)
+        # recent_hot may overtake via the hotness bonus (alpha blending)
         self.assertEqual(len(reranked), 2)
 
     def test_empty_input(self):
@@ -171,15 +171,15 @@ class TestApplyHotnessRerank(unittest.TestCase):
 
 class TestVaultCache(unittest.TestCase):
     def test_cache_hit_skips_scan(self):
-        """60초 내 재호출 시 scan_vault를 호출하지 않아야 한다."""
+        """A repeat call within 60 seconds must not call scan_vault."""
         mock_docs = [_make_doc("테스트", "test", "본문")]
         with patch("modules.rag_simple.scan_vault", return_value=mock_docs) as mock_scan:
             _get_cached_docs("/vault")
-            _get_cached_docs("/vault")  # 두 번째는 캐시 히트
-        mock_scan.assert_called_once()  # scan_vault는 1회만
+            _get_cached_docs("/vault")  # second call is a cache hit
+        mock_scan.assert_called_once()  # scan_vault only once
 
     def test_cache_miss_on_different_path(self):
-        """다른 볼트 경로는 캐시 미스여야 한다."""
+        """A different vault path must be a cache miss."""
         mock_docs = [_make_doc("테스트", "test", "본문")]
         with patch("modules.rag_simple.scan_vault", return_value=mock_docs) as mock_scan:
             _get_cached_docs("/vault_a")
@@ -187,12 +187,12 @@ class TestVaultCache(unittest.TestCase):
         self.assertEqual(mock_scan.call_count, 2)
 
     def test_cache_expires(self):
-        """TTL 초과 시 재스캔해야 한다."""
+        """Must rescan once the TTL has expired."""
         import modules.rag_simple as rs
         mock_docs = [_make_doc("테스트", "test", "본문")]
         with patch("modules.rag_simple.scan_vault", return_value=mock_docs) as mock_scan:
             _get_cached_docs("/vault_ttl")
-            # 캐시 ts를 강제로 만료시킴
+            # Force the cache ts to expire
             with rs._VAULT_CACHE_LOCK:
                 rs._vault_cache["ts"] = time.time() - rs._VAULT_CACHE_TTL - 1
             _get_cached_docs("/vault_ttl")

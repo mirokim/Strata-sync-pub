@@ -90,7 +90,7 @@ declare global {
       ): Promise<{ ok: boolean }>
       onStateUpdate(callback: (data: Record<string, unknown>) => void): () => void
       onLogAppend(callback: (entry: Record<string, unknown>) => void): () => void
-      /** @deprecated — onStateUpdate 와 동일 채널로 매핑됨 */
+      /** @deprecated — mapped to the same channel as onStateUpdate */
       onJobStatus(callback: (data: Record<string, unknown>) => void): () => void
       onExecuteJob(
         jobType: string,

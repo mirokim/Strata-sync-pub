@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-pipeline.py — Graph RAG 데이터 정제 매뉴얼 v3.8 통합 Pipeline
+pipeline.py — Graph RAG data refinement manual v3.8 integrated Pipeline
 Phase 2: Source file → MD conversion (following §4.0 common principles)
 
-실행 순서:
+Execution order:
   1. HTML → MD  (refine_html_to_md.py §4.1)
-  2. PPTX → MD  (pptx_to_md.py §4.3)  — _files 폴더 첨부파일
-  3. DOCX → MD  (docx_to_md.py §4.5)  — _files 폴더 첨부파일
+  2. PPTX → MD  (pptx_to_md.py §4.3)  — attachments in _files folders
+  3. DOCX → MD  (docx_to_md.py §4.5)  — attachments in _files folders
 
 Usage:
   python pipeline.py \
@@ -35,15 +35,15 @@ def run_step(label: str, cmd: list, cwd: Path = None) -> bool:
     result = subprocess.run(cmd, cwd=cwd)
     elapsed = time.time() - t0
     ok = result.returncode == 0
-    status = "Complete" if ok else f"오류(코드 {result.returncode})"
-    print(f"\n→ {label} {status} ({elapsed:.1f}초)")
+    status = "Complete" if ok else f"error (code {result.returncode})"
+    print(f"\n→ {label} {status} ({elapsed:.1f}s)")
     return ok
 
 
 def collect_pptx_docx_dirs(html_dirs: list[Path]) -> tuple[list[Path], list[Path]]:
     """
-    html_dirs 아래의 _files 폴더에서 PPTX/DOCX 파일 경로를 수집.
-    반환: (pptx_paths, docx_paths)
+    Collect PPTX/DOCX file paths from the _files folders under html_dirs.
+    Returns: (pptx_paths, docx_paths)
     """
     pptx_paths = []
     docx_paths = []
@@ -66,15 +66,15 @@ def write_file_list(paths: list[Path], out_path: Path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Graph RAG 데이터 정제 통합 Pipeline (§4)')
+    parser = argparse.ArgumentParser(description='Graph RAG data refinement integrated Pipeline (§4)')
     parser.add_argument('--html-dirs', nargs='+', required=True,
-                        help='HTML 파일이 있는 폴더(들). 예: downloaded_pages downloaded_pages2')
+                        help='Folder(s) containing HTML files, e.g. downloaded_pages downloaded_pages2')
     parser.add_argument('--vault', default='refined_vault',
-                        help='출력 vault 루트 폴더 (기본: refined_vault)')
+                        help='Output vault root folder (default: refined_vault)')
     parser.add_argument('--workers', type=int, default=None,
-                        help='HTML 변환 병렬 워커 수 (기본: CPU 수)')
+                        help='Number of parallel workers for HTML conversion (default: CPU count)')
     parser.add_argument('--step', choices=['html', 'pptx', 'docx', 'all'], default='all',
-                        help='실행할 단계 (기본: all)')
+                        help='Step to run (default: all)')
     args = parser.parse_args()
 
     vault = Path(args.vault).resolve()
@@ -87,15 +87,15 @@ def main():
 
     html_dirs = [Path(d).resolve() for d in args.html_dirs]
 
-    print(f"\nGraph RAG 데이터 정제 Pipeline v3.8")
-    print(f"  HTML 소스: {[str(d) for d in html_dirs]}")
-    print(f"  출력 vault: {vault}")
-    print(f"  실행 단계: {args.step}")
+    print(f"\nGraph RAG data refinement Pipeline v3.8")
+    print(f"  HTML sources: {[str(d) for d in html_dirs]}")
+    print(f"  Output vault: {vault}")
+    print(f"  Step: {args.step}")
 
     t_total = time.time()
     success = True
 
-    # ── 단계 1: HTML → MD ─────────────────────────────────────────────────
+    # ── Step 1: HTML → MD ─────────────────────────────────────────────────
     if args.step in ('html', 'all'):
         cmd = [
             sys.executable,
@@ -110,12 +110,12 @@ def main():
         ok = run_step('HTML → MD', cmd)
         success = success and ok
 
-    # ── 단계 2: PPTX → MD (_files 폴더 첨부파일) ─────────────────────────
+    # ── Step 2: PPTX → MD (attachments in _files folders) ────────────────
     if args.step in ('pptx', 'all'):
         pptx_paths, _ = collect_pptx_docx_dirs(html_dirs)
         if pptx_paths:
-            print(f"\n[PPTX] _files 폴더에서 {len(pptx_paths)}개 PPTX 발견")
-            # 경로 목록 임시 파일로 저장
+            print(f"\n[PPTX] {len(pptx_paths)} PPTX files found in _files folders")
+            # Save the path list to a temporary file
             list_file = vault / '.pptx_list.txt'
             write_file_list(pptx_paths, list_file)
 
@@ -129,13 +129,13 @@ def main():
             ok = run_step('PPTX → MD', cmd)
             success = success and ok
         else:
-            print("\n[PPTX] _files 폴더에 PPTX 없음 — Skipped")
+            print("\n[PPTX] No PPTX in _files folders — Skipped")
 
-    # ── 단계 3: DOCX → MD (_files 폴더 첨부파일) ─────────────────────────
+    # ── Step 3: DOCX → MD (attachments in _files folders) ────────────────
     if args.step in ('docx', 'all'):
         _, docx_paths = collect_pptx_docx_dirs(html_dirs)
         if docx_paths:
-            print(f"\n[DOCX] _files 폴더에서 {len(docx_paths)}개 DOCX 발견")
+            print(f"\n[DOCX] {len(docx_paths)} DOCX files found in _files folders")
             cmd = [
                 sys.executable,
                 str(SCRIPT_DIR / 'docx_to_md.py'),
@@ -146,20 +146,20 @@ def main():
             ok = run_step('DOCX → MD', cmd)
             success = success and ok
         else:
-            print("\n[DOCX] _files 폴더에 DOCX 없음 — Skipped")
+            print("\n[DOCX] No DOCX in _files folders — Skipped")
 
-    # ── 최종 집계 ─────────────────────────────────────────────────────────
+    # ── Final tally ───────────────────────────────────────────────────────
     elapsed = time.time() - t_total
     active_count = len(list(active_dir.glob('*.md')))
     archive_count = len(list(archive_dir.glob('*.md')))
     att_count = len(list(attachments_dir.iterdir())) if attachments_dir.exists() else 0
 
     print(f"\n{'='*60}")
-    print(f"Pipeline {'Complete' if success else 'Complete (some errors)'} ({elapsed:.1f}초)")
-    print(f"  active/    : {active_count}개 MD 파일")
-    print(f"  .archive/  : {archive_count}개 MD 파일 (스텁)")
+    print(f"Pipeline {'Complete' if success else 'Complete (some errors)'} ({elapsed:.1f}s)")
+    print(f"  active/    : {active_count} MD files")
+    print(f"  .archive/  : {archive_count} MD files (stubs)")
     print(f"  attachments: {att_count} attachments")
-    print(f"  vault 경로 : {vault}")
+    print(f"  vault path : {vault}")
     print('='*60)
 
     if not success:

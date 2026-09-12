@@ -239,9 +239,9 @@ export default function StatsTab() {
         </div>
       )}
 
-      {/* 트렌드 차트 */}
+      {/* Trend chart */}
       <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 16 }}>
-        <SectionTitle>변화 추이</SectionTitle>
+        <SectionTitle>Trends</SectionTitle>
         <StatsChart />
       </div>
 

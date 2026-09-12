@@ -1,5 +1,5 @@
 """
-vault_scanner.py — 볼트 파일 스캔 및 파싱
+vault_scanner.py — Vault file scanning and parsing
 """
 import os
 import re
@@ -10,22 +10,22 @@ from pathlib import Path
 
 @dataclass
 class VaultDoc:
-    path: str           # 절대 경로
-    fname: str          # 파일명
-    stem: str           # 확장자 제외 이름
-    folder: str         # 상위 폴더명
-    parent_resolved: str = ""  # 스캔 시 미리 계산한 상위 폴더 절대경로 (검색마다 재계산 방지)
+    path: str           # absolute path
+    fname: str          # file name
+    stem: str           # name without extension
+    folder: str         # parent folder name
+    parent_resolved: str = ""  # parent folder absolute path precomputed at scan time (avoids recomputing per search)
     title: str = ""
     tags: list = field(default_factory=list)
     doc_type: str = "reference"
     date_str: str = ""
-    body: str = ""      # frontmatter 제외 본문
-    raw: str = ""       # 전체 원본 텍스트
+    body: str = ""      # body without frontmatter
+    raw: str = ""       # full raw text
     body_len: int = 0
 
 
 def load_frontmatter(text: str) -> tuple[dict, str]:
-    """frontmatter 파싱 → (dict, body)"""
+    """Parse frontmatter → (dict, body)"""
     if text.startswith("---"):
         end = text.find("\n---", 3)
         if end != -1:
@@ -38,17 +38,17 @@ def load_frontmatter(text: str) -> tuple[dict, str]:
 
 
 def scan_vault(vault_path: str) -> list[VaultDoc]:
-    """볼트 전체 .md 파일 스캔"""
+    """Scan all .md files in the vault"""
     docs: list[VaultDoc] = []
     vault = Path(vault_path)
     if not vault.exists():
         return docs
 
     for md_file in vault.rglob("*.md"):
-        # .strata-sync, .obsidian 등 숨김 폴더 제외.
-        # 볼트 루트 기준 상대 경로로 판정 — 절대 경로 전체를 보면
-        # 볼트가 dot 디렉터리(예: C:\Users\x\.notes\vault) 아래 있을 때
-        # 모든 파일이 걸러져 스캔 결과가 0건이 된다.
+        # Exclude hidden folders such as .strata-sync and .obsidian.
+        # Judged by the path relative to the vault root — looking at the full absolute path
+        # would filter out every file when the vault lives under a dot directory
+        # (e.g. C:\Users\x\.notes\vault), leaving zero scan results.
         try:
             rel_parts = md_file.relative_to(vault).parts
         except ValueError:
@@ -71,7 +71,7 @@ def scan_vault(vault_path: str) -> list[VaultDoc]:
             fname=md_file.name,
             stem=stem,
             folder=folder,
-            # 검색마다 문서 수만큼 resolve() 를 호출하지 않도록 스캔 시 1회만 정규화
+            # Normalize once at scan time so resolve() is not called per document on every search
             parent_resolved=str(parent.resolve()),
             title=str(fm.get("title", stem)),
             tags=fm.get("tags", []) or [],
@@ -87,12 +87,12 @@ def scan_vault(vault_path: str) -> list[VaultDoc]:
 
 
 def find_active_folders(vault_path: str) -> list[str]:
-    r"""active 계열 폴더 목록 (날짜 역순).
+    r"""List of active-family folders (newest date first).
 
-    실제 볼트 명명 규칙은 `active`(현행)와 `activeYYMMDD`(스냅샷)이다.
-    이전 정규식 `^active_\d{8}$` 는 어느 쪽과도 매칭되지 않아 빈 목록을 반환했고,
-    기본값이 active_only=True 인 search_vault 가 문서 0건을 검색했다.
-    구형 `active_YYYYMMDD` 형식도 함께 허용한다.
+    The actual vault naming convention is `active` (current) and `activeYYMMDD` (snapshot).
+    The previous regex `^active_\d{8}$` matched neither, returned an empty list,
+    and search_vault (default active_only=True) searched zero documents.
+    The legacy `active_YYYYMMDD` format is also accepted.
     """
     vault = Path(vault_path)
     pattern = re.compile(r"^active(?:_?\d{6,8})?$")
@@ -105,5 +105,5 @@ def find_active_folders(vault_path: str) -> list[str]:
 
 
 def get_wikilinks(text: str) -> list[str]:
-    """본문에서 [[stem]] 또는 [[stem|display]] 추출 → stem 리스트"""
+    """Extract [[stem]] or [[stem|display]] from the body → list of stems"""
     return re.findall(r"\[\[(.*?)(?:\|.*?)?\]\]", text, re.DOTALL)

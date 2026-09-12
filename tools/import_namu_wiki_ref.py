@@ -1,21 +1,21 @@
 """
-import_namu_wiki_ref.py — 나무위키 PDF를 외부 게임 레퍼런스 MD로 변환
+import_namu_wiki_ref.py — Convert Namu Wiki PDFs into external game reference MD files
 
-사용법:
+Usage:
   python import_namu_wiki_ref.py --src /path/to/.game_ref --vault /path/to/refined_vault
   python import_namu_wiki_ref.py --src /path/to/.game_ref --vault /path/to/refined_vault --force
   python import_namu_wiki_ref.py --src /path/to/.game_ref --vault /path/to/refined_vault --index-only
 
-처리 흐름:
-  1. pdf_to_md.py로 .game_ref/*.pdf → 임시 active/ 변환 (기존 정제 파이프라인 그대로 활용)
-  2. 변환된 MD에 type: external-reference frontmatter + 오염 방지 마커 후처리
-  3. 나무위키 잔류 노이즈 추가 제거 (URL, 광고, 페이지 경로)
-  4. 허브-스포크 구조 재편: "{게임명}.md" → 허브, "{게임명}_{섹션}.md" → 스포크
-  5. _reference/games/[게임] {name}.md 저장
-  6. _reference/index_reference_games.md 인덱스 갱신
+Processing flow:
+  1. Convert .game_ref/*.pdf → temporary active/ via pdf_to_md.py (reuses the existing refinement pipeline)
+  2. Post-process the converted MD with type: external-reference frontmatter + contamination prevention marker
+  3. Remove leftover Namu Wiki noise (URLs, ads, page paths)
+  4. Restructure into hub-spoke: "{game}.md" → hub, "{game}_{section}.md" → spoke
+  5. Save to _reference/games/[게임] {name}.md
+  6. Refresh the _reference/index_reference_games.md index
 
-저장 위치: {vault}/_reference/games/[게임] {name}.md
-의존성: pdf_to_md.py (tools/), pdfplumber, pymupdf
+Output location: {vault}/_reference/games/[게임] {name}.md
+Dependencies: pdf_to_md.py (tools/), pdfplumber, pymupdf
 """
 
 import argparse
@@ -30,13 +30,13 @@ from datetime import date
 from pathlib import Path
 from typing import Optional
 
-# Windows stdout UTF-8 강제
+# Force UTF-8 stdout on Windows
 if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 if sys.stderr.encoding and sys.stderr.encoding.lower() != 'utf-8':
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
-# ── 게임명 정규화 ───────────────────────────────────────────────────────────────
+# ── Game name normalization ────────────────────────────────────────────────────
 
 GAME_NAME_MAP = {
     "더 파이널스":           "더 파이널스 (The Finals)",
@@ -71,7 +71,7 @@ SELECTION_REASONS = {
     "리그 오브 레전드 유니버스":        "MOBA IP 세계관 확장 전략",
 }
 
-# 나무위키 추가 노이즈 패턴 (pdf_to_md.py에서 못 잡는 것)
+# Extra Namu Wiki noise patterns (ones pdf_to_md.py cannot catch)
 NAMU_NOISE_RE = [
     re.compile(r"https?://namu\.wiki\S*", re.IGNORECASE),
     re.compile(r"^\s*나무위키.*\d{4}년.*$", re.MULTILINE),
@@ -81,19 +81,19 @@ NAMU_NOISE_RE = [
     re.compile(r"크리에이티브 커먼즈", re.IGNORECASE),
 ]
 
-# 나무위키 번호 헤딩 변환 (1. 개요 → ## 개요)
+# Namu Wiki numbered heading conversion (1. 개요 → ## 개요)
 NAMU_HEADING_RE = re.compile(r"^(\d+(?:\.\d+)*)\.\s+(.+)$", re.MULTILINE)
 
 
 def parse_pdf_name(filename: str) -> tuple:
     """
-    파일명 파싱 → (원시 게임명, 섹션명 or None)
+    Parse filename → (raw game name, section name or None)
     "리그 오브 레전드_챔피언 - 나무위키.pdf" → ("리그 오브 레전드", "챔피언")
     "더 파이널스 - 나무위키.pdf"              → ("더 파이널스", None)
     """
     stem = Path(filename).stem
     stem = re.sub(r"\s*-\s*나무위키.*$", "", stem).strip()
-    # "(게임)" 등 괄호 보조 분류는 게임명에 유지 (GAME_NAME_MAP에서 처리)
+    # Parenthesized sub-classifiers like "(게임)" stay in the game name (handled by GAME_NAME_MAP)
     if "_" in stem:
         idx = stem.index("_")
         game    = stem[:idx].strip()
@@ -105,7 +105,7 @@ def parse_pdf_name(filename: str) -> tuple:
 
 
 def clean_namu_text(text: str) -> str:
-    """나무위키 추가 노이즈 제거 + 번호 헤딩 변환."""
+    """Remove extra Namu Wiki noise + convert numbered headings."""
     for pattern in NAMU_NOISE_RE:
         text = pattern.sub("", text)
 
@@ -123,11 +123,11 @@ def clean_namu_text(text: str) -> str:
 def rewrite_frontmatter(content: str, game_name: str, section: Optional[str],
                          display_name: str, collected: str,
                          spoke_links: Optional[list] = None) -> str:
-    """pdf_to_md.py 출력 frontmatter를 external-reference 형식으로 교체하고 오염 방지 마커 삽입."""
-    # 기존 frontmatter 제거
+    """Replace the pdf_to_md.py output frontmatter with the external-reference format and insert the contamination prevention marker."""
+    # Remove the existing frontmatter
     content = re.sub(r"^---\n.*?\n---\n", "", content, count=1, flags=re.DOTALL).strip()
 
-    # 나무위키 노이즈 추가 제거
+    # Remove extra Namu Wiki noise
     content = clean_namu_text(content)
 
     lines = []
@@ -145,7 +145,7 @@ def rewrite_frontmatter(content: str, game_name: str, section: Optional[str],
         "",
     ]
 
-    # ── 오염 방지 마커 ─────────────────────────────────────────────────────────
+    # ── Contamination prevention marker ───────────────────────────────────────
     lines += [
         f"> ⚠️ **[외부 레퍼런스]** 이 문서는 **{display_name}** (외부 출시 게임)에 대한 데이터입니다.",
         "> 프로젝트 A 내부 의사결정 근거로 **직접 인용 금지**.",
@@ -154,7 +154,7 @@ def rewrite_frontmatter(content: str, game_name: str, section: Optional[str],
         "",
     ]
 
-    # ── 제목 ───────────────────────────────────────────────────────────────────
+    # ── Title ─────────────────────────────────────────────────────────────────
     title = display_name if section is None else f"{display_name} — {section}"
     lines += [f"# {title}", ""]
 
@@ -163,17 +163,17 @@ def rewrite_frontmatter(content: str, game_name: str, section: Optional[str],
     if reason and is_hub:
         lines += [f"> **선정 이유**: {reason}", ""]
 
-    # ── 허브: 스포크 목차 ─────────────────────────────────────────────────────
+    # ── Hub: spoke table of contents ──────────────────────────────────────────
     if is_hub and spoke_links:
         lines += ["## 세부 문서", ""]
         for stem, sec_name in spoke_links:
             lines.append(f"- [[{stem}|{display_name} — {sec_name}]]")
         lines += ["", "---", ""]
 
-    # ── 본문 ───────────────────────────────────────────────────────────────────
+    # ── Body ──────────────────────────────────────────────────────────────────
     lines += [content, ""]
 
-    # ── 비교 분석 메모 (허브에만) ──────────────────────────────────────────────
+    # ── Comparative analysis notes (hub only) ─────────────────────────────────
     if is_hub:
         lines += [
             "---",
@@ -199,7 +199,7 @@ def build_index(output_dir: str, vault_path: str, collected: str) -> None:
     entries = []
     for f in game_files:
         if " — " in f.stem:
-            continue  # 스포크 제외
+            continue  # Exclude spokes
         content   = f.read_text(encoding="utf-8", errors="ignore")
         ref_game  = re.search(r'^ref_game:\s*"?([^"\n]+)"?', content, re.MULTILINE)
         game_name = ref_game.group(1).strip() if ref_game else f.stem
@@ -257,16 +257,16 @@ def build_index(output_dir: str, vault_path: str, collected: str) -> None:
     index_path = Path(vault_path) / "_reference" / "index_reference_games.md"
     index_path.parent.mkdir(parents=True, exist_ok=True)
     index_path.write_text("\n".join(lines), encoding="utf-8")
-    print(f"  📋 인덱스 갱신 → {index_path}")
+    print(f"  📋 Index updated → {index_path}")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="나무위키 PDF → 외부 게임 레퍼런스 MD 변환")
-    parser.add_argument("--src",        required=True,       help=".game_ref 폴더 경로")
-    parser.add_argument("--vault",      required=True,       help="볼트 루트 경로 (refined_vault)")
-    parser.add_argument("--force",      action="store_true", help="이미 존재하는 파일도 덮어씀")
-    parser.add_argument("--index-only", action="store_true", help="변환 없이 인덱스만 재생성")
-    parser.add_argument("--verbose",    action="store_true", help="상세 출력")
+    parser = argparse.ArgumentParser(description="Namu Wiki PDF → external game reference MD conversion")
+    parser.add_argument("--src",        required=True,       help="Path to the .game_ref folder")
+    parser.add_argument("--vault",      required=True,       help="Vault root path (refined_vault)")
+    parser.add_argument("--force",      action="store_true", help="Overwrite existing files too")
+    parser.add_argument("--index-only", action="store_true", help="Regenerate only the index, without converting")
+    parser.add_argument("--verbose",    action="store_true", help="Verbose output")
     args = parser.parse_args()
 
     src_dir    = Path(os.path.abspath(args.src))
@@ -275,7 +275,7 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     collected  = date.today().isoformat()
 
-    # tools 디렉터리 (이 스크립트와 같은 위치)
+    # tools directory (same location as this script)
     tools_dir = Path(__file__).parent
 
     if args.index_only:
@@ -284,10 +284,10 @@ def main() -> None:
 
     pdf_files = sorted(src_dir.glob("*.pdf"))
     if not pdf_files:
-        print(f"오류: PDF 파일 없음 — {src_dir}", file=sys.stderr)
+        print(f"Error: no PDF files — {src_dir}", file=sys.stderr)
         sys.exit(1)
 
-    # 게임별 그룹핑 (허브/스포크)
+    # Group by game (hub/spokes)
     game_groups: dict = {}
     for pdf in pdf_files:
         if pdf.name == "index_reference_games.md":
@@ -300,8 +300,8 @@ def main() -> None:
         else:
             game_groups[game]["spokes"].append((pdf, section))
 
-    print(f"[import_namu_wiki_ref] {len(pdf_files)}개 PDF → {len(game_groups)}개 게임 그룹")
-    print(f"  저장 위치 → {output_dir}")
+    print(f"[import_namu_wiki_ref] {len(pdf_files)} PDFs → {len(game_groups)} game groups")
+    print(f"  Output location → {output_dir}")
 
     success = 0
     skipped = 0
@@ -313,8 +313,8 @@ def main() -> None:
         tmp_active.mkdir()
         tmp_attachments.mkdir()
 
-        # pdf_to_md.py 일괄 실행 (전체 폴더)
-        print(f"  [1/2] pdf_to_md.py 실행 중...")
+        # Run pdf_to_md.py in batch (whole folder)
+        print(f"  [1/2] Running pdf_to_md.py...")
         pdf_cmd = [
             sys.executable,
             str(tools_dir / "pdf_to_md.py"),
@@ -329,15 +329,15 @@ def main() -> None:
             print(result.stderr[:500], file=sys.stderr)
 
         converted_mds = {f.stem: f for f in tmp_active.glob("*.md")}
-        print(f"  [1/2] 변환 완료 - {len(converted_mds)}개 MD")
+        print(f"  [1/2] Conversion complete - {len(converted_mds)} MD files")
 
-        print(f"  [2/2] frontmatter 후처리 + 허브-스포크 구조화...")
+        print(f"  [2/2] Post-processing frontmatter + hub-spoke structuring...")
 
         for game_name, group in sorted(game_groups.items()):
             display_name = GAME_NAME_MAP.get(game_name, game_name)
             safe_display = re.sub(r'[<>:"/\\|?*]', "", display_name).strip()
 
-            # 스포크 stem 목록 (허브 목차용)
+            # Spoke stem list (for the hub table of contents)
             spoke_links = []
             for _, sec_name in group["spokes"]:
                 safe_sec   = re.sub(r'[<>:"/\\|?*]', "", sec_name).strip()
@@ -350,11 +350,11 @@ def main() -> None:
             all_pdfs.extend(group["spokes"])
 
             for pdf_file, section in all_pdfs:
-                # 변환된 MD 찾기 (stem 매칭)
+                # Find the converted MD (stem matching)
                 pdf_stem       = pdf_file.stem
-                # " - 나무위키" 등 suffix 제거한 stem으로 매칭
+                # Match using the stem with suffixes like " - 나무위키" removed
                 clean_stem     = re.sub(r"\s*-\s*나무위키.*$", "", pdf_stem).strip()
-                # pdf_to_md.py는 파일명 그대로 stem 사용
+                # pdf_to_md.py uses the filename as-is for the stem
                 md_candidates  = [
                     converted_mds.get(pdf_stem),
                     converted_mds.get(clean_stem),
@@ -362,7 +362,7 @@ def main() -> None:
                 md_file = next((c for c in md_candidates if c is not None), None)
 
                 if md_file is None:
-                    # 부분 매칭 시도
+                    # Try partial matching
                     for k, v in converted_mds.items():
                         if clean_stem.lower() in k.lower() or k.lower() in clean_stem.lower():
                             md_file = v
@@ -378,12 +378,12 @@ def main() -> None:
 
                 if out_path.exists() and not args.force:
                     if args.verbose:
-                        print(f"    ⏭  {out_name} — 이미 존재")
+                        print(f"    ⏭  {out_name} — already exists")
                     skipped += 1
                     continue
 
                 if md_file is None:
-                    print(f"    ✗  {out_name} — 변환된 MD 없음 (PDF: {pdf_file.name})")
+                    print(f"    ✗  {out_name} — no converted MD (PDF: {pdf_file.name})")
                     failed += 1
                     continue
 
@@ -397,7 +397,7 @@ def main() -> None:
                     print(f"    ✓  {out_name}")
                 success += 1
 
-            # 허브 PDF 없는 경우 빈 허브 자동 생성
+            # Auto-generate an empty hub when there is no hub PDF
             if group["hub"] is None and spoke_links:
                 hub_path = output_dir / f"[게임] {safe_display}.md"
                 if not hub_path.exists() or args.force:
@@ -407,10 +407,10 @@ def main() -> None:
                     )
                     hub_path.write_text(stub, encoding="utf-8")
                     if args.verbose:
-                        print(f"    ✓  [허브 자동 생성] [게임] {safe_display}.md")
+                        print(f"    ✓  [hub auto-generated] [게임] {safe_display}.md")
                     success += 1
 
-    print(f"\n완료: {success}개 저장, {skipped}개 건너뜀, {failed}개 실패")
+    print(f"\nDone: {success} saved, {skipped} skipped, {failed} failed")
     build_index(str(output_dir), str(vault_path), collected)
 
 

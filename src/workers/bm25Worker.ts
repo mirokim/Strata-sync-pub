@@ -1,16 +1,16 @@
 /**
- * bm25Worker.ts — BM25 인덱스 빌드 + 묵시적 링크 + co-occurrence 동의어를
- * 메인 스레드 밖에서 실행
+ * bm25Worker.ts — Runs BM25 index build + implicit links + co-occurrence synonyms
+ * off the main thread
  *
- * 메시지 프로토콜:
+ * Message protocol:
  *   IN  { type: 'build',     docs, adjacency, threshold, topN, fingerprint }
- *         → BM25 빌드 + findImplicitLinks → { type: 'done', serialized, implicitLinks }
+ *         → BM25 build + findImplicitLinks → { type: 'done', serialized, implicitLinks }
  *   IN  { type: 'findLinks', serialized, adjacency, threshold, topN }
- *         → 캐시 복원 + findImplicitLinks → { type: 'done', implicitLinks }
+ *         → cache restore + findImplicitLinks → { type: 'done', implicitLinks }
  *   IN  { type: 'updateDoc', serialized, doc, adjacency, threshold, topN, fingerprint }
- *         → 단일 문서 증분 갱신 → { type: 'done', serialized, implicitLinks }
+ *         → single-document incremental update → { type: 'done', serialized, implicitLinks }
  *   IN  { type: 'synonyms',  sections }
- *         → co-occurrence 동의어 추출 → { type: 'done', synonyms }
+ *         → co-occurrence synonym extraction → { type: 'done', synonyms }
  *   OUT { type: 'error', message }
  */
 
@@ -33,7 +33,7 @@ self.onmessage = (e: MessageEvent<InMsg>) => {
   try {
     const msg = e.data
 
-    // co-occurrence 동의어 추출 — BM25 인덱스와 무관한 독립 경로
+    // co-occurrence synonym extraction — independent path, unrelated to the BM25 index
     if (msg.type === 'synonyms') {
       const syn = extractCoOccurrenceSynonymsFromSections(
         msg.sections, msg.minCoOccurrence, msg.pmiThreshold,
@@ -49,7 +49,7 @@ self.onmessage = (e: MessageEvent<InMsg>) => {
       index.build(msg.docs)
       serialized = index.serialize(msg.fingerprint)
     } else if (msg.type === 'updateDoc') {
-      // 증분 업데이트: 기존 인덱스 복원 후 단일 문서만 재빌드
+      // Incremental update: restore existing index, then rebuild only the single document
       index.restore(msg.serialized)
       index.updateDoc(msg.doc)
       serialized = index.serialize(msg.fingerprint)
@@ -60,7 +60,7 @@ self.onmessage = (e: MessageEvent<InMsg>) => {
     const adj = new Map(msg.adjacency)
     const implicitLinks = index.findImplicitLinks(adj, msg.topN, msg.threshold)
 
-    // 캐시 히트 경로에서 O(N²) 재계산을 건너뛰도록 링크를 인덱스에 동봉해 저장
+    // Store links alongside the index so the cache-hit path can skip the O(N²) recomputation
     if (serialized) serialized.implicitLinks = implicitLinks
 
     const result: OutMsg = { type: 'done', requestId, implicitLinks }

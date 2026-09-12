@@ -1,8 +1,8 @@
 /**
- * useRagApi.ts — Slack bot의 HTTP RAG 요청을 처리하는 훅
+ * useRagApi.ts — Hook that handles HTTP RAG requests from the Slack bot
  *
- * Electron main.cjs의 HTTP 서버(7331)가 rag:search IPC를 보내면
- * fullVectorSearch (Gemini 임베딩) → BM25 fallback 으로 검색하여 결과를 돌려줍니다.
+ * When the HTTP server (7331) in Electron's main.cjs sends a rag:search IPC,
+ * searches via fullVectorSearch (Gemini embeddings) → BM25 fallback and returns the results.
  */
 import { useEffect, useRef } from 'react'
 import { useVaultStore } from '@/stores/vaultStore'
@@ -22,15 +22,15 @@ import { cleanSearchQuery } from '@/lib/stringUtils'
 const QUERY_EXPAND_TIMEOUT_MS = 5000;
 const RERANK_TIMEOUT_MS = 8000;
 const RAG_BODY_TRUNCATE_LENGTH = 4000;
-// BM25 점수가 상대(1위=항상 1.0)에서 절대 스케일로 바뀌었다(TFIDF_SCHEMA_VERSION 8).
-// 실측 분포: 관련 쿼리 1위 0.57~0.83, 완전 무관 쿼리 최고 0.18.
+// BM25 scores changed from relative (top hit = always 1.0) to an absolute scale (TFIDF_SCHEMA_VERSION 8).
+// Measured distribution: top hit for relevant queries 0.57–0.83, best for completely unrelated queries 0.18.
 const BM25_SCORE_THRESHOLD = 0.2;
 const MAX_IMAGE_RESULTS = 5;
 
 export function useRagApi() {
   const mirofishInFlightRef = useRef(false)
 
-  // ── 1. 검색 관련: onSearch, onGetSettings ────────────────────────────────
+  // ── 1. Search: onSearch, onGetSettings ───────────────────────────────────
   useEffect(() => {
     if (!window.ragAPI) return
 
@@ -44,14 +44,14 @@ export function useRagApi() {
           return
         }
 
-        // 검색 전 메타 지시 표현 제거 (BM25/벡터 오염 방지)
+        // Strip meta-instruction phrases before searching (avoids polluting BM25/vector search)
         const cleanedQuery = cleanSearchQuery(query)
         const sc = useSettingsStore.getState().searchConfig
 
-        // ── 메타데이터 필터 ───────────────────────────────────────────────
+        // ── Metadata filter ───────────────────────────────────────────────
         const searchDocs = sc.metadataFilter ? applyMetadataFilter(cleanedQuery, docs) : docs
 
-        // ── 쿼리 확장 ─────────────────────────────────────────────────────
+        // ── Query expansion ───────────────────────────────────────────────
         const anthropicKey = getApiKey('anthropic')
         let searchQuery = cleanedQuery
         if (sc.queryExpansion && anthropicKey) {
@@ -64,16 +64,16 @@ export function useRagApi() {
           } catch { /* fallback to original */ }
         }
 
-        // 공유 docMap — 이후 결과 조합에서도 재사용
+        // Shared docMap — reused when assembling results later
         const docMap = new Map(docs.map(d => [d.id, d]))
 
-        // 1순위: fullVectorSearch — 듀얼 트랙 (내부 문서 80% + 게임 레퍼런스 20%)
+        // 1st choice: fullVectorSearch — dual track (internal docs 80% + game references 20%)
         let searchResults: { doc_id: string; score: number; filename?: string; rawContent?: string }[] = []
         const geminiKey = getApiKey('gemini')
         if (vectorEmbedIndex.isBuilt && await isEmbeddingReady(geminiKey)) {
-          // 트랙 분리: 내부 문서 vs 게임 레퍼런스 (external-reference)
+          // Track split: internal docs vs game references (external-reference)
           const internalDocs = searchDocs.filter(d => d.type !== 'external-reference')
-          const gameRefDocs  = docs.filter(d => d.type === 'external-reference') // 메타 필터 우회 — 항상 포함
+          const gameRefDocs  = docs.filter(d => d.type === 'external-reference') // Bypasses the metadata filter — always included
           const internalTopN = Math.max(1, Math.round(topN * 0.8))
           const gameRefTopN  = Math.max(2, Math.round(topN * 0.2))
 
@@ -86,8 +86,8 @@ export function useRagApi() {
               : Promise.resolve(null),
           ])
 
-          // 리랭커에 넘길 본문 — 프론트매터를 제거한 getStrippedBody 사용.
-          // rawContent 원본은 이 볼트 문서의 74.9%에서 스니펫이 YAML 헤더만으로 채워진다.
+          // Body passed to the reranker — uses getStrippedBody with frontmatter removed.
+          // With raw rawContent, 74.9% of this vault's documents get a snippet consisting solely of the YAML header.
           const bodyOf = (docId: string) => {
             const d = docMap.get(docId)
             return d ? getStrippedBody(d) : undefined
@@ -100,7 +100,7 @@ export function useRagApi() {
               rawContent: bodyOf(r.doc_id),
             })))
           }
-          // 게임 레퍼런스: 중복 제거 후 항상 추가
+          // Game references: always appended after deduplication
           if (gameRefHits && gameRefHits.length > 0) {
             const seen = new Set(combined.map(r => r.doc_id))
             for (const r of gameRefHits) {
@@ -114,24 +114,24 @@ export function useRagApi() {
           if (combined.length > 0) {
             searchResults = combined
 
-            // RRF 합산: 벡터 순위 + BM25 순위를 Reciprocal Rank Fusion으로 통합.
-            // BM25 깊이를 벡터 후보 수에 맞춘다 — 한쪽만 얕으면 융합이 한쪽으로 기운다.
+            // RRF merge: combines vector rank + BM25 rank via Reciprocal Rank Fusion.
+            // Match the BM25 depth to the vector candidate count — if one side is shallow the fusion tilts toward the other.
             const fusionDepth = Math.max(topN, combined.length)
             const bm25Hits = frontendKeywordSearch(cleanedQuery, fusionDepth)
               .filter(r => r.score > BM25_SCORE_THRESHOLD)
             const bm25RankMap = new Map<string, number>()
             for (let i = 0; i < bm25Hits.length; i++) bm25RankMap.set(bm25Hits[i].doc_id, i + 1)
 
-            // 벡터 순위: 두 트랙(내부/게임 레퍼런스)을 cosine 기준으로 다시 합쳐 단일 순위 부여.
-            // 트랙별 독립 순위는 나무위키 외부 레퍼런스 1위가 내부 문서 1위와 같은 vecRank=1을
-            // 받아 RRF 점수가 동률이 되는 문제가 있었다 (내부 질문에도 외부 자료가 최상위에 노출).
+            // Vector rank: re-merge both tracks (internal/game reference) by cosine into a single ranking.
+            // Independent per-track ranking gave the top Namuwiki external reference the same vecRank=1 as the top
+            // internal document, tying their RRF scores (external material surfaced at the top even for internal questions).
             const vecRankMap = new Map<string, number>()
             const rankedByCosine = [...combined].sort((a, b) => b.score - a.score)
             for (let i = 0; i < rankedByCosine.length; i++) {
               vecRankMap.set(rankedByCosine[i].doc_id, i + 1)
             }
 
-            // BM25에만 있는 내부 문서 추가
+            // Add internal documents present only in BM25
             const vecIds = new Set(searchResults.map(r => r.doc_id))
             for (const r of bm25Hits) {
               const doc = docMap.get(r.doc_id)
@@ -143,7 +143,7 @@ export function useRagApi() {
               }
             }
 
-            // 전체 문서에 RRF 스코어 부여
+            // Assign RRF scores to all documents
             const missRank = rankedByCosine.length + bm25Hits.length + 1
             const fused = searchResults.map(r => {
               const vecRank = vecRankMap.get(r.doc_id) ?? missRank
@@ -151,12 +151,12 @@ export function useRagApi() {
               return { ...r, score: rrfScore([vecRank, bm25Rank]) }
             }).sort((a, b) => b.score - a.score)
 
-            // RRF 원점수(≈0.03)를 그대로 llmRerankCandidates에 넘기면 score*0.4 항이 사라져
-            // LLM 점수가 사실상 100% 가중치를 갖는다 → 상위 1.0 기준 max 정규화.
+            // Passing raw RRF scores (≈0.03) straight to llmRerankCandidates makes the score*0.4 term vanish,
+            // giving the LLM score effectively 100% weight → max-normalize so the top hit is 1.0.
             const topRrf = fused[0]?.score || 1
             searchResults = fused.map(r => ({ ...r, score: r.score / topRrf }))
 
-            // ── LLM 리랭킹 ───────────────────────────────────────────────
+            // ── LLM reranking ─────────────────────────────────────────────
             if (sc.llmRerank && anthropicKey && searchResults.length > 0) {
               try {
                 searchResults = await Promise.race([
@@ -168,7 +168,7 @@ export function useRagApi() {
           }
         }
 
-        // 2순위: BM25 fallback (벡터 인덱스 없거나 API 실패 시)
+        // 2nd choice: BM25 fallback (no vector index or API failure)
         if (searchResults.length === 0) {
           searchResults = frontendKeywordSearch(cleanedQuery, topN).map(r => ({ doc_id: r.doc_id, score: r.score }))
         }
@@ -188,7 +188,7 @@ export function useRagApi() {
             ?? doc.filename.replace(/^\[게임\]\s*/, '').replace(/\.md$/i, '')
           const refDate  = (doc.frontmatter?.ref_collected as string | undefined) ?? doc.date ?? ''
           const body = isExtRef
-            ? `[외부게임 레퍼런스 — ${refGame} / 나무위키 / ${refDate}]\n${rawBody}\n[끝 — 위는 외부 게임 데이터이며 프로젝트A 내부 문서가 아님]`
+            ? `[External game reference — ${refGame} / Namuwiki / ${refDate}]\n${rawBody}\n[End — the above is external game data, not a Project A internal document]`
             : rawBody
           results.push({
             doc_id:   docId,
@@ -202,7 +202,7 @@ export function useRagApi() {
           })
         }
 
-        // 쿼리에 "최신/최근/올해 연도" 가 있으면 날짜 부스팅
+        // Date boost when the query contains "latest/recent/this year" (최신/최근)
         const curYear  = String(new Date().getFullYear())
         const prevYear = String(new Date().getFullYear() - 1)
         if (/최신|최근/.test(query) || query.includes(curYear)) {
@@ -226,14 +226,14 @@ export function useRagApi() {
       const s = (id: keyof typeof PERSONA_PROMPTS) =>
         personaPromptOverrides[id] || PERSONA_PROMPTS[id]
       const personas = {
-        chief: { name: 'PM',             emoji: '🎯', system: s('chief_director') },
-        art:   { name: '아트 디렉터',    emoji: '🎨', system: s('art_director')   },
-        spec:  { name: '기획 디렉터',    emoji: '📐', system: s('plan_director')  },
-        tech:  { name: '프로그래밍 디렉터', emoji: '⚙️', system: s('prog_director') },
+        chief: { name: 'PM',                  emoji: '🎯', system: s('chief_director') },
+        art:   { name: 'Art Director',         emoji: '🎨', system: s('art_director')   },
+        spec:  { name: 'Planning Director',    emoji: '📐', system: s('plan_director')  },
+        tech:  { name: 'Programming Director', emoji: '⚙️', system: s('prog_director') },
       }
       const { imageDirectPass } = useMiroStore.getState().config
       const { scheduledTopics, presets } = useMiroStore.getState()
-      // SEC-2: Slack 봇은 Anthropic 키만 필요 — 전체 apiKeys 노출 방지
+      // SEC-2: the Slack bot only needs the Anthropic key — avoid exposing all apiKeys
       const safeApiKeys = { anthropic: apiKeys['anthropic'] ?? '' }
       const slackModel = slackBotConfig?.model || null
       window.ragAPI?.sendResult(requestId, { personaModels, personas, imageDirectPass, scheduledTopics, presets, selfReview, nAgents, apiKeys: safeApiKeys, slackModel })
@@ -242,7 +242,7 @@ export function useRagApi() {
     return () => { cleanupSearch(); cleanupSettings() }
   }, [])
 
-  // ── 2. 채팅/이미지 관련: onAsk, onGetImages ──────────────────────────────
+  // ── 2. Chat/images: onAsk, onGetImages ───────────────────────────────────
   useEffect(() => {
     if (!window.ragAPI) return
 
@@ -268,7 +268,7 @@ export function useRagApi() {
       const seen = new Set<string>()
       const paths: string[] = []
 
-      // 1순위: 쿼리 단어가 포함된 문서의 imageRefs 중 파일명도 일치하는 것만
+      // 1st: imageRefs of documents containing query words, only where the filename also matches
       if (loadedDocuments) {
         const matchingDocs = loadedDocuments.filter(doc => {
           const text = (doc.filename + ' ' + (doc.rawContent ?? '')).toLowerCase()
@@ -277,7 +277,7 @@ export function useRagApi() {
         for (const doc of matchingDocs) {
           for (const ref of doc.imageRefs ?? []) {
             const basename = ref.split(/[/\\]/).pop() ?? ref
-            // 파일명이 쿼리 단어와 매칭될 때만 포함 (문서만 관련 있고 이미지는 무관한 경우 제외)
+            // Include only when the filename matches a query word (excludes images unrelated to a relevant document)
             if (!words.some(w => basename.toLowerCase().includes(w))) continue
             const entry = imagePathRegistry[ref] ?? imagePathRegistry[basename]
             if (entry?.absolutePath && !seen.has(entry.absolutePath)) {
@@ -290,7 +290,7 @@ export function useRagApi() {
         }
       }
 
-      // 2순위: imageRegistry 파일명에서 단어 매칭
+      // 2nd: word match on imageRegistry filenames
       if (paths.length < MAX_IMAGE_RESULTS) {
         for (const [name, entry] of Object.entries(imagePathRegistry)) {
           if (!entry || typeof entry.absolutePath !== 'string') continue
@@ -309,29 +309,29 @@ export function useRagApi() {
     return () => { cleanupAsk(); cleanupImages?.() }
   }, [])
 
-  // ── 3. MiroFish/볼트 관련: onMirofish, onGetVaultPath ───────────────────
+  // ── 3. MiroFish/vault: onMirofish, onGetVaultPath ────────────────────────
   useEffect(() => {
     if (!window.ragAPI) return
 
     // Handle MiroFish simulation requests (Slack /mirofish endpoint)
     const cleanupMirofish = window.ragAPI.onMirofish?.(async ({ requestId, topic, numPersonas, numRounds, modelId, context, segment, presetPersonas, images }) => {
       if (mirofishInFlightRef.current) {
-        console.warn('[useRagApi] mirofish 이미 실행 중 — 중복 요청 무시')
-        window.ragAPI?.sendResult(requestId, { feed: [], report: '시뮬레이션이 이미 실행 중입니다. 잠시 후 다시 시도하세요.' })
+        console.warn('[useRagApi] mirofish already running — ignoring duplicate request')
+        window.ragAPI?.sendResult(requestId, { feed: [], report: 'A simulation is already running. Please try again later.' })
         return
       }
       mirofishInFlightRef.current = true
       try {
-        // presetPersonas가 전달되면 LLM 생성 없이 그대로 사용
+        // If presetPersonas are provided, use them as-is without LLM generation
         const personas = presetPersonas?.length
           ? presetPersonas
           : await generatePersonas(topic, numPersonas, modelId, context, segment)
-        if (!personas.length) throw new Error('페르소나 생성 결과가 없습니다')
+        if (!personas.length) throw new Error('Persona generation returned no results')
         const feed: MirofishPost[] = []
         const abort = new AbortController()
         let currentRound = 0
 
-        // 시뮬레이션 시작 알림
+        // Simulation start notification
         window.electronAPI?.ipcSend?.('rag:mirofish:progress', { running: true, feed: [], round: 0, totalRounds: numRounds })
 
         await runSimulation(
@@ -339,7 +339,7 @@ export function useRagApi() {
           (event) => {
             if (event.type === 'post-done' && event.post) {
               feed.push(event.post)
-              // 실시간 진행 상태 전송 (Slack 봇 폴링용)
+              // Send real-time progress (for Slack bot polling)
               window.electronAPI?.ipcSend?.('rag:mirofish:progress', {
                 running: true, feed: [...feed], round: event.post.round, totalRounds: numRounds,
               })
@@ -350,20 +350,20 @@ export function useRagApi() {
           abort.signal,
         )
 
-        // 완료 알림
+        // Completion notification
         window.electronAPI?.ipcSend?.('rag:mirofish:progress', { running: false, feed: [...feed], round: currentRound, totalRounds: numRounds })
 
         const report = await generateReport(topic, feed, modelId)
         window.ragAPI?.sendResult(requestId, { feed, report })
       } catch (err) {
         console.error('[useRagApi] mirofish error:', err)
-        window.ragAPI?.sendResult(requestId, { feed: [], report: `오류: ${err instanceof Error ? err.message : String(err)}` })
+        window.ragAPI?.sendResult(requestId, { feed: [], report: `Error: ${err instanceof Error ? err.message : String(err)}` })
       } finally {
         mirofishInFlightRef.current = false
       }
     })
 
-    // Handle vault path requests (/mirofish-save 폴백용)
+    // Handle vault path requests (fallback for /mirofish-save)
     const cleanupVaultPath = window.ragAPI.onGetVaultPath?.(({ requestId }: { requestId: string }) => {
       const vaultPath = useVaultStore.getState().vaultPath ?? null
       window.ragAPI?.sendResult(requestId, vaultPath)

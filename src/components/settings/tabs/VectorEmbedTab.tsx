@@ -17,7 +17,7 @@ export default function VectorEmbedTab() {
     lastError: vectorEmbedIndex.lastError,
   })
 
-  // 상태 폴링 — 빌드 중이면 500ms, 완료 후에도 1회 갱신
+  // Status polling — every 500ms while building, plus one refresh after completion
   useEffect(() => {
     const tick = () => setStatus({
       isBuilt: vectorEmbedIndex.isBuilt,
@@ -32,7 +32,7 @@ export default function VectorEmbedTab() {
   }, [])
 
   const geminiKey = apiKeys['gemini'] ?? ''
-  // 로컬 임베딩 서버가 떠 있으면 Gemini 키 없이도 빌드할 수 있다
+  // A running local embedding server allows building without a Gemini key
   const [localReady, setLocalReady] = useState(false)
   useEffect(() => {
     let alive = true
@@ -45,12 +45,12 @@ export default function VectorEmbedTab() {
   function handleBuild() {
     if (!hasKey || status.isBuilding || docCount === 0) return
     vectorEmbedIndex.buildFull(loadedDocuments ?? [], geminiKey, vaultPath ?? '')
-      .catch(() => { /* 에러는 logger에서 처리 */ })
+      .catch(() => { /* errors are handled by the logger */ })
   }
 
   async function handleReset() {
     if (status.isBuilding) return
-    resetLocalEmbedProbe()  // 서버를 나중에 띄웠을 수 있으므로 재확인
+    resetLocalEmbedProbe()  // Re-check, the server may have been started later
     await invalidateVectorEmbedCache(vaultPath ?? '')
     vectorEmbedIndex.reset()
   }
@@ -65,26 +65,26 @@ export default function VectorEmbedTab() {
         : <AlertCircle size={14} style={{ color: 'var(--color-text-muted)' }} />
 
   const statusText = status.isBuilding
-    ? `빌드 중… ${status.progress}%`
+    ? `Building… ${status.progress}%`
     : status.isBuilt
-      ? `준비됨 — ${status.size}개 문서 인덱싱됨`
+      ? `Ready — ${status.size} documents indexed`
       : hasError
-        ? `빌드 실패`
-        : hasKey ? '인덱스 없음 — 볼트 로드 시 자동 빌드' : 'Gemini API 키 필요'
+        ? `Build failed`
+        : hasKey ? 'No index — builds automatically on vault load' : 'Gemini API key required'
 
   return (
     <div className="flex flex-col gap-5">
 
       <p className="text-[12px]" style={{ color: 'var(--color-text-muted)' }}>
-        Google Gemini의 <strong>gemini-embedding-001</strong> 모델로 문서를 벡터화합니다.
-        BM25 키워드 검색 결과를 의미 유사도로 reranking하여 추상적 쿼리의 정확도를 높입니다.
-        <span style={{ color: '#4caf50' }}> 무료 (API 쿼터 내)</span>
+        Vectorizes documents with Google Gemini's <strong>gemini-embedding-001</strong> model.
+        Reranks BM25 keyword search results by semantic similarity to improve accuracy on abstract queries.
+        <span style={{ color: '#4caf50' }}> Free (within API quota)</span>
       </p>
 
-      {/* ── 상태 표시 ── */}
+      {/* ── Status ── */}
       <section>
         <h3 className="text-[13px] font-semibold mb-2" style={{ color: 'var(--color-text-secondary)' }}>
-          인덱스 상태
+          Index Status
         </h3>
         <div
           className="rounded-lg px-4 py-3 flex items-center justify-between gap-3"
@@ -114,14 +114,14 @@ export default function VectorEmbedTab() {
           </p>
         )}
         <p className="text-[11px] mt-1.5" style={{ color: 'var(--color-text-muted)' }}>
-          볼트 로드 시 자동으로 증분 빌드됩니다. 변경된 문서만 재임베딩하고 나머지는 캐시에서 복원합니다.
+          Built incrementally on vault load. Only changed documents are re-embedded; the rest are restored from cache.
         </p>
       </section>
 
-      {/* ── Gemini API 키 ── */}
+      {/* ── Gemini API key ── */}
       <section>
         <h3 className="text-[13px] font-semibold mb-2" style={{ color: 'var(--color-text-secondary)' }}>
-          Gemini API 키
+          Gemini API Key
         </h3>
         <div className="relative">
           <input
@@ -148,14 +148,14 @@ export default function VectorEmbedTab() {
           </button>
         </div>
         <p className="text-[11px] mt-1.5" style={{ color: 'var(--color-text-muted)' }}>
-          Google AI Studio에서 발급 — AI 설정 탭의 Gemini 키와 동일합니다.
+          Issued by Google AI Studio — same as the Gemini key in the AI Settings tab.
         </p>
       </section>
 
-      {/* ── 수동 재빌드 ── */}
+      {/* ── Manual rebuild ── */}
       <section>
         <h3 className="text-[13px] font-semibold mb-2" style={{ color: 'var(--color-text-secondary)' }}>
-          수동 재빌드
+          Manual Rebuild
         </h3>
         <div className="flex items-center gap-3">
           <button
@@ -172,7 +172,7 @@ export default function VectorEmbedTab() {
             {status.isBuilding
               ? <Loader2 size={13} className="animate-spin" />
               : <RefreshCw size={13} />}
-            {status.isBuilding ? `빌드 중 (${status.progress}%)` : '지금 빌드'}
+            {status.isBuilding ? `Building (${status.progress}%)` : 'Build Now'}
           </button>
           <button
             onClick={handleReset}
@@ -186,33 +186,33 @@ export default function VectorEmbedTab() {
             }}
           >
             <Trash2 size={13} />
-            초기화
+            Reset
           </button>
           <span className="text-[12px]" style={{ color: 'var(--color-text-muted)' }}>
-            {docCount > 0 ? `${docCount}개 문서` : '볼트 로드 후 사용 가능'}
+            {docCount > 0 ? `${docCount} documents` : 'Available after vault load'}
           </span>
         </div>
         {!hasKey && (
           <p className="text-[11px] mt-2" style={{ color: 'var(--color-warning)' }}>
-            ⚠ Gemini API 키를 먼저 입력하세요.
+            ⚠ Enter the Gemini API key first.
           </p>
         )}
       </section>
 
-      {/* ── 동작 방식 ── */}
+      {/* ── How it works ── */}
       <section>
         <h3 className="text-[13px] font-semibold mb-2" style={{ color: 'var(--color-text-secondary)' }}>
-          동작 방식
+          How It Works
         </h3>
         <div
           className="rounded-lg px-4 py-3 text-[12px] flex flex-col gap-1.5"
           style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)', lineHeight: 1.6 }}
         >
-          <div>① <strong style={{ color: 'var(--color-text-primary)' }}>BM25</strong> — 쿼리 키워드로 상위 후보 50개 추출 (기존 방식)</div>
-          <div>② <strong style={{ color: 'var(--color-text-primary)' }}>쿼리 임베딩</strong> — 쿼리를 768차원 벡터로 변환 (API 호출 1회)</div>
-          <div>③ <strong style={{ color: 'var(--color-text-primary)' }}>Reranking</strong> — BM25 40% + 의미 유사도 60%로 최종 순위 결정</div>
+          <div>① <strong style={{ color: 'var(--color-text-primary)' }}>BM25</strong> — pulls the top 50 candidates by query keywords (existing method)</div>
+          <div>② <strong style={{ color: 'var(--color-text-primary)' }}>Query Embedding</strong> — converts the query into a 768-dim vector (1 API call)</div>
+          <div>③ <strong style={{ color: 'var(--color-text-primary)' }}>Reranking</strong> — final ranking from BM25 40% + semantic similarity 60%</div>
           <div className="mt-1" style={{ color: 'var(--color-text-muted)', fontSize: 11 }}>
-            문서 임베딩은 파일 캐시에 저장 — 변경된 문서만 증분 재생성됩니다.
+            Document embeddings are stored in a file cache — only changed documents are regenerated incrementally.
           </div>
         </div>
       </section>

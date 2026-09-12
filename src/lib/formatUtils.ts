@@ -25,7 +25,7 @@ export function padZero(n: number): string {
   return String(n).padStart(2, '0')
 }
 
-/** Local date as YYYY-MM-DD (로컬 시스템 시간 기준, KST 등 올바르게 반영) */
+/** Local date as YYYY-MM-DD (based on local system time, so KST etc. is reflected correctly) */
 export function formatLocalDate(d: Date = new Date()): string {
   return `${d.getFullYear()}-${padZero(d.getMonth() + 1)}-${padZero(d.getDate())}`
 }
@@ -36,8 +36,8 @@ export function formatLocalDateTime(d: Date = new Date()): string {
 }
 
 /**
- * ISO 타임스탬프 → CQL/JQL용 "YYYY-MM-DD HH:mm" (UTC)
- * Confluence CQL과 Jira JQL은 UTC datetime을 기준으로 필터링함
+ * ISO timestamp → "YYYY-MM-DD HH:mm" (UTC) for CQL/JQL
+ * Confluence CQL and Jira JQL filter on UTC datetimes
  */
 export function toSyncDatetime(iso: string | null, fallback: string): string {
   if (!iso) return fallback

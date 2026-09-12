@@ -140,7 +140,7 @@ class TestClearStaleCheckpoints(unittest.TestCase):
             with open(p, "w") as f:
                 json.dump({"data": "x" * 100}, f)
             paths.append(p)
-            time.sleep(0.01)  # mtime 차이
+            time.sleep(0.01)  # mtime difference
 
         _clear_stale_checkpoints()
         # With 0 limit, no files should remain

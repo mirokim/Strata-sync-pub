@@ -1,20 +1,20 @@
 """
-연도별 허브 파일 생성 스크립트 (gen_year_hubs.py)  v1.0
+Yearly hub file generation script (gen_year_hubs.py)  v1.0
 ────────────────────────────────────────────────────────
-기능:
-  tags에 'chief'가 포함된 피드백 파일을 연도별로 그룹핑하여
-  허브 파일(회의록_YYYY.md)을 자동 생성·갱신한다.
-  최신 연도 허브 상단에 "최근 추가 (최신 N개)" 섹션을 생성한다.
-  chief persona.md의 연도 허브 목록도 최신순으로 갱신한다.
+Function:
+  Groups feedback files whose tags include 'chief' by year and
+  auto-creates/updates hub files (회의록_YYYY.md).
+  Adds a "recently added (latest N)" section at the top of the latest year hub.
+  Also refreshes the yearly hub list in chief persona.md, newest first.
 
-사용법:
+Usage:
     python gen_year_hubs.py <vault_dir> [--top N]
 
-옵션:
-    --top N   최신 연도 허브에 표시할 최근 추가 문서 수 (기본값: 5)
-    --vault   사용 안 함 (audit_and_fix.py와 인터페이스 호환)
+Options:
+    --top N   Number of recently added documents to show in the latest year hub (default: 5)
+    --vault   Unused (interface compatibility with audit_and_fix.py)
 
-의존 패키지:
+Dependencies:
     pip install PyYAML
 """
 
@@ -25,11 +25,11 @@ import yaml
 from collections import defaultdict
 from datetime import datetime
 
-# 연도 허브 파일명 패턴
+# Yearly hub filename pattern
 HUB_NAME_PAT = re.compile(r'^회의록_(\d{4})\.md$')
-# 파일명에서 날짜 추출 ([YYYY.MM.DD] 또는 [YYYY_MM_DD] 패턴)
+# Extract the date from the filename ([YYYY.MM.DD] or [YYYY_MM_DD] pattern)
 FNAME_DATE_PAT = re.compile(r'\[(\d{4})[._](\d{2})[._](\d{2})\]')
-# chief persona 파일명 후보
+# chief persona filename candidates
 CHIEF_PERSONA_PATS = ['chief persona.md', 'chief persona(0.1.0).md']
 
 
@@ -47,7 +47,7 @@ def load_frontmatter(text: str) -> tuple[dict, int]:
 
 
 def get_date(fm: dict, fname: str) -> datetime | None:
-    """frontmatter date 우선, 없으면 파일명 [YYYY.MM.DD] 추출."""
+    """Prefer the frontmatter date; otherwise extract [YYYY.MM.DD] from the filename."""
     date_val = fm.get('date')
     if date_val:
         try:
@@ -71,8 +71,8 @@ def has_chief_tag(fm: dict) -> bool:
 
 
 def make_hub_content(year: int, entries: list[tuple[datetime, str, str]], top_n: int, is_latest: bool) -> str:
-    """연도 허브 파일 내용 생성.
-    entries: [(date, stem, title), ...] — 날짜 최신순 정렬 완료 상태로 전달
+    """Generate the yearly hub file content.
+    entries: [(date, stem, title), ...] — passed already sorted by date, newest first
     """
     today = datetime.now().strftime('%Y-%m-%d')
     lines = [
@@ -117,8 +117,8 @@ def make_hub_content(year: int, entries: list[tuple[datetime, str, str]], top_n:
 
 
 def update_chief_persona(vault_dir: str, years_desc: list[int], top_n: int, year_counts: dict[int, int]) -> bool:
-    """chief persona.md의 연도 허브 섹션을 갱신. 파일 없으면 False 반환."""
-    # 파일 탐색
+    """Refresh the yearly hub section of chief persona.md. Returns False if the file is missing."""
+    # Locate the file
     chief_path = None
     for candidate in CHIEF_PERSONA_PATS:
         p = os.path.join(vault_dir, candidate)
@@ -126,14 +126,14 @@ def update_chief_persona(vault_dir: str, years_desc: list[int], top_n: int, year
             chief_path = p
             break
     if not chief_path:
-        # 파일명에 'chief persona' 포함된 파일 검색
+        # Search for a file whose name contains 'chief persona'
         for fname in os.listdir(vault_dir):
             if 'chief persona' in fname.lower() and fname.endswith('.md'):
                 chief_path = os.path.join(vault_dir, fname)
                 break
 
     if not chief_path:
-        print('⚠ chief persona.md 파일을 찾을 수 없습니다. 연도 허브 섹션 갱신 스킵.')
+        print('⚠ chief persona.md not found. Skipping yearly hub section update.')
         return False
 
     with open(chief_path, encoding='utf-8') as f:
@@ -141,7 +141,7 @@ def update_chief_persona(vault_dir: str, years_desc: list[int], top_n: int, year
 
     latest_year = years_desc[0] if years_desc else None
 
-    # 새 섹션 내용 구성
+    # Build the new section content
     recent_section_lines = ['## 최근 피드백 (현재 기준 — 우선 참조)', '']
     if latest_year:
         count = year_counts.get(latest_year, 0)
@@ -160,7 +160,7 @@ def update_chief_persona(vault_dir: str, years_desc: list[int], top_n: int, year
 
     new_section = '\n'.join(recent_section_lines) + '\n' + '\n'.join(archive_lines)
 
-    # 기존 섹션 교체 또는 끝에 추가
+    # Replace the existing section or append at the end
     recent_pat = re.compile(
         r'## 최근 피드백 \(현재 기준.*?\n(?:.*\n)*?(?=^## |\Z)',
         re.MULTILINE
@@ -171,16 +171,16 @@ def update_chief_persona(vault_dir: str, years_desc: list[int], top_n: int, year
     )
 
     if recent_pat.search(original):
-        # 두 섹션이 이미 있으면 통째로 교체
+        # If both sections already exist, replace them wholesale
         combined_pat = re.compile(
             r'## 최근 피드백 \(현재 기준.*?\n(?:.*\n)*?(?=^## (?!연도별)|\Z)',
             re.MULTILINE
         )
         new_text = combined_pat.sub(new_section + '\n', original)
-        # archive 섹션도 교체
+        # Replace the archive section too
         new_text = archive_pat.sub('', new_text)
     else:
-        # 없으면 frontmatter 다음에 추가
+        # Otherwise insert right after the frontmatter
         _, fm_end = load_frontmatter(original)
         if fm_end != -1:
             new_text = original[:fm_end] + '\n' + new_section + '\n' + original[fm_end:].lstrip('\n')
@@ -188,17 +188,17 @@ def update_chief_persona(vault_dir: str, years_desc: list[int], top_n: int, year
             new_text = new_section + '\n\n' + original
 
     if new_text == original:
-        print(f'  chief persona.md 변경 없음')
+        print(f'  chief persona.md unchanged')
         return True
 
     with open(chief_path, 'w', encoding='utf-8') as f:
         f.write(new_text)
-    print(f'  chief persona.md 연도 허브 섹션 갱신 완료')
+    print(f'  chief persona.md yearly hub section updated')
     return True
 
 
 def resolve_active_dir(vault_dir: str) -> str:
-    """vault root 또는 active/ 서브폴더 중 실제 md 파일이 있는 쪽 반환."""
+    """Return whichever of the vault root or the active/ subfolder actually holds the md files."""
     active = os.path.join(vault_dir, 'active')
     if os.path.isdir(active):
         return active
@@ -208,7 +208,7 @@ def resolve_active_dir(vault_dir: str) -> str:
 def run(vault_dir: str, top_n: int = 5) -> None:
     active_dir = resolve_active_dir(vault_dir)
 
-    # 1. chief 태그 파일 수집
+    # 1. Collect chief-tagged files
     chief_entries: list[tuple[datetime, str, str]] = []  # (date, stem, title)
     hub_files: set[str] = set()
 
@@ -217,7 +217,7 @@ def run(vault_dir: str, top_n: int = 5) -> None:
             continue
         stem = os.path.splitext(fname)[0]
 
-        # 연도 허브 파일 자체는 스킵
+        # Skip the yearly hub files themselves
         if HUB_NAME_PAT.match(fname):
             hub_files.add(fname)
             continue
@@ -241,10 +241,10 @@ def run(vault_dir: str, top_n: int = 5) -> None:
         chief_entries.append((dt, stem, str(title)))
 
     if not chief_entries:
-        print('chief 태그 파일을 찾을 수 없습니다.')
+        print('No chief-tagged files found.')
         return
 
-    # 2. 연도별 그룹핑 (최신순 정렬)
+    # 2. Group by year (sorted newest first)
     by_year: dict[int, list[tuple[datetime, str, str]]] = defaultdict(list)
     for entry in chief_entries:
         by_year[entry[0].year].append(entry)
@@ -255,9 +255,9 @@ def run(vault_dir: str, top_n: int = 5) -> None:
     years_desc = sorted(by_year.keys(), reverse=True)
     latest_year = years_desc[0]
 
-    print(f'chief 태그 파일 {len(chief_entries)}개 → {len(years_desc)}개 연도 그룹')
+    print(f'{len(chief_entries)} chief-tagged files → {len(years_desc)} year groups')
 
-    # 3. 연도별 허브 파일 생성·갱신
+    # 3. Create/update the yearly hub files
     year_counts: dict[int, int] = {}
     for year in years_desc:
         entries = by_year[year]
@@ -272,15 +272,15 @@ def run(vault_dir: str, top_n: int = 5) -> None:
         if content != existing:
             with open(hub_path, 'w', encoding='utf-8') as f:
                 f.write(content)
-            action = '갱신' if existing else '생성'
-            print(f'  회의록_{year}.md {action} ({len(entries)}개 문서{", 최근 추가 섹션 포함" if is_latest else ""})')
+            action = 'updated' if existing else 'created'
+            print(f'  회의록_{year}.md {action} ({len(entries)} documents{", includes recently added section" if is_latest else ""})')
         else:
-            print(f'  회의록_{year}.md 변경 없음')
+            print(f'  회의록_{year}.md unchanged')
 
-    # 4. chief persona.md 갱신
+    # 4. Update chief persona.md
     update_chief_persona(active_dir, years_desc, top_n, year_counts)
 
-    print(f'\n완료: {len(years_desc)}개 연도 허브 처리')
+    print(f'\nDone: {len(years_desc)} yearly hubs processed')
 
 
 if __name__ == '__main__':
@@ -300,7 +300,7 @@ if __name__ == '__main__':
                 pass
             i += 2
         elif arg == '--vault' and i + 1 < len(sys.argv):
-            i += 2  # --vault 는 무시 (audit_and_fix.py 호환)
+            i += 2  # --vault is ignored (audit_and_fix.py compatibility)
         elif not arg.startswith('--'):
             vault_dir = arg
             i += 1
@@ -308,7 +308,7 @@ if __name__ == '__main__':
             i += 1
 
     if not vault_dir:
-        print('오류: vault_dir 인수가 필요합니다.', file=sys.stderr)
+        print('Error: vault_dir argument is required.', file=sys.stderr)
         sys.exit(1)
 
     run(vault_dir, top_n)

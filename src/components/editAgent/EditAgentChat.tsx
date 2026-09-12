@@ -93,7 +93,7 @@ export default function EditAgentChat() {
             fontSize: 12, color: 'var(--color-text-muted)',
             lineHeight: 1.6,
           }}>
-            볼트 문서 개선을 요청하세요
+            Request improvements to your vault documents
           </div>
         )}
 
@@ -284,7 +284,7 @@ export default function EditAgentChat() {
         <div className="px-4 pt-2 flex justify-center">
           <button
             onClick={async () => {
-              const text = '최신 confluence, jira 데이터 최신화 해줘'
+              const text = 'Refresh the latest Confluence and Jira data'
               setSending(true)
               try { await sendEditAgentChatMessage(text) }
               finally { setSending(false) }
@@ -298,7 +298,7 @@ export default function EditAgentChat() {
               cursor: sending ? 'not-allowed' : 'pointer',
             }}
           >
-            최신 confluence, jira 데이터 최신화 해줘
+            Refresh the latest Confluence and Jira data
           </button>
         </div>
         <div className="flex items-stretch gap-2 px-4 py-3">
@@ -307,7 +307,7 @@ export default function EditAgentChat() {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="메시지 입력..."
+            placeholder="Type a message..."
             rows={1}
             className="flex-1 resize-none rounded-lg px-3 py-2 text-sm"
             style={{

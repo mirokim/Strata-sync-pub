@@ -73,7 +73,7 @@ function adfToMarkdown(node: any): string {
     case 'hardBreak': return '\n'
     case 'mention': return `@${node.attrs?.text ?? ''}`
     case 'inlineCard':
-    case 'blockCard': return node.attrs?.url ? `[링크](${node.attrs.url})` : ''
+    case 'blockCard': return node.attrs?.url ? `[Link](${node.attrs.url})` : ''
     case 'table': return (node.content ?? []).map(adfToMarkdown).join('') + '\n'
     case 'tableRow': return '| ' + (node.content ?? []).map((cell: any) => adfToMarkdown(cell).replace(/\n/g, ' ').trim()).join(' | ') + ' |\n'
     case 'tableHeader':
@@ -126,7 +126,7 @@ function inferVaultStatus(jiraStatus: string): string {
 export function issueToVaultMarkdown(issue: JiraIssue, baseUrl?: string): VaultIssue {
   const f = issue.fields
   const key = issue.key
-  const summary = f.summary ?? '제목 없음'
+  const summary = f.summary ?? 'Untitled'
   const jiraStatus = f.status?.name ?? ''
   const priority = f.priority?.name ?? ''
   const issueType = f.issuetype?.name ?? ''
@@ -149,7 +149,7 @@ export function issueToVaultMarkdown(issue: JiraIssue, baseUrl?: string): VaultI
   const descriptionMd = jiraBodyToMarkdown(f.description)
 
   const comments: string[] = (f.comment?.comments ?? []).map((c: any) => {
-    const author = c.author?.displayName ?? '알 수 없음'
+    const author = c.author?.displayName ?? 'Unknown'
     const date = (c.created ?? '').slice(0, 10)
     const body = jiraBodyToMarkdown(c.body)
     return `### ${author} (${date})\n\n${body}`
@@ -179,25 +179,25 @@ export function issueToVaultMarkdown(issue: JiraIssue, baseUrl?: string): VaultI
     '',
     `# [${key}] ${summary}`,
     '',
-    `| 항목 | 값 |`,
+    `| Field | Value |`,
     `|------|-----|`,
-    `| 유형 | ${issueType} |`,
-    `| 상태 | ${status} |`,
-    priority ? `| 우선순위 | ${priority} |` : '',
-    assignee ? `| 담당자 | ${assignee} |` : '',
-    reporter ? `| 보고자 | ${reporter} |` : '',
-    storyPoints != null ? `| 스토리 포인트 | ${storyPoints} |` : '',
-    components.length ? `| 컴포넌트 | ${components.join(', ')} |` : '',
-    fixVersions.length ? `| 버전 | ${fixVersions.join(', ')} |` : '',
+    `| Type | ${issueType} |`,
+    `| Status | ${status} |`,
+    priority ? `| Priority | ${priority} |` : '',
+    assignee ? `| Assignee | ${assignee} |` : '',
+    reporter ? `| Reporter | ${reporter} |` : '',
+    storyPoints != null ? `| Story Points | ${storyPoints} |` : '',
+    components.length ? `| Components | ${components.join(', ')} |` : '',
+    fixVersions.length ? `| Fix Versions | ${fixVersions.join(', ')} |` : '',
     '',
   ].filter(l => l !== null && l !== undefined)
 
   if (descriptionMd.trim()) {
-    lines.push('## 설명', '', descriptionMd.trim(), '')
+    lines.push('## Description', '', descriptionMd.trim(), '')
   }
 
   if (comments.length > 0) {
-    lines.push('## 댓글', '', ...comments.flatMap(c => [c, '']), '')
+    lines.push('## Comments', '', ...comments.flatMap(c => [c, '']), '')
   }
 
   const content = lines.join('\n')

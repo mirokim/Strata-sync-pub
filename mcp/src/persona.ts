@@ -122,9 +122,9 @@ export function buildProjectContext(directorBio?: string): string {
 export function getPersonaPrompt(persona: string): string {
   const base = PERSONA_PROMPTS[persona as DirectorId]
   if (!base) {
-    // 조용히 PM 으로 폴백하면 오타가 다른 페르소나의 답변으로 되돌아온다 — 명시적으로 실패시킨다
+    // Silently falling back to PM would turn a typo into another persona's answer — fail explicitly
     const known = Object.keys(PERSONA_PROMPTS).join(', ')
-    console.error(`[persona] 알 수 없는 페르소나 id: "${persona}" — 사용 가능: ${known}`)
+    console.error(`[persona] Unknown persona id: "${persona}" — available: ${known}`)
     throw new Error(`Unknown persona id: "${persona}". Valid ids: ${known}`)
   }
   return buildProjectContext() + base

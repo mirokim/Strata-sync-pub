@@ -1,61 +1,61 @@
 """
-키워드 자동 링크 주입 스크립트 (inject_keywords.py)  v3.0
+Automatic keyword link injection script (inject_keywords.py)  v3.0
 ────────────────────────────────────────────────────────
-기능:
-  본문에 등장하는 핵심 키워드의 첫 번째 언급을 [[허브_stem|키워드]] 형태로
-  자동 교체한다.
+Function:
+  Replaces the first mention of each core keyword in the body with a
+  [[hub_stem|keyword]] wikilink automatically.
 
-v3 변경사항:
-  _index.md 자동 분석 모드 추가.
-  실행 시 _index.md의 wikilink stem들을 분석하여 키워드 맵을 자동 구성한다.
-  KEYWORD_MAP_MANUAL에 수동 등록한 항목은 자동 항목보다 우선된다.
-  gen_keyword_map.py를 별도로 실행할 필요 없음.
+v3 changes:
+  Added automatic _index.md analysis mode.
+  On run, the wikilink stems in _index.md are analyzed to build the keyword map automatically.
+  Entries registered manually in KEYWORD_MAP_MANUAL take precedence over automatic ones.
+  No need to run gen_keyword_map.py separately.
 
-자동 키워드 선정 기준:
-  ① _index.md에서 동일 키워드를 포함한 stem이 MIN_STEMS개 이상
-  ② 볼트 전체 파일 중 평문으로 MIN_FREQ개 이상에 등장
-  ③ 볼트 전체 파일의 MAX_RATE 이하 (범용어 제외)
+Automatic keyword selection criteria:
+  1. At least MIN_STEMS stems in _index.md contain the same keyword
+  2. Appears as plain text in at least MIN_FREQ files across the vault
+  3. Appears in no more than MAX_RATE of all vault files (excludes generic terms)
 
-사용법:
+Usage:
     python inject_keywords.py <vault_dir>
 
-수동 오버라이드:
-    KEYWORD_MAP_MANUAL 딕셔너리에 항목을 직접 추가하면
-    자동 생성 항목보다 우선 적용된다.
+Manual override:
+    Entries added directly to the KEYWORD_MAP_MANUAL dict
+    take precedence over auto-generated entries.
 
-⚠️  wikilink 오염 방지:
-  기존 [[ ... ]] 범위 전체를 마스킹한 후 교체하여
-  stem 안의 키워드가 이중으로 링크되는 버그를 방지한다.
+⚠️  wikilink contamination prevention:
+  Existing [[ ... ]] ranges are masked in full before replacement,
+  preventing the bug where a keyword inside a stem gets double-linked.
 
-의존 패키지:
-    없음 (표준 라이브러리만 사용)
+Dependencies:
+    None (standard library only)
 """
 
 import os
 import re
 import sys
 
-# ── 수동 오버라이드 (자동 생성보다 우선) ────────────────────────────────────
-# "키워드": ("허브_파일_stem", "표시 텍스트")
+# ── Manual override (takes precedence over auto-generated) ─────────────────
+# "keyword": ("hub_file_stem", "display text")
 KEYWORD_MAP_MANUAL: dict[str, tuple[str, str]] = {
     # "이사장":   ("chief persona(0.1.0)",              "이사장"),
     # "TLS":      ("TLS(TimeLineSkill)시스템_588781620", "TLS"),
 }
 
-# ── 자동 모드 파라미터 ───────────────────────────────────────────────────────
-AUTO_MIN_STEMS = 3      # 키워드가 등장해야 하는 최소 stem 수
-AUTO_MIN_FREQ  = 3      # 볼트 내 평문 등장 최소 파일 수
-AUTO_MAX_RATE  = 0.15   # 볼트 대비 최대 등장 비율 (범용어 방지)
+# ── Auto mode parameters ────────────────────────────────────────────────────
+AUTO_MIN_STEMS = 3      # Minimum number of stems the keyword must appear in
+AUTO_MIN_FREQ  = 3      # Minimum number of files with plain-text occurrences in the vault
+AUTO_MAX_RATE  = 0.15   # Maximum occurrence ratio across the vault (filters generic terms)
 
-# ── 자동 모드 불용어 ─────────────────────────────────────────────────────────
+# ── Auto mode stopwords ─────────────────────────────────────────────────────
 _STOPWORDS_RAW = {
-    # 한국어 범용
+    # Korean generic terms
     '캐릭터', '아트', '기획', '보고', '회의록', '회의', '작업', '정리',
     '리스트', '내용', '결과', '버전', '업데이트', '수정', '추가', '삭제',
     '가이드', '문서', '자료', '파일', '데이터', '정보', '참고',
     '1차', '2차', '3차', '최종', '초안', '검토', '완료', '진행',
     '모델링', '디자인', '원화', '애니메이션', '이펙트', '사운드',
-    # 게임 개발 범용 (Project A)
+    # Game development generic terms (Project A)
     '개요', '설정', '연출', '관련', '컨셉', '게임', '제작', '플레이',
     '레벨', '전투', '배경', '사항', '방향성', '방향', '레퍼런스',
     '전사', '개발', '세계관', '논의', '요소', '변경', '퀘스트',
@@ -71,7 +71,7 @@ _STOPWORDS_RAW = {
     '구역', '슬롯', '암석', '스크립트', '스킬', '약한', '상세',
     '규칙', '파괴', '내부', '프로토', '드랍', '플로우', '테이블',
     '입력', '폴리싱', '리서치', '마블', '원신', '3d', '2d',
-    # 영어 범용
+    # English generic terms
     'the', 'and', 'for', 'of', 'to', 'in', 'a', 'an', 'is', 'at',
     'list', 'data', 'info', 'doc', 'file', 'ver', 'v1', 'v2', 'v3',
     'backup', 'copy', 'final', 'draft', 'review', 'update',
@@ -79,18 +79,18 @@ _STOPWORDS_RAW = {
 }
 STOPWORDS = frozenset(s.lower() for s in _STOPWORDS_RAW)
 
-# ── 정규식 ───────────────────────────────────────────────────────────────────
+# ── Regexes ─────────────────────────────────────────────────────────────────
 _WIKILINK_PAT = re.compile(r'\[\[([^\[\]]+?)\]\]')
 _LINK_PAT     = re.compile(r'\[\[.*?\]\]', re.DOTALL)
 _NUM_ONLY     = re.compile(r'^\d+$')
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  자동 키워드 맵 빌드
+#  Automatic keyword map build
 # ════════════════════════════════════════════════════════════════════════════
 
 def _tokenize_stem(stem: str) -> list[str]:
-    """stem → 의미 있는 토큰 목록 (ID·숫자·불용어 제거)"""
+    """stem -> list of meaningful tokens (IDs, numbers and stopwords removed)"""
     parts = re.split(r'[\s_\(\)\[\]\.\-/\\|,]+', stem)
     tokens = []
     for p in parts:
@@ -106,9 +106,9 @@ def _tokenize_stem(stem: str) -> list[str]:
 
 
 def _best_hub(keyword: str, stems: list[str]) -> str:
-    """키워드의 대표 허브 stem 선택.
-    키워드가 마지막 의미 토큰인 stem 우선 (가장 일반적 허브),
-    동점이면 토큰 수 적은 것.
+    """Pick the representative hub stem for a keyword.
+    Stems whose last meaningful token is the keyword are preferred (most general hub);
+    ties go to the stem with fewer tokens.
     """
     candidates = []
     for stem in stems:
@@ -123,7 +123,7 @@ def build_auto_keyword_map(
     active_dir: str,
     file_cache: dict[str, str],
 ) -> dict[str, tuple[str, str]]:
-    """_index.md 분석 → 자동 키워드 맵 구성."""
+    """Analyze _index.md -> build the automatic keyword map."""
     index_path = os.path.join(active_dir, '_index.md')
     if not os.path.exists(index_path):
         return {}
@@ -131,7 +131,7 @@ def build_auto_keyword_map(
     with open(index_path, encoding='utf-8') as f:
         index_text = f.read()
 
-    # _index.md에서 [[stem]] 수집
+    # Collect [[stem]] entries from _index.md
     index_stems = [m.group(1).split('|')[0].strip()
                    for m in _WIKILINK_PAT.finditer(index_text)]
     if not index_stems:
@@ -139,13 +139,13 @@ def build_auto_keyword_map(
 
     index_stem_set = set(index_stems)
 
-    # 키워드 → stem 목록 매핑
+    # Map keyword -> list of stems
     kw_to_stems: dict[str, list[str]] = {}
     for stem in index_stems:
         for tok in _tokenize_stem(stem):
             kw_to_stems.setdefault(tok, []).append(stem)
 
-    # MIN_STEMS 필터
+    # MIN_STEMS filter
     candidates = {kw: stems for kw, stems in kw_to_stems.items()
                   if len(stems) >= AUTO_MIN_STEMS}
 
@@ -153,7 +153,7 @@ def build_auto_keyword_map(
     if total == 0:
         return {}
 
-    # 평문 빈도 측정 (파일 캐시 재활용 — O(keywords × files) 하지만 파일 I/O 없음)
+    # Measure plain-text frequency (reuses the file cache: O(keywords x files) but no file I/O)
     result: dict[str, tuple[str, str]] = {}
     for kw, stems in candidates.items():
         kw_pat = re.compile(r'(?<!\[)(?<!\|)\b' + re.escape(kw) + r'\b(?!\|)(?!\])',
@@ -177,7 +177,7 @@ def build_auto_keyword_map(
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  링크 주입
+#  Link injection
 # ════════════════════════════════════════════════════════════════════════════
 
 def _mask_links(text: str) -> tuple[str, list[str]]:
@@ -199,7 +199,7 @@ def _code_ranges(text: str) -> list[tuple[int, int]]:
 
 
 def inject(text: str, keyword_map: dict[str, tuple[str, str]]) -> str:
-    """Frontmatter 이후 본문에 키워드 첫 등장 링크 주입."""
+    """Inject a link at the first occurrence of each keyword in the body after the frontmatter."""
     fm_end = 0
     if text.startswith('---'):
         end = text.find('\n---', 3)
@@ -226,13 +226,13 @@ def inject(text: str, keyword_map: dict[str, tuple[str, str]]) -> str:
                           + masked[m.end() + offset:])
             offset += len(link_text) - len(keyword)
             masked = new_masked
-            break  # 파일 내 첫 1회만
+            break  # Only the first occurrence per file
 
     return frontmatter + _restore_links(masked, saved)
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  메인
+#  Main
 # ════════════════════════════════════════════════════════════════════════════
 
 def resolve_active_dir(vault_dir: str) -> str:
@@ -244,7 +244,7 @@ def run(vault_dir: str) -> None:
     active_dir = resolve_active_dir(vault_dir)
     md_files = sorted(f for f in os.listdir(active_dir) if f.endswith('.md'))
 
-    # 1. 파일 전체를 한 번만 읽어 캐시
+    # 1. Read every file once and cache it
     file_cache: dict[str, str] = {}
     for fname in md_files:
         try:
@@ -253,15 +253,15 @@ def run(vault_dir: str) -> None:
         except Exception:
             pass
 
-    # 2. 자동 키워드 맵 빌드
+    # 2. Build the automatic keyword map
     auto_map = build_auto_keyword_map(active_dir, file_cache)
 
-    # 3. 수동 오버라이드 병합 (수동이 자동보다 우선)
+    # 3. Merge manual overrides (manual takes precedence over auto)
     keyword_map = {**auto_map, **KEYWORD_MAP_MANUAL}
 
-    print(f'키워드 맵: 자동 {len(auto_map)}개 + 수동 {len(KEYWORD_MAP_MANUAL)}개 = {len(keyword_map)}개')
+    print(f'Keyword map: {len(auto_map)} auto + {len(KEYWORD_MAP_MANUAL)} manual = {len(keyword_map)} total')
 
-    # 4. 링크 주입
+    # 4. Inject links
     updated = 0
     keyword_hit: dict[str, int] = {k: 0 for k in keyword_map}
 
@@ -279,14 +279,14 @@ def run(vault_dir: str) -> None:
             f.write(new_text)
         updated += 1
 
-    print(f'완료: {updated}개 파일 업데이트')
+    print(f'Done: {updated} files updated')
     hit_items = [(kw, cnt) for kw, cnt in keyword_hit.items() if cnt > 0]
     if hit_items:
         print()
-        print(f"{'키워드':<25} {'파일 수':>8}")
+        print(f"{'Keyword':<25} {'Files':>8}")
         print('-' * 36)
         for kw, cnt in sorted(hit_items, key=lambda x: -x[1]):
-            print(f'{kw:<25} {cnt:>8}개 파일')
+            print(f'{kw:<25} {cnt:>8} files')
 
 
 if __name__ == '__main__':

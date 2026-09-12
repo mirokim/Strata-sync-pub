@@ -1,13 +1,13 @@
 /**
- * pprWorker.ts — Personalized PageRank (PPR) 계산을 메인 스레드 밖에서 실행
+ * pprWorker.ts — Runs Personalized PageRank (PPR) computation off the main thread
  *
- * 메시지 프로토콜:
+ * Message protocol:
  *   IN  { type: 'ppr', requestId, seeds, links, alpha, iterations }
  *         → Power Iteration → { type: 'done', requestId, scores: [string, number][] }
  *   OUT { type: 'error', requestId, message }
  *
- * seeds 는 `{ id, weight }[]` — weight 는 검색 점수. 개인화 벡터를 weight 비율로
- * 구성하므로 벡터 1위 문서와 보완 시드가 동일 취급되지 않습니다.
+ * seeds is `{ id, weight }[]` — weight is the search score. The personalization vector is
+ * built proportionally to weight, so the top vector-search document and supplementary seeds are not treated equally.
  */
 
 interface PPRLink {
@@ -52,7 +52,7 @@ function runPPR(
 ): Map<string, number> {
   if (seeds.length === 0 || links.length === 0) return new Map()
 
-  // 가중치 인접 리스트 구축 (무방향 그래프)
+  // Build weighted adjacency list (undirected graph)
   const outWeightSum = new Map<string, number>()
   const inEdges = new Map<string, { from: string; w: number }[]>()
 
@@ -71,9 +71,9 @@ function runPPR(
   const allNodes = new Set<string>([...outWeightSum.keys(), ...inEdges.keys()])
   for (const s of seeds) allNodes.add(s.id)
 
-  // 점수 가중 개인화 벡터 — 합이 1이 되도록 정규화.
-  // 균등 1/N 이면 벡터 1위 문서와 20번째 보완 시드가 동일 취급되어
-  // 검색 랭킹이 PPR 단계에서 완전히 소실된다.
+  // Score-weighted personalization vector — normalized to sum to 1.
+  // With uniform 1/N, the top vector-search document and the 20th supplementary seed
+  // would be treated equally, and the search ranking would be completely lost at the PPR stage.
   const seedW = new Map<string, number>()
   let totalW = 0
   for (const s of seeds) {
@@ -82,14 +82,14 @@ function runPPR(
     totalW += w
   }
   if (totalW <= 0) {
-    // 모든 weight가 0/음수 — 균등 분포로 폴백
+    // All weights are 0/negative — fall back to uniform distribution
     const uniform = 1 / seedW.size
     for (const id of seedW.keys()) seedW.set(id, uniform)
   } else {
     for (const [id, w] of seedW) seedW.set(id, w / totalW)
   }
 
-  // 이중 버퍼 — 매 이터레이션마다 new Map 대신 두 Map을 교체 사용
+  // Double buffer — swap two Maps instead of allocating a new Map every iteration
   let scores = new Map<string, number>()
   let next = new Map<string, number>()
   for (const id of allNodes) {
@@ -106,7 +106,7 @@ function runPPR(
       }
       next.set(id, s)
     }
-    // 버퍼 스왑
+    // Swap buffers
     const tmp = scores; scores = next; next = tmp
   }
 

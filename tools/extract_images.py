@@ -3,11 +3,11 @@
 extract_images.py — §4.2 PDF image extraction standalone script
 
 Features:
-  - PDF 1개 또는 폴더 내 모든 PDF에서 이미지를 추출
-  - 이미지를 attachments/ 폴더에 저장
-  - 파일명 규칙: {stem}_p{페이지번호}_{순번}.png  (§4.0 공통 원칙)
-  - 최소 크기 필터링: 너비·높이 모두 100px 미만 아이콘/불릿 제외
-  - 추출된 이미지 목록과 MD 내 삽입 wikilink 문자열 출력
+  - Extract images from a single PDF or every PDF in a folder
+  - Save images into the attachments/ folder
+  - Filename rule: {stem}_p{page}_{index}.png  (§4.0 common principle)
+  - Minimum size filter: exclude icons/bullets under 100px in both width and height
+  - Print the list of extracted images and the wikilink strings to insert into MD
 
 Libraries:
   pip install pymupdf Pillow
@@ -21,8 +21,8 @@ import argparse
 from pathlib import Path
 
 
-MIN_WIDTH_DEFAULT  = 100   # 최소 너비 픽셀
-MIN_HEIGHT_DEFAULT = 100   # 최소 높이 픽셀
+MIN_WIDTH_DEFAULT  = 100   # Minimum width in pixels
+MIN_HEIGHT_DEFAULT = 100   # Minimum height in pixels
 
 
 def extract_images_from_pdf(pdf_path: Path, attachments_dir: Path,
@@ -32,7 +32,7 @@ def extract_images_from_pdf(pdf_path: Path, attachments_dir: Path,
     try:
         import fitz  # pymupdf
     except ImportError:
-        print("Error: pymupdf 미설치. 'pip install pymupdf' 실행 후 재시도하세요.")
+        print("Error: pymupdf not installed. Run 'pip install pymupdf' and retry.")
         sys.exit(1)
 
     attachments_dir.mkdir(parents=True, exist_ok=True)
@@ -55,27 +55,27 @@ def extract_images_from_pdf(pdf_path: Path, attachments_dir: Path,
             height = base_img.get('height', 0)
             if width < min_width or height < min_height:
                 if verbose:
-                    print(f"  Skipped (소형 {width}×{height}): p{page_num}_{img_idx}")
+                    print(f"  Skipped (small {width}×{height}): p{page_num}_{img_idx}")
                 continue
 
             ext      = base_img.get('ext', 'png')
             img_data = base_img['image']
 
-            # PNG 통일 (JPEG·WebP 포함 모든 형식 → PNG 저장)
+            # Normalize to PNG (every format including JPEG/WebP → saved as PNG)
             out_name = f"{stem}_p{page_num:03d}_{img_idx:02d}.png"
             out_path = attachments_dir / out_name
 
             if ext == 'png':
                 out_path.write_bytes(img_data)
             else:
-                # PIL로 변환
+                # Convert via PIL
                 try:
                     from PIL import Image
                     import io
                     img_obj = Image.open(io.BytesIO(img_data)).convert('RGBA')
                     img_obj.save(str(out_path), 'PNG')
                 except ImportError:
-                    # PIL 없으면 원본 확장자로 저장
+                    # Without PIL, save with the original extension
                     out_path = attachments_dir / f"{stem}_p{page_num:03d}_{img_idx:02d}.{ext}"
                     out_path.write_bytes(img_data)
                 except Exception:
@@ -84,7 +84,7 @@ def extract_images_from_pdf(pdf_path: Path, attachments_dir: Path,
             saved.append(out_path)
             idx_global += 1
             if verbose:
-                print(f"  추출: {out_path.name}  ({width}×{height})")
+                print(f"  Extracted: {out_path.name}  ({width}×{height})")
 
     doc.close()
     return saved
@@ -101,13 +101,13 @@ def generate_wikilinks(saved: list[Path]) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='§4.2 PDF 이미지 추출')
+    parser = argparse.ArgumentParser(description='§4.2 PDF image extraction')
     parser.add_argument('input',           help='PDF file or folder containing PDF files')
     parser.add_argument('attachments_dir', help='Image output folder (attachments/)')
     parser.add_argument('--min-width',  type=int, default=MIN_WIDTH_DEFAULT,
-                        help=f'최소 너비 픽셀 (기본: {MIN_WIDTH_DEFAULT})')
+                        help=f'Minimum width in pixels (default: {MIN_WIDTH_DEFAULT})')
     parser.add_argument('--min-height', type=int, default=MIN_HEIGHT_DEFAULT,
-                        help=f'최소 높이 픽셀 (기본: {MIN_HEIGHT_DEFAULT})')
+                        help=f'Minimum height in pixels (default: {MIN_HEIGHT_DEFAULT})')
     parser.add_argument('--verbose', '-v', action='store_true')
     args = parser.parse_args()
 
@@ -137,8 +137,8 @@ def main():
     print(f"\n{'='*50}")
     print(f"§4.2 extract_images Complete")
     print(f"{'='*50}")
-    print(f"  Processed PDFs:   {len(pdf_files)}개")
-    print(f"  Extracted Images: {total_saved}개 → {att_dir}")
+    print(f"  Processed PDFs:   {len(pdf_files)}")
+    print(f"  Extracted Images: {total_saved} → {att_dir}")
 
 
 if __name__ == '__main__':

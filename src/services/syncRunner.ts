@@ -1,8 +1,8 @@
 /**
- * syncRunner.ts — Confluence / Jira 동기화 로직
+ * syncRunner.ts — Confluence / Jira sync logic
  *
- * useConfluenceAutoSync / useJiraAutoSync 훅에서 추출한 순수 함수.
- * Edit Agent 웨이크 사이클에서 호출되며, 훅 형태가 아닌 일반 async 함수로 동작.
+ * Pure functions extracted from the useConfluenceAutoSync / useJiraAutoSync hooks.
+ * Called from the Edit Agent wake cycle; runs as plain async functions rather than hooks.
  */
 
 import { useSettingsStore, MIGRATED_CONFIG_KEY } from '@/stores/settingsStore'
@@ -40,8 +40,8 @@ async function runPostSyncScripts(vaultPath: string, store: EditAgentState): Pro
 }
 
 /**
- * check_quality.py 실행 후 핵심 지표를 EditAgentLog에 노출.
- * WARN 항목과 총 이슈 건수만 추출해 간결하게 표시.
+ * Run check_quality.py and surface key metrics to EditAgentLog.
+ * Extracts only WARN items and the total issue count for brevity.
  */
 export async function runQualityCheck(vaultPath: string, store: EditAgentState): Promise<void> {
   const api = getScriptAPI()
@@ -50,20 +50,20 @@ export async function runQualityCheck(vaultPath: string, store: EditAgentState):
     const r = await api.runScript('check_quality.py', [vaultPath, '--vault', vaultPath])
     if (!r?.stdout) return
     const lines = r.stdout.split('\n')
-    // 총 이슈 수 (마지막 요약 줄)
+    // Total issue count (last summary line)
     const summaryLine = lines.find(l => l.includes('수정 권장 이슈'))
-    if (summaryLine) store.addLog({ action: 'diff_check', detail: `📊 품질: ${summaryLine.trim()}` })
-    // WARN 항목만 추출 (최대 5개)
+    if (summaryLine) store.addLog({ action: 'diff_check', detail: `📊 Quality: ${summaryLine.trim()}` })
+    // Extract only WARN items (max 5)
     const warnLines = lines.filter(l => l.startsWith('[WARN]')).slice(0, 5)
     for (const w of warnLines) {
       store.addLog({ action: 'error', detail: w.trim() })
     }
   } catch (e) {
-    logger.warn('[syncRunner] check_quality 실패:', e)
+    logger.warn('[syncRunner] check_quality failed:', e)
   }
 }
 
-/** 동기화 호출의 성공 여부 + 실패 시 메시지 */
+/** Whether the sync call succeeded, plus a message on failure */
 export type SyncResult = { ok: boolean; message?: string }
 
 export async function runConfluenceSync(store: EditAgentState): Promise<SyncResult> {
@@ -74,12 +74,12 @@ export async function runConfluenceSync(store: EditAgentState): Promise<SyncResu
   const { lastSyncAt, setLastSyncAt, setNotification } = useSyncStore.getState()
 
   if (!vaultPath || !cfg?.baseUrl || !cfg.apiToken) {
-    const msg = 'Confluence 설정 없음 — 설정 > Confluence 확인'
+    const msg = 'Confluence not configured — check Settings > Confluence'
     store.addLog({ action: 'error', detail: msg })
     return { ok: false, message: msg }
   }
 
-  store.addLog({ action: 'diff_check', detail: 'Confluence 동기화 시작...' })
+  store.addLog({ action: 'diff_check', detail: 'Starting Confluence sync...' })
 
   const confApi = (window as unknown as Record<string, unknown>)['confluenceAPI'] as {
     fetchPages: (c: unknown) => Promise<unknown[]>
@@ -94,7 +94,7 @@ export async function runConfluenceSync(store: EditAgentState): Promise<SyncResu
   }
 
   try {
-    // 안전장치: lastSyncAt과 cfg.dateFrom 모두 없으면 최근 7일만 가져옴 (전체 페이지 가져오기 방지)
+    // Safety: if neither lastSyncAt nor cfg.dateFrom is set, fetch only the last 7 days (prevents fetching every page)
     const fallbackDate = cfg.dateFrom || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
     const dateFrom = toSyncDatetime(lastSyncAt, fallbackDate)
     const pages = await confApi.fetchPages({
@@ -103,10 +103,10 @@ export async function runConfluenceSync(store: EditAgentState): Promise<SyncResu
     })
 
     if (!pages || pages.length === 0) {
-      // Jira 와 일관되게 변경 없음 케이스에서도 lastSyncAt 갱신 (다음 호출의 dateFrom 기준점)
+      // Consistent with Jira: update lastSyncAt even when nothing changed (baseline dateFrom for the next call)
       const nowEmpty = new Date().toISOString()
       setLastSyncAt(nowEmpty)
-      store.addLog({ action: 'file_skip', detail: 'Confluence 변경 없음' })
+      store.addLog({ action: 'file_skip', detail: 'Confluence: no changes' })
       return { ok: true }
     }
 
@@ -122,18 +122,18 @@ export async function runConfluenceSync(store: EditAgentState): Promise<SyncResu
         .catch(() => { attachFailed++ })
     }
 
-    store.addLog({ action: 'file_edit', detail: `Confluence ${pages.length}개 페이지 저장${attachFailed > 0 ? ` (첨부 ${attachFailed}개 실패)` : ''}` })
+    store.addLog({ action: 'file_edit', detail: `Confluence: saved ${pages.length} pages${attachFailed > 0 ? ` (${attachFailed} attachments failed)` : ''}` })
 
     await runPostSyncScripts(vaultPath, store)
 
     const now = new Date().toISOString()
     setLastSyncAt(now)
-    setNotification({ message: `Confluence 동기화 완료 (Edit Agent)`, count: pages.length, at: now })
+    setNotification({ message: `Confluence sync complete (Edit Agent)`, count: pages.length, at: now })
     return { ok: true }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    store.addLog({ action: 'error', detail: `Confluence 동기화 실패: ${msg}` })
-    logger.warn('[syncRunner] Confluence 실패:', msg)
+    store.addLog({ action: 'error', detail: `Confluence sync failed: ${msg}` })
+    logger.warn('[syncRunner] Confluence failed:', msg)
     return { ok: false, message: msg }
   }
 }
@@ -146,12 +146,12 @@ export async function runJiraSync(store: EditAgentState): Promise<SyncResult> {
   const { lastJiraSyncAt, setLastJiraSyncAt, setNotification } = useSyncStore.getState()
 
   if (!vaultPath || !cfg?.baseUrl || !cfg.apiToken) {
-    const msg = 'Jira 설정 없음 — 설정 > Jira 확인'
+    const msg = 'Jira not configured — check Settings > Jira'
     store.addLog({ action: 'error', detail: msg })
     return { ok: false, message: msg }
   }
 
-  store.addLog({ action: 'diff_check', detail: 'Jira 동기화 시작...' })
+  store.addLog({ action: 'diff_check', detail: 'Starting Jira sync...' })
 
   const jiraApi = (window as unknown as Record<string, unknown>)['jiraAPI'] as {
     fetchIssues: (c: unknown) => Promise<JiraIssue[]>
@@ -165,7 +165,7 @@ export async function runJiraSync(store: EditAgentState): Promise<SyncResult> {
   }
 
   try {
-    // 안전장치: lastJiraSyncAt과 cfg.dateFrom 모두 없으면 최근 7일만 가져옴 (전체 이슈 가져오기 방지)
+    // Safety: if neither lastJiraSyncAt nor cfg.dateFrom is set, fetch only the last 7 days (prevents fetching every issue)
     const fallbackDate = cfg.dateFrom || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
     const dateFrom = toSyncDatetime(lastJiraSyncAt, fallbackDate)
     const issues = await jiraApi.fetchIssues({
@@ -177,21 +177,21 @@ export async function runJiraSync(store: EditAgentState): Promise<SyncResult> {
     const now = new Date().toISOString()
     if (!issues || issues.length === 0) {
       setLastJiraSyncAt(now)
-      store.addLog({ action: 'file_skip', detail: 'Jira 변경 없음' })
+      store.addLog({ action: 'file_skip', detail: 'Jira: no changes' })
       return { ok: true }
     }
 
     const converted = issues.map(issue => issueToVaultMarkdown(issue, cfg.baseUrl))
     await jiraApi.saveIssues(vaultPath, cfg.targetFolder, converted.map(p => ({ filename: p.filename, content: p.content })))
 
-    store.addLog({ action: 'file_edit', detail: `Jira ${issues.length}개 이슈 저장` })
+    store.addLog({ action: 'file_edit', detail: `Jira: saved ${issues.length} issues` })
     setLastJiraSyncAt(now)
-    setNotification({ message: `Jira 동기화 완료 (Edit Agent)`, count: issues.length, at: now })
+    setNotification({ message: `Jira sync complete (Edit Agent)`, count: issues.length, at: now })
     return { ok: true }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    store.addLog({ action: 'error', detail: `Jira 동기화 실패: ${msg}` })
-    logger.warn('[syncRunner] Jira 실패:', msg)
+    store.addLog({ action: 'error', detail: `Jira sync failed: ${msg}` })
+    logger.warn('[syncRunner] Jira failed:', msg)
     return { ok: false, message: msg }
   }
 }

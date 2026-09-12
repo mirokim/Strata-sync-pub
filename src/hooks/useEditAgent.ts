@@ -70,22 +70,22 @@ export function useEditAgent() {
 
     const runCycle = async () => {
       if (!isMountedRef.current || isRunningRef.current) {
-        if (!isMountedRef.current) logger.debug('[EditAgent] 언마운트됨 — 사이클 건너뜀')
-        else logger.debug('[EditAgent] 이전 사이클 실행 중 — 건너뜀')
+        if (!isMountedRef.current) logger.debug('[EditAgent] Unmounted — skipping cycle')
+        else logger.debug('[EditAgent] Previous cycle still running — skipping')
         return
       }
       isRunningRef.current = true
       try {
         await runEditAgentCycle()
       } catch (err) {
-        logger.error('[EditAgent] 예상치 못한 오류:', err)
+        logger.error('[EditAgent] Unexpected error:', err)
       } finally {
         if (isMountedRef.current) isRunningRef.current = false
       }
     }
 
     intervalRef.current = setInterval(runCycle, intervalMs)
-    logger.debug(`[EditAgent] 스케줄러 시작: ${intervalMinutes}분 간격`)
+    logger.debug(`[EditAgent] Scheduler started: every ${intervalMinutes} min`)
 
     return () => {
       if (intervalRef.current) {

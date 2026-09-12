@@ -1,8 +1,8 @@
 /**
- * cronStore.ts — Cron Job 상태 관리 (렌더러 측)
+ * cronStore.ts — Cron job state management (renderer side)
  *
- * main process 의 cronScheduler 와 IPC 이벤트로 동기화.
- * state-update / log-append 두 이벤트로 폴링 없이 실시간 갱신.
+ * Synced with the main-process cronScheduler via IPC events.
+ * Two events (state-update / log-append) give real-time updates without polling.
  */
 import { create } from 'zustand'
 
@@ -72,12 +72,12 @@ interface CronStoreState {
   initialized: boolean
 
   logFiles: CronLogFileMeta[]
-  /** 사용자가 선택한 이력 날짜(있으면 logs 대신 historyLogs 사용) */
+  /** History date selected by the user (when set, historyLogs is used instead of logs) */
   historyDate: string | null
   historyLogs: CronLogEntry[]
   historyLoading: boolean
 
-  /** H9. 로그 append 폭주 방지용 rAF 배치 버퍼 (internal) */
+  /** H9. rAF batch buffer to guard against log-append floods (internal) */
   _pendingAppends: CronLogEntry[]
   _flushTimer: number | null
 
@@ -98,7 +98,7 @@ interface CronStoreState {
 
 const MAX_LIVE_LOGS = 2000
 
-// M. 런타임 가드 — 최소 필수 필드 존재 여부 확인 (zod 대체)
+// M. Runtime guard — checks that the minimum required fields exist (zod substitute)
 function isValidLogEntry(e: unknown): e is CronLogEntry {
   if (!e || typeof e !== 'object') return false
   const o = e as Record<string, unknown>
@@ -123,7 +123,7 @@ export const useCronStore = create<CronStoreState>()((set, get) => ({
     jobs: { ...s.jobs, [jobId]: { ...s.jobs[jobId], ...patch } },
   })),
   setLogs: (logs) => set({ logs }),
-  // H9. rAF 배치 flush — append 폭주 시 re-render 1회로 모음
+  // H9. rAF batch flush — collapses an append flood into a single re-render
   appendLog: (entry) => {
     if (!isValidLogEntry(entry)) return
     const s = get()
@@ -138,7 +138,7 @@ export const useCronStore = create<CronStoreState>()((set, get) => ({
       }
       const next = st.logs.concat(pending)
       if (next.length > MAX_LIVE_LOGS) next.splice(0, next.length - MAX_LIVE_LOGS)
-      // buffer 는 in-place 로 비워 ref 유지
+      // Clear the buffer in place to keep the ref
       pending.length = 0
       set({ logs: next, _flushTimer: null })
     }
@@ -158,7 +158,7 @@ export const useCronStore = create<CronStoreState>()((set, get) => ({
       logs: unknown[]
       runs?: CronRunSummary[]
     }
-    // M. 런타임 가드로 유효 엔트리만 통과
+    // M. Only valid entries pass the runtime guard
     const validLogs = (state.logs || []).filter(isValidLogEntry)
     set({
       jobs: state.jobs,
@@ -185,7 +185,7 @@ export const useCronStore = create<CronStoreState>()((set, get) => ({
     set({ historyDate: date, historyLoading: true })
     try {
       const entries = await window.cronAPI.loadLogFile(date)
-      // M. 런타임 가드로 유효 엔트리만 통과
+      // M. Only valid entries pass the runtime guard
       const validLogs = ((entries || []) as unknown[]).filter(isValidLogEntry)
       set({ historyLogs: validLogs, historyLoading: false })
     } catch {

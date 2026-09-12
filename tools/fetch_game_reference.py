@@ -1,20 +1,20 @@
 """
-fetch_game_reference.py — Fandom Wiki API로 외부 게임 데이터를 수집해 볼트에 저장
+fetch_game_reference.py — Collect external game data via the Fandom Wiki API and store it in the vault
 
-사용법:
+Usage:
   python fetch_game_reference.py --vault /path/to/vault/active
   python fetch_game_reference.py --vault /path/to/vault/active --games "The Finals,Deadlock"
   python fetch_game_reference.py --vault /path/to/vault/active --force
   python fetch_game_reference.py --vault /path/to/vault/active --index-only
 
-데이터 소스:
-  Fandom Wiki (MediaWiki API) — 게임플레이 메카닉, 영웅/캐릭터, 맵/모드, 패치노트 (키 불필요)
+Data source:
+  Fandom Wiki (MediaWiki API) — gameplay mechanics, heroes/characters, maps/modes, patch notes (no key required)
 
-저장 위치:
-  {vault}/_reference/games/[게임] {name}.md   — 게임별 상세 문서
-  {vault}/_reference/index_reference_games.md  — 전체 인덱스 (wikilink 포함)
+Output location:
+  {vault}/_reference/games/[게임] {name}.md   — per-game detail document
+  {vault}/_reference/index_reference_games.md  — full index (with wikilinks)
 
-오염 방지: type: external-reference frontmatter + 상단 경고 마커 자동 삽입
+Contamination prevention: type: external-reference frontmatter + warning marker auto-inserted at the top
 """
 
 import argparse
@@ -30,7 +30,7 @@ from datetime import date
 from pathlib import Path
 from typing import Optional
 
-# ── 기본 수집 대상 ──────────────────────────────────────────────────────────────
+# ── Default collection targets ─────────────────────────────────────────────────
 
 GAME_CONFIGS = [
     {
@@ -98,7 +98,7 @@ def fetch_json(url: str, timeout: int = 20) -> Optional[dict]:
         print(f"  [HTTP {e.code}] {url[:80]}", file=sys.stderr)
         return None
     except Exception as e:
-        print(f"  [오류] {url[:80]}: {e}", file=sys.stderr)
+        print(f"  [Error] {url[:80]}: {e}", file=sys.stderr)
         return None
 
 
@@ -107,7 +107,7 @@ def fandom_base(wiki: str) -> str:
 
 
 def fetch_fandom_page(wiki: str, page_title: str, verbose: bool = False) -> str:
-    """Fandom Wiki에서 페이지 텍스트 수집 (plain text extract)."""
+    """Fetch page text from the Fandom Wiki (plain text extract)."""
     base = fandom_base(wiki)
     params = urllib.parse.urlencode({
         "action":         "query",
@@ -126,17 +126,17 @@ def fetch_fandom_page(wiki: str, page_title: str, verbose: bool = False) -> str:
     for page in pages.values():
         if page.get("pageid", -1) == -1:
             if verbose:
-                print(f"    Fandom/{wiki}: '{page_title}' — 페이지 없음")
+                print(f"    Fandom/{wiki}: '{page_title}' — page not found")
             return ""
         text = page.get("extract", "")
         if verbose:
-            print(f"    Fandom/{wiki}: '{page_title}' — {len(text):,}자")
+            print(f"    Fandom/{wiki}: '{page_title}' — {len(text):,} chars")
         return text
     return ""
 
 
 def fetch_fandom_search(wiki: str, query: str, limit: int = 3, verbose: bool = False) -> list:
-    """Fandom Wiki 검색으로 관련 페이지 제목 목록 반환."""
+    """Return a list of related page titles via Fandom Wiki search."""
     base = fandom_base(wiki)
     params = urllib.parse.urlencode({
         "action":  "query",
@@ -151,12 +151,12 @@ def fetch_fandom_search(wiki: str, query: str, limit: int = 3, verbose: bool = F
     results = data.get("query", {}).get("search", [])
     titles = [r["title"] for r in results]
     if verbose and titles:
-        print(f"    검색 '{query}': {titles}")
+        print(f"    Search '{query}': {titles}")
     return titles
 
 
 def collect_game_pages(cfg: dict, verbose: bool = False) -> dict:
-    """게임 설정에 따라 Fandom 페이지들을 수집해 섹션 dict 반환."""
+    """Collect Fandom pages per the game config and return a section dict."""
     wiki    = cfg["wiki"]
     name    = cfg["name"]
     pages   = cfg["pages"]
@@ -165,7 +165,7 @@ def collect_game_pages(cfg: dict, verbose: bool = False) -> dict:
     for page_title in pages:
         text = fetch_fandom_page(wiki, page_title, verbose=verbose)
         if not text:
-            # 페이지 없으면 검색으로 대체 시도
+            # If the page is missing, try search as a fallback
             candidates = fetch_fandom_search(wiki, page_title, limit=2, verbose=verbose)
             for candidate in candidates:
                 text = fetch_fandom_page(wiki, candidate, verbose=verbose)
@@ -173,20 +173,20 @@ def collect_game_pages(cfg: dict, verbose: bool = False) -> dict:
                     page_title = candidate
                     break
         if text:
-            # 너무 긴 텍스트는 잘라냄 (섹션당 최대 2500자)
+            # Truncate overly long text (max 2500 chars per section)
             sections[page_title] = text[:2500] + ("…(이하 생략)" if len(text) > 2500 else "")
         time.sleep(0.4)  # Fandom rate limit
 
     return sections
 
 
-# ── 마크다운 생성 ──────────────────────────────────────────────────────────────
+# ── Markdown generation ────────────────────────────────────────────────────────
 
 def clean_wiki_text(text: str) -> str:
-    """MediaWiki plain text에서 불필요한 패턴 정리."""
-    # 연속 빈 줄 3개 이상 → 2개로
+    """Clean up unnecessary patterns in MediaWiki plain text."""
+    # 3+ consecutive blank lines → 2
     text = re.sub(r"\n{3,}", "\n\n", text)
-    # 섹션 제목 앞 공백 정리
+    # Trim whitespace before section titles
     text = re.sub(r"\n\s+\n", "\n\n", text)
     return text.strip()
 
@@ -213,7 +213,7 @@ def build_markdown(cfg: dict, sections: dict, collected: str) -> str:
         "",
     ]
 
-    # ── 오염 방지 마커 ─────────────────────────────────────────────────────────
+    # ── Contamination prevention marker ───────────────────────────────────────
     lines += [
         f"> ⚠️ **[외부 레퍼런스]** 이 문서는 **{name}** (외부 출시 게임)에 대한 데이터입니다.",
         "> 프로젝트 A 내부 의사결정 근거로 **직접 인용 금지**.",
@@ -222,7 +222,7 @@ def build_markdown(cfg: dict, sections: dict, collected: str) -> str:
         "",
     ]
 
-    # ── 본문 ───────────────────────────────────────────────────────────────────
+    # ── Body ──────────────────────────────────────────────────────────────────
     lines += [f"# {name}", ""]
 
     if reason:
@@ -243,7 +243,7 @@ def build_markdown(cfg: dict, sections: dict, collected: str) -> str:
         ]
     else:
         for page_title, text in sections.items():
-            # 페이지 제목을 섹션 헤더로
+            # Page title as section header
             display = page_title.replace("_", " ")
             lines += [
                 f"## {display}",
@@ -252,7 +252,7 @@ def build_markdown(cfg: dict, sections: dict, collected: str) -> str:
                 "",
             ]
 
-    # ── 비교 분석 메모 ─────────────────────────────────────────────────────────
+    # ── Comparative analysis notes ────────────────────────────────────────────
     lines += [
         "---",
         "",
@@ -270,10 +270,10 @@ def build_markdown(cfg: dict, sections: dict, collected: str) -> str:
     return "\n".join(lines)
 
 
-# ── 인덱스 파일 생성 ───────────────────────────────────────────────────────────
+# ── Index file generation ──────────────────────────────────────────────────────
 
 def build_index(output_dir: str, vault_path: str, collected: str) -> None:
-    """_reference/games/ 내 모든 게임 파일을 스캔해 index_reference_games.md 생성."""
+    """Scan every game file under _reference/games/ and generate index_reference_games.md."""
     games_dir  = Path(output_dir)
     game_files = sorted(games_dir.glob("[[]게임[]] *.md"))
 
@@ -292,7 +292,7 @@ def build_index(output_dir: str, vault_path: str, collected: str) -> None:
         reason_m  = re.search(r'^\*\*선정 이유\*\*:\s*(.+)$', content, re.MULTILINE)
         reason    = reason_m.group(1).strip() if reason_m else ""
 
-        # 수집된 섹션 목록 파악
+        # Determine the list of collected sections
         page_titles = re.findall(r'^## (.+)$', content, re.MULTILINE)
         page_titles = [p for p in page_titles if p not in ("비교 분석 메모",)]
 
@@ -354,18 +354,18 @@ def build_index(output_dir: str, vault_path: str, collected: str) -> None:
     index_path = Path(vault_path) / "_reference" / "index_reference_games.md"
     index_path.parent.mkdir(parents=True, exist_ok=True)
     index_path.write_text("\n".join(lines), encoding="utf-8")
-    print(f"  📋 인덱스 갱신 → {index_path}")
+    print(f"  📋 Index updated → {index_path}")
 
 
-# ── 메인 ──────────────────────────────────────────────────────────────────────
+# ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Fandom Wiki 게임 데이터를 볼트 레퍼런스로 수집")
-    parser.add_argument("--vault",      required=True,       help="볼트 active 폴더 경로")
-    parser.add_argument("--games",      default="",          help="수집할 게임 이름 (콤마 구분). 미지정 시 기본 목록 사용")
-    parser.add_argument("--force",      action="store_true", help="이미 존재하는 파일도 덮어씀")
-    parser.add_argument("--index-only", action="store_true", help="게임 수집 없이 인덱스만 재생성")
-    parser.add_argument("--verbose",    action="store_true", help="상세 출력")
+    parser = argparse.ArgumentParser(description="Collect Fandom Wiki game data as vault references")
+    parser.add_argument("--vault",      required=True,       help="Path to the vault active folder")
+    parser.add_argument("--games",      default="",          help="Game names to collect (comma-separated). Uses the default list if omitted")
+    parser.add_argument("--force",      action="store_true", help="Overwrite existing files too")
+    parser.add_argument("--index-only", action="store_true", help="Regenerate only the index, without collecting games")
+    parser.add_argument("--verbose",    action="store_true", help="Verbose output")
     args = parser.parse_args()
 
     vault_path = os.path.abspath(args.vault)
@@ -377,19 +377,19 @@ def main() -> None:
         build_index(output_dir, vault_path, collected)
         return
 
-    # 수집 대상 결정
+    # Determine collection targets
     if args.games.strip():
         filter_names = {g.strip().lower() for g in args.games.split(",")}
         targets = [c for c in GAME_CONFIGS if c["name"].lower() in filter_names]
         if not targets:
-            print(f"오류: 일치하는 게임 없음 — {args.games}", file=sys.stderr)
-            print(f"사용 가능: {', '.join(c['name'] for c in GAME_CONFIGS)}", file=sys.stderr)
+            print(f"Error: no matching game — {args.games}", file=sys.stderr)
+            print(f"Available: {', '.join(c['name'] for c in GAME_CONFIGS)}", file=sys.stderr)
             sys.exit(1)
     else:
         targets = GAME_CONFIGS
 
-    print(f"[fetch_game_reference] {len(targets)}개 게임 수집 시작 (소스: Fandom Wiki)")
-    print(f"  저장 위치 → {output_dir}")
+    print(f"[fetch_game_reference] Starting collection for {len(targets)} games (source: Fandom Wiki)")
+    print(f"  Output location → {output_dir}")
 
     success = 0
     skipped = 0
@@ -401,7 +401,7 @@ def main() -> None:
         out_path  = os.path.join(output_dir, f"[게임] {safe_name}.md")
 
         if os.path.exists(out_path) and not args.force:
-            print(f"  ⏭  {name} — 이미 존재 (--force로 덮어쓰기)")
+            print(f"  ⏭  {name} — already exists (use --force to overwrite)")
             skipped += 1
             continue
 
@@ -409,7 +409,7 @@ def main() -> None:
         sections = collect_game_pages(cfg, verbose=args.verbose)
 
         if not sections:
-            print(f"  ✗  {name} — 수집된 데이터 없음")
+            print(f"  ✗  {name} — no data collected")
             failed += 1
             continue
 
@@ -418,13 +418,13 @@ def main() -> None:
             f.write(md)
 
         total_chars = sum(len(v) for v in sections.values())
-        print(f"  ✓  {name} — {len(sections)}개 섹션, {total_chars:,}자")
+        print(f"  ✓  {name} — {len(sections)} sections, {total_chars:,} chars")
         success += 1
         time.sleep(0.5)
 
-    print(f"\n완료: {success}개 저장, {skipped}개 건너뜀, {failed}개 실패")
+    print(f"\nDone: {success} saved, {skipped} skipped, {failed} failed")
 
-    # 인덱스 항상 재생성
+    # Always regenerate the index
     build_index(output_dir, vault_path, collected)
 
 

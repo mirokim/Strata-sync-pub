@@ -1,12 +1,12 @@
 /**
- * useCronExecutor.ts — Main process 의 cron 실행 요청을 수신해 렌더러 측 함수 실행
+ * useCronExecutor.ts — Receives cron execution requests from the main process and runs renderer-side functions
  *
- * App.tsx 에서 한 번만 마운트.
- * 일일 실행: edit-agent → vault-reload → vector-rebuild (main 이 순차 체인)
+ * Mounted exactly once in App.tsx.
+ * Daily run: edit-agent → vault-reload → vector-rebuild (main chains them sequentially)
  *
- * 이벤트 구독:
- *   cron:state-update → 전체 상태/logs/runs 를 스토어로 반영
- *   cron:log-append   → 라이브 로그 엔트리 1건 추가
+ * Event subscriptions:
+ *   cron:state-update → pushes the full state/logs/runs into the store
+ *   cron:log-append   → appends a single live log entry
  */
 import { useEffect, useRef } from 'react'
 import { useVaultLoader } from '@/hooks/useVaultLoader'
@@ -22,18 +22,18 @@ export function useCronExecutor() {
   const { loadVault, loadVaultCached } = useVaultLoader()
   const { fetchState, refreshLogFiles } = useCronStore()
 
-  // H11. stale closure 방지 — 핸들러는 최신 ref 사용
+  // H11. Prevent stale closures — handlers use the latest ref
   const loadVaultCachedRef = useRef(loadVaultCached)
   loadVaultCachedRef.current = loadVaultCached
 
   useEffect(() => {
     if (!window.cronAPI) return
 
-    // 초기 1회 풀 state + 이력 파일 목록 로드
+    // Initial one-time load of the full state + history file list
     const initTimer = setTimeout(() => { fetchState(); refreshLogFiles() }, 1500)
     const cleanups: (() => void)[] = []
 
-    // 전체 상태 업데이트: jobs/logs/runs 재주입
+    // Full state update: re-inject jobs/logs/runs
     cleanups.push(window.cronAPI.onStateUpdate((data: Record<string, unknown>) => {
       const state = useCronStore.getState()
       const jobs = data.jobs as Record<string, CronJob> | undefined
@@ -44,7 +44,7 @@ export function useCronExecutor() {
       if (runs) state.setRuns(runs)
     }))
 
-    // 라이브 로그 엔트리 1건 추가
+    // Append a single live log entry
     cleanups.push(window.cronAPI.onLogAppend((entry: Record<string, unknown>) => {
       useCronStore.getState().appendLog(entry as unknown as CronLogEntry)
     }))
@@ -55,21 +55,21 @@ export function useCronExecutor() {
         const vaultPath = useVaultStore.getState().vaultPath
         const { editAgentConfig } = useSettingsStore.getState()
         const apiKey = getApiKey('anthropic')
-        if (!vaultPath) throw new Error('볼트 경로 없음')
-        if (!apiKey) throw new Error('Anthropic API 키 미설정')
+        if (!vaultPath) throw new Error('No vault path')
+        if (!apiKey) throw new Error('Anthropic API key not configured')
         if (!editAgentConfig.refinementManual?.trim()) {
-          throw new Error('정제 매뉴얼 미설정 — 편집 에이전트 탭에서 매뉴얼을 설정하세요')
+          throw new Error('Refinement manual not configured — set it up in the Edit Agent tab')
         }
 
-        logger.debug('[CronExecutor] edit-agent 시작', { model: editAgentConfig.modelId, runId })
+        logger.debug('[CronExecutor] edit-agent started', { model: editAgentConfig.modelId, runId })
         await runEditAgentCycle({ cronRunId: runId })
-        logger.debug('[CronExecutor] edit-agent 완료')
+        logger.debug('[CronExecutor] edit-agent finished')
         window.cronAPI!.sendResult(requestId, { ok: true })
       } catch (e) {
         const msg = (e as Error).message
-        logger.error('[CronExecutor] edit-agent 실패:', msg)
+        logger.error('[CronExecutor] edit-agent failed:', msg)
         if (runId) {
-          window.cronAPI!.appendLog('edit-agent', 'error', `실패: ${msg}`, { runId }).catch(() => {})
+          window.cronAPI!.appendLog('edit-agent', 'error', `Failed: ${msg}`, { runId }).catch(() => {})
         }
         window.cronAPI!.sendResult(requestId, { error: msg })
       }
@@ -83,7 +83,7 @@ export function useCronExecutor() {
         window.cronAPI!.sendResult(requestId, { ok: true })
       } catch (e) {
         const msg = (e as Error).message
-        if (runId) window.cronAPI!.appendLog('vault-reload', 'error', `실패: ${msg}`, { runId }).catch(() => {})
+        if (runId) window.cronAPI!.appendLog('vault-reload', 'error', `Failed: ${msg}`, { runId }).catch(() => {})
         window.cronAPI!.sendResult(requestId, { error: msg })
       }
     }))
@@ -99,14 +99,14 @@ export function useCronExecutor() {
         }
         if (runId) {
           window.cronAPI!.appendLog(
-            'vector-rebuild', 'info', `벡터 인덱스 빌드 완료 (${docs?.length ?? 0}건)`,
+            'vector-rebuild', 'info', `Vector index build complete (${docs?.length ?? 0} docs)`,
             { runId, fileCount: docs?.length ?? 0 },
           ).catch(() => {})
         }
         window.cronAPI!.sendResult(requestId, { ok: true })
       } catch (e) {
         const msg = (e as Error).message
-        if (runId) window.cronAPI!.appendLog('vector-rebuild', 'error', `실패: ${msg}`, { runId }).catch(() => {})
+        if (runId) window.cronAPI!.appendLog('vector-rebuild', 'error', `Failed: ${msg}`, { runId }).catch(() => {})
         window.cronAPI!.sendResult(requestId, { error: msg })
       }
     }))

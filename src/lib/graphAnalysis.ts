@@ -1,20 +1,20 @@
 /**
  * graphAnalysis.ts
  *
- * 여섯 가지 분석 도구를 제공합니다:
- *   A. TfIdfIndex      — 코사인 유사도 기반 문서 검색 + 묵시적 연결 발견
- *   B. computePageRank — 연결 중요도 기반 문서 순위 (인기 허브 감지)
- *   C. detectClusters  — Union-Find 연결 컴포넌트 (주제 클러스터 감지)
- *   D. detectBridgeNodes — 여러 클러스터를 연결하는 브릿지 노드 탐지
- *   E. getClusterTopics  — 클러스터별 TF-IDF 상위 키워드 추출
- *   F. findImplicitLinks — WikiLink 없이 의미적으로 유사한 숨겨진 연결 발견
+ * Provides six analysis tools:
+ *   A. TfIdfIndex      — cosine-similarity document search + implicit connection discovery
+ *   B. computePageRank — document ranking by link importance (popular hub detection)
+ *   C. detectClusters  — Union-Find connected components (topic cluster detection)
+ *   D. detectBridgeNodes — detect bridge nodes connecting multiple clusters
+ *   E. getClusterTopics  — extract top TF-IDF keywords per cluster
+ *   F. findImplicitLinks — discover hidden semantically similar connections without WikiLinks
  */
 
 import type { LoadedDocument } from '@/types'
 import { logger } from '@/lib/logger'
 import { expandTerms, SYNONYM_MAP } from '@/lib/synonyms'
 
-// ── 공유 토크나이저 ──────────────────────────────────────────────────────────
+// ── Shared tokenizer ─────────────────────────────────────────────────────────
 
 const KO_SUFFIXES = [
   '이라는', '이라고', '에서는', '에게서', '한테서', '으로서', '으로써', '으로는',
@@ -30,24 +30,24 @@ const _stemCache = new Map<string, string[]>()
 const _stemPrimaryCache = new Map<string, string[]>()
 
 /**
- * 2-gram 서브토큰의 BM25 가산 가중치 (원본 term = 1.0).
+ * BM25 additive weight for 2-gram subtokens (original term = 1.0).
  *
- * tokenize()는 3음절 이상 한글 토큰을 sliding 2-gram 으로 분해해 원본과 함께
- * 인덱스·쿼리 양쪽에 넣는다. 이를 그대로 합산하면 다음절 고유명사가 구조적으로
- * 과대평가된다: "캐릭터G" → 캐릭터G/다이/이잔 3개 term 이 모두 가산돼 개념 1개가
- * 3배가 되는데, 2음절 "루모"·"에녹"은 1배뿐이다. "세계관" → "계관"(255문서)
- * 같은 무의미한 서브토큰도 원본과 동급으로 취급된다.
- * → search() 는 서브토큰을 이 가중치로 감쇠 가산하고, 커버리지 계산에서는
- *   분모·분자 양쪽에서 제외한다.
+ * tokenize() breaks Korean tokens of 3+ syllables into sliding 2-grams and puts them
+ * alongside the original into both the index and the query. Summing them as-is structurally
+ * over-weights multi-syllable proper nouns: "캐릭터G" → 캐릭터G/다이/이잔, 3 terms all added so one concept
+ * counts 3x, while 2-syllable "루모"/"에녹" count only 1x. Meaningless subtokens like
+ * "세계관" → "계관" (255 docs) are also treated on par with the original.
+ * → search() adds subtokens attenuated by this weight, and excludes them from both the
+ *   numerator and denominator of the coverage calculation.
  *
- * 서브토큰을 별도 네임스페이스(접두사)로 분리하지 않고 term 공간을 공유하는 이유:
- * graphRAG 의 directVaultSearch / rerank 가 tokenize() 결과로 substring 매칭을
- * 수행하고 `terms.length`·`queryStems.size` 로 나누기 때문에, 접두사를 붙이면
- * 매칭될 수 없는 토큰이 분모에 들어가 그쪽 커버리지 점수가 일괄 축소된다.
+ * Why subtokens share the term space instead of a separate namespace (prefix):
+ * graphRAG's directVaultSearch / rerank do substring matching on tokenize() output and
+ * divide by `terms.length` / `queryStems.size`, so adding a prefix would put unmatchable
+ * tokens into the denominator and uniformly shrink those coverage scores.
  */
 export const SUBTOKEN_WEIGHT = 0.3
 
-/** 한글 음절(가~힣)만 추출 */
+/** Extract only Hangul syllables (가~힣) */
 function koSyllables(s: string): string[] {
   const out: string[] = []
   for (let i = 0; i < s.length; i++) {
@@ -57,7 +57,7 @@ function koSyllables(s: string): string[] {
   return out
 }
 
-/** 조사를 제거한 어간까지 (2-gram 서브토큰 제외) */
+/** Up to the particle-stripped stem (excluding 2-gram subtokens) */
 function stemPrimary(token: string): string[] {
   const cached = _stemPrimaryCache.get(token)
   if (cached) return cached
@@ -72,7 +72,7 @@ function stemPrimary(token: string): string[] {
   return results
 }
 
-/** 어간이 3음절 이상일 때의 sliding 2-gram 서브토큰 ("전투시스템" → 전투/시스/스템) */
+/** Sliding 2-gram subtokens when the stem has 3+ syllables ("전투시스템" → 전투/시스/스템) */
 function subtokensOf(token: string): string[] {
   const primary = stemPrimary(token)
   const syl = koSyllables(primary[primary.length - 1])
@@ -90,7 +90,7 @@ function stemKorean(token: string): string[] {
   return out
 }
 
-/** 한국어 숫자+단위 분리: "28일" → "28 일" (파일명 "[2026.01.28]"의 "28"과 매칭되도록) */
+/** Korean number+unit separation: "28일" → "28 일" (so it matches "28" in the filename "[2026.01.28]") */
 function normalizeForTokenize(text: string): string {
   return text.replace(/(\d+)(년|월|일|주|시간|시|분|초|개|명|번|회|차)/g, '$1 $2')
 }
@@ -102,7 +102,7 @@ function splitRawTokens(normalized: string): string[] {
     .filter(t => t.length > 1 || t in SYNONYM_MAP)
 }
 
-/** 날짜 패딩: 1자리 숫자+월/일 → 0-패딩 토큰 복원 ("1월" → "01") */
+/** Date padding: single-digit number + 월/일 → restore zero-padded token ("1월" → "01") */
 function collectDatePadTokens(normalized: string, out: (t: string) => void): void {
   const dateUnitRe = /(\d{1,2})\s*(월|일)/g
   let m: RegExpExecArray | null
@@ -128,11 +128,11 @@ export function tokenize(text: string): string[] {
 }
 
 /**
- * 쿼리 전용 토큰화 — term → BM25 가산 가중치 맵을 반환합니다.
+ * Query-only tokenization — returns a term → BM25 additive weight map.
  *
- * 원본 토큰·조사 제거 어간·날짜 패딩 토큰은 1.0,
- * 3음절 이상 토큰에서 파생된 2-gram 서브토큰은 SUBTOKEN_WEIGHT (0.3).
- * 서브토큰이 동시에 원본 토큰이기도 하면 1.0 이 우선한다.
+ * Original tokens, particle-stripped stems and date-padded tokens get 1.0;
+ * 2-gram subtokens derived from 3+ syllable tokens get SUBTOKEN_WEIGHT (0.3).
+ * If a subtoken is also an original token, 1.0 takes precedence.
  */
 export function tokenizeQueryWeighted(query: string): Map<string, number> {
   const normalized = normalizeForTokenize(query)
@@ -152,7 +152,7 @@ export function tokenizeQueryWeighted(query: string): Map<string, number> {
   return out
 }
 
-// ── A. BM25 Index (TF-IDF → BM25 전환) ──────────────────────────────────────
+// ── A. BM25 Index (TF-IDF → BM25 migration) ─────────────────────────────────
 
 export interface TfIdfResult {
   docId: string
@@ -162,31 +162,31 @@ export interface TfIdfResult {
 }
 
 /**
- * 파일명에서 콘텐츠 작성일을 추출 (ms since epoch).
- * 패턴: [2023_05_02], 20250723, _250328, _260106 등.
- * 매칭 실패 시 0.
+ * Extract the content creation date from a filename (ms since epoch).
+ * Patterns: [2023_05_02], 20250723, _250328, _260106, etc.
+ * Returns 0 when nothing matches.
  */
 export function parseFilenameDate(filename: string): number {
-  const now = Date.now() + 30 * 86_400_000  // 30일 여유 (미래 예약 문서 허용)
-  // 경계: 단어 경계 또는 비숫자(괄호·밑줄·공백·하이픈 등)
-  const B = '(?:^|[^\\d])'   // 앞 경계
-  const A = '(?:[^\\d]|$)'   // 뒤 경계
+  const now = Date.now() + 30 * 86_400_000  // 30-day slack (allows future-scheduled documents)
+  // Boundary: word boundary or non-digit (brackets, underscores, spaces, hyphens, etc.)
+  const B = '(?:^|[^\\d])'   // leading boundary
+  const A = '(?:[^\\d]|$)'   // trailing boundary
 
-  // YYYY_MM_DD 또는 YYYY-MM-DD (밑줄/하이픈 구분, 대괄호 유무 무관)
+  // YYYY_MM_DD or YYYY-MM-DD (underscore/hyphen separated, with or without brackets)
   let m = filename.match(new RegExp(`${B}(20[0-3]\\d)[_\\-](0[1-9]|1[0-2])[_\\-](0[1-9]|[12]\\d|3[01])${A}`))
   if (m) {
     const ms = Date.parse(`${m[1]}-${m[2]}-${m[3]}`)
     if (!isNaN(ms) && ms <= now) return ms
   }
 
-  // YYYYMMDD (8자리 연속) — 연도 2000~2039 제한
+  // YYYYMMDD (8 consecutive digits) — year limited to 2000~2039
   m = filename.match(new RegExp(`${B}(20[0-3]\\d)(0[1-9]|1[0-2])(0[1-9]|[12]\\d|3[01])${A}`))
   if (m) {
     const ms = Date.parse(`${m[1]}-${m[2]}-${m[3]}`)
     if (!isNaN(ms) && ms <= now) return ms
   }
 
-  // YY_MM_DD (밑줄/하이픈 구분, 25_03_28 등)
+  // YY_MM_DD (underscore/hyphen separated, e.g. 25_03_28)
   m = filename.match(new RegExp(`${B}(\\d{2})[_\\-](0[1-9]|1[0-2])[_\\-](0[1-9]|[12]\\d|3[01])${A}`))
   if (m) {
     const yy = parseInt(m[1], 10)
@@ -195,7 +195,7 @@ export function parseFilenameDate(filename: string): number {
     if (!isNaN(ms) && ms <= now) return ms
   }
 
-  // YYMMDD (6자리, 260106 등)
+  // YYMMDD (6 digits, e.g. 260106)
   m = filename.match(new RegExp(`${B}(\\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\\d|3[01])${A}`))
   if (m) {
     const yy = parseInt(m[1], 10)
@@ -207,7 +207,7 @@ export function parseFilenameDate(filename: string): number {
   return 0
 }
 
-/** 문서의 콘텐츠 작성일 추출 (파일명 > frontmatter > mtime > 0) */
+/** Extract the document's content date (filename > frontmatter > mtime > 0) */
 export function getContentDate(doc: LoadedDocument): number {
   const fromFilename = parseFilenameDate(doc.filename)
   if (fromFilename > 0) return fromFilename
@@ -223,10 +223,10 @@ interface BM25Doc {
   docId: string
   filename: string
   speaker: string
-  termFreqs: Map<string, number>  // 원시 용어 빈도
-  docLen: number                   // 문서 총 토큰 수
-  contentDate: number              // 콘텐츠 작성일 (ms), 0 = 미상
-  bm25Vec: Map<string, number>    // 정규화 BM25 벡터 (묵시적 링크 유사도용)
+  termFreqs: Map<string, number>  // raw term frequencies
+  docLen: number                   // total token count of the document
+  contentDate: number              // content date (ms), 0 = unknown
+  bm25Vec: Map<string, number>    // normalized BM25 vector (for implicit link similarity)
   bm25Norm: number
 }
 
@@ -238,20 +238,20 @@ export interface ImplicitLink {
   similarity: number
 }
 
-/** BM25 파라미터 */
-const BM25_K1 = 1.5   // 용어 포화 계수 — 빈도 증가의 한계 수익 조절
-const BM25_B  = 0.75  // 문서 길이 정규화 계수
+/** BM25 parameters */
+const BM25_K1 = 1.5   // term saturation coefficient — controls diminishing returns of frequency
+const BM25_B  = 0.75  // document length normalization coefficient
 
-/** 최신 문서 가산 상한 (mcp/src/state.ts 와 동일) */
+/** Max boost for recent documents (same as mcp/src/state.ts) */
 const RECENCY_MAX_BOOST = 0.1
-/** 최신성 지수 감쇠 상수 (일) */
+/** Recency exponential decay constant (days) */
 const RECENCY_DECAY_DAYS = 180
 
 /**
- * IndexedDB 캐시 스키마 버전 — 포맷 변경 시 이 값만 올리면 캐시 자동 무효화.
+ * IndexedDB cache schema version — bumping this value on a format change auto-invalidates the cache.
  *
- * v8: (a) allText 에서 rawContent 제거 (본문 이중 계수 해소 → 모든 tf/docLen/idf 변경)
- *     (b) implicitLinks 를 캐시에 동봉 (캐시 히트 시 O(N²) 재계산 제거)
+ * v8: (a) Removed rawContent from allText (fixes double-counting the body → all tf/docLen/idf change)
+ *     (b) Bundled implicitLinks in the cache (removes O(N²) recomputation on cache hit)
  */
 export const TFIDF_SCHEMA_VERSION = 9
 
@@ -261,8 +261,8 @@ export interface SerializedTfIdf {
   idf: [string, number][]
   avgdl: number
   /**
-   * 사전 계산된 묵시적 링크 (O(N²) 재계산 회피).
-   * 지문(fingerprint)이 같으면 문서·WikiLink 도 같으므로 그대로 재사용 가능.
+   * Precomputed implicit links (avoids O(N²) recomputation).
+   * If the fingerprint matches, documents and WikiLinks are the same too, so they can be reused as-is.
    */
   implicitLinks?: ImplicitLink[]
   docs: {
@@ -288,7 +288,7 @@ export class TfIdfIndex {
   get isBuilt() { return this.built }
   get docCount() { return this.docs.length }
 
-  /** Worker에서 사전 계산한 묵시적 링크를 주입 (캐시 웜업) */
+  /** Inject implicit links precomputed in the Worker (cache warm-up) */
   setImplicitLinks(links: ImplicitLink[], adjacency: Map<string, string[]>): void {
     this._implicitLinks = links
     this._implicitAdjRef = adjacency
@@ -329,7 +329,7 @@ export class TfIdfIndex {
     this._implicitLinks = null
     this._implicitAdjRef = null
     this.built = true
-    logger.debug(`[graphAnalysis] BM25 인덱스 캐시 복원: ${this.docs.length}개 문서`)
+    logger.debug(`[graphAnalysis] BM25 index restored from cache: ${this.docs.length} docs`)
   }
 
   build(loadedDocuments: LoadedDocument[]): void {
@@ -343,15 +343,15 @@ export class TfIdfIndex {
     const docFreq = new Map<string, number>()
 
     for (const doc of loadedDocuments) {
-      if ((doc as any).graphWeight === 'skip') continue   // skip 문서는 BM25 인덱스 제외
-      // rawContent 는 sections 의 원본이므로 함께 넣으면 본문이 두 번 계수된다.
-      // (모든 tf 2배 → lenNorm 왜곡, 파일명·태그·speaker 의 상대 가중치가 절반으로 희석,
-      //  YAML 프론트매터의 source URL·related 파일명 목록이 본문 term 으로 유입)
+      if ((doc as any).graphWeight === 'skip') continue   // skip docs are excluded from the BM25 index
+      // rawContent is the source of sections, so including it too counts the body twice.
+      // (All tf doubled → lenNorm distorted, relative weight of filename/tags/speaker diluted by half,
+      //  source URL and related filename list from the YAML frontmatter leak in as body terms)
       const allText = [
         doc.filename.replace(/\.md$/i, ''),
         doc.title ?? '',
-        // source 에는 Jira 키가 들어 있다 (…/browse/SGEATF-160). rawContent 를 통째로
-        // 넣으면 본문이 두 번 세어지므로, 필요한 프론트매터 필드만 골라 넣는다.
+        // source contains the Jira key (…/browse/SGEATF-160). Putting in rawContent wholesale
+        // would count the body twice, so pick only the frontmatter fields we need.
         doc.source ?? '',
         doc.tags?.join(' ') ?? '',
         doc.speaker ?? '',
@@ -371,7 +371,7 @@ export class TfIdfIndex {
       }
     }
 
-    const N = docLens.size  // skip 필터된 문서 수 기준
+    const N = docLens.size  // based on the count of docs after the skip filter
     const totalLen = [...docLens.values()].reduce((a, b) => a + b, 0)
     this.avgdl = N > 0 ? totalLen / N : 1
 
@@ -380,9 +380,9 @@ export class TfIdfIndex {
       this.idf.set(term, Math.log((N - df + 0.5) / (df + 0.5) + 1))
     }
 
-    // BM25 가중치 벡터 + L2 norm (묵시적 링크 유사도용)
+    // BM25 weight vector + L2 norm (for implicit link similarity)
     for (const doc of loadedDocuments) {
-      if ((doc as any).graphWeight === 'skip') continue   // skip 문서는 벡터도 제외
+      if ((doc as any).graphWeight === 'skip') continue   // skip docs are excluded from vectors too
       const termFreq = rawTermFreqs.get(doc.id)!
       const docLen = docLens.get(doc.id)!
       const lenNorm = 1 - BM25_B + BM25_B * (docLen / this.avgdl)
@@ -412,27 +412,27 @@ export class TfIdfIndex {
     this._implicitLinks = null
     this._implicitAdjRef = null
     this.built = true
-    logger.debug(`[graphAnalysis] BM25 인덱스 빌드 완료: ${this.docs.length}개 문서, avgdl=${this.avgdl.toFixed(1)}`)
+    logger.debug(`[graphAnalysis] BM25 index built: ${this.docs.length} docs, avgdl=${this.avgdl.toFixed(1)}`)
   }
 
   /**
-   * 단일 문서 증분 업데이트 — 전체 재빌드 없이 한 파일만 교체.
-   * 기존 용어의 IDF는 유지(근사치)하되, **신규 용어는 df를 실측해 this.idf에 등록**한다.
-   * (등록하지 않으면 search() 의 `idf.get(term) ?? 0; if (idfVal <= 0) continue` 때문에
-   *  방금 저장한 문서의 새 고유명사로 검색하면 0건이 나온다.)
+   * Single-document incremental update — replaces one file without a full rebuild.
+   * IDF of existing terms is kept (approximation), but **new terms get their df measured and registered in this.idf**.
+   * (Without registering, `idf.get(term) ?? 0; if (idfVal <= 0) continue` in search() means
+   *  searching for a new proper noun from the just-saved document returns 0 results.)
    */
   updateDoc(doc: LoadedDocument): void {
     if (!this.built) return
 
-    // 기존 문서 제거
+    // Remove the existing document
     const existingIdx = this.docs.findIndex(d => d.docId === doc.id)
     if (existingIdx !== -1) this.docs.splice(existingIdx, 1)
 
-    // 새 문서 토큰화 (build()와 동일하게 rawContent 제외 — 본문 이중 계수 방지)
+    // Tokenize the new document (excluding rawContent, same as build() — avoids double-counting the body)
     const allText = [
       doc.filename.replace(/\.md$/i, ''),
       doc.title ?? '',
-      doc.source ?? '',   // Jira 키 (…/browse/SGEATF-160)
+      doc.source ?? '',   // Jira key (…/browse/SGEATF-160)
       doc.tags?.join(' ') ?? '',
       doc.speaker ?? '',
       ...doc.sections.map(s => `${s.heading} ${s.body}`),
@@ -446,14 +446,14 @@ export class TfIdfIndex {
     const N = this.docs.length + 1
     this.avgdl = totalLen / N
 
-    // ── 신규 용어 IDF 등록 ────────────────────────────────────────────────
-    // 기존 인덱스에 없던 term 만 모아 나머지 문서에서 df 를 실측한다.
+    // ── Register IDF for new terms ────────────────────────────────────────
+    // Collect only terms absent from the existing index and measure their df across the other docs.
     const newTerms: string[] = []
     for (const term of termFreq.keys()) {
       if (!this.idf.has(term)) newTerms.push(term)
     }
     if (newTerms.length > 0) {
-      const newDf = new Int32Array(newTerms.length).fill(1)  // 이 문서 자신 포함
+      const newDf = new Int32Array(newTerms.length).fill(1)  // includes this document itself
       for (const other of this.docs) {
         const tf = other.termFreqs
         for (let i = 0; i < newTerms.length; i++) {
@@ -466,7 +466,7 @@ export class TfIdfIndex {
       }
     }
 
-    // BM25 벡터 계산 (기존 용어는 기존 IDF 재사용)
+    // Compute BM25 vector (existing terms reuse existing IDF)
     const lenNorm = 1 - BM25_B + BM25_B * (docLen / this.avgdl)
     const bm25Vec = new Map<string, number>()
     let normSq = 0
@@ -494,19 +494,19 @@ export class TfIdfIndex {
   search(query: string, topN: number = 8): TfIdfResult[] {
     if (!this.built || this.docs.length === 0) return []
 
-    // 쿼리 토큰 + 서브토큰 가중치 (서브토큰은 0.3 으로 감쇠 가산)
+    // Query tokens + subtoken weights (subtokens are added attenuated to 0.3)
     const baseWeights = tokenizeQueryWeighted(query)
     if (baseWeights.size === 0) return []
 
-    // ── 개념(concept) 그룹 ────────────────────────────────────────────────
-    // 원본 쿼리 term 1개 = 개념 1개. 그 term 의 동의어 확장은 **같은 개념**이다.
-    // 커버리지 분모를 확장 후 term 수로 잡으면 동의어를 늘릴수록 정확 매칭이
-    // 손해를 본다 ("사운드 밸런스" → 6 term 이 15 term 으로 확장되어
-    //  정확히 담은 문서는 6/15=0.40, 밸런스가 없는 사운드 용어집은 7/15=0.47 로 역전).
-    // 서브토큰은 개념이 아니므로 분모·분자 모두에서 제외한다.
+    // ── Concept groups ────────────────────────────────────────────────────
+    // 1 original query term = 1 concept. Its synonym expansions are the **same concept**.
+    // If the coverage denominator were the post-expansion term count, exact matches would
+    // lose ground as synonyms grow ("사운드 밸런스" → 6 terms expand to 15, so a document
+    //  containing it exactly scores 6/15=0.40 while a sound glossary without 밸런스 gets 7/15=0.47 and overtakes it).
+    // Subtokens are not concepts, so they are excluded from both numerator and denominator.
     const conceptGroups: string[][] = []
     for (const [t, w] of baseWeights) {
-      if (w < 1) continue   // 서브토큰
+      if (w < 1) continue   // subtoken
       conceptGroups.push(expandTerms([t]))
     }
     const termConcept = new Map<string, number>()
@@ -514,15 +514,15 @@ export class TfIdfIndex {
       for (const t of group) if (!termConcept.has(t)) termConcept.set(t, ci)
     })
 
-    // 채점 대상 term 전체 (동의어 확장 + 날짜 조합 토큰 포함)
+    // All terms to be scored (including synonym expansions + date combination tokens)
     const allTerms = new Set(expandTerms([...baseWeights.keys()]))
 
-    // 유효 term 사전 계산 — idf 조회를 문서 루프 밖으로 뺀다
+    // Precompute valid terms — moves idf lookups out of the document loop
     const qTerms: string[] = []
     const qIdf: number[] = []
     const qWeight: number[] = []
     const qConcept: number[] = []
-    // 개념별 최대 기여도 (절대 스케일 정규화 분모)
+    // Max contribution per concept (absolute-scale normalization denominator)
     const conceptMaxIdf = new Float64Array(Math.max(1, conceptGroups.length))
     let ungroupedMax = 0
     let subMax = 0
@@ -530,7 +530,7 @@ export class TfIdfIndex {
     for (const term of allTerms) {
       const idfVal = this.idf.get(term) ?? 0
       if (idfVal <= 0) continue
-      // 동의어로 확장된 term 은 원본 term 과 동일한 가중치(1)를 갖는다
+      // Synonym-expanded terms get the same weight (1) as the original term
       const weight = baseWeights.get(term) ?? 1
       const isSub = weight < 1
       const ci = isSub ? -1 : (termConcept.get(term) ?? -1)
@@ -544,10 +544,10 @@ export class TfIdfIndex {
     }
     if (qTerms.length === 0) return []
 
-    // ── 빈 개념 압축 ──────────────────────────────────────────────────────
-    // 인덱스에 존재하지 않는 term 만으로 이뤄진 개념(조사가 붙은 변형 "루모와",
-    // "캐릭터G의" 등)은 어떤 문서도 매칭할 수 없다. 커버리지 분모에 남겨두면
-    // 모든 문서가 영구히 감점된다.
+    // ── Compact empty concepts ────────────────────────────────────────────
+    // A concept made only of terms absent from the index (particle-suffixed variants like
+    // "루모와", "캐릭터G의") can never match any document. Leaving it in the coverage
+    // denominator permanently penalizes every document.
     const conceptRemap = new Int32Array(Math.max(1, conceptGroups.length)).fill(-1)
     let conceptCount = 0
     for (let i = 0; i < conceptGroups.length; i++) {
@@ -557,14 +557,14 @@ export class TfIdfIndex {
       if (qConcept[i] >= 0) qConcept[i] = conceptRemap[qConcept[i]]
     }
 
-    // ── 절대 스케일 정규화 분모 ───────────────────────────────────────────
-    // "각 개념을 가장 강하게 담은 이상적인 문서"의 BM25 상한 = Σ 개념 상한 * (k1+1).
-    // 최고점 문서로 나누는 기존 방식은 쿼리와 무관해도 1위가 항상 1.0 이 되어
-    // 호출자의 minBm25Score / BM25_SCORE_THRESHOLD 가 통과 필터로만 동작했다.
+    // ── Absolute-scale normalization denominator ──────────────────────────
+    // BM25 upper bound of "the ideal document containing every concept most strongly" = Σ concept cap * (k1+1).
+    // The old approach of dividing by the top-scoring document made #1 always 1.0 even when
+    // irrelevant to the query, so the caller's minBm25Score / BM25_SCORE_THRESHOLD only acted as a pass-through filter.
     //
-    // 개념의 상한은 그룹 안에서 가장 정보량이 큰(idf 최대) term 기준.
-    // 개념별로 상한을 강제 clamp 하지는 않는다 — 흔한 head term("사운드")의 idf 로
-    // 조이면 대부분의 문서가 상한에 붙어 순위가 무너진다(실측 확인).
+    // A concept's cap is based on the most informative (max idf) term in its group.
+    // Caps are not force-clamped per concept — tightening to the idf of a common head term ("사운드")
+    // pins most documents to the cap and collapses the ranking (confirmed empirically).
     const conceptCap = new Float64Array(Math.max(1, conceptCount))
     let denom = 0
     for (let i = 0; i < conceptGroups.length; i++) {
@@ -576,13 +576,13 @@ export class TfIdfIndex {
     }
     denom += (ungroupedMax + subMax) * (BM25_K1 + 1)
     if (denom <= 0) {
-      // 개념 term 이 모두 미등록 — 서브토큰만 남은 경우
+      // All concept terms unregistered — only subtokens remain
       for (let i = 0; i < qTerms.length; i++) denom += qWeight[i] * qIdf[i] * (BM25_K1 + 1)
     }
     if (denom <= 0) return []
-    // 최신성 부스트 상한까지 분모에 반영 — clamp 때문에 상위권이 1.0 으로 뭉치지 않도록
+    // Include the max recency boost in the denominator — so the clamp does not bunch top results at 1.0
     denom *= 1 + RECENCY_MAX_BOOST
-    // 문서 인덱스를 스탬프로 쓰는 재사용 버퍼 (문서마다 Set/배열 할당 회피)
+    // Reusable buffers using the document index as a stamp (avoids Set/array allocation per document)
     const conceptMark = new Int32Array(Math.max(1, conceptCount)).fill(-1)
     const conceptScore = new Float64Array(Math.max(1, conceptCount))
     const matchedList = new Int32Array(Math.max(1, conceptCount))
@@ -592,7 +592,7 @@ export class TfIdfIndex {
     for (let di = 0; di < this.docs.length; di++) {
       const doc = this.docs[di]
       const lenNorm = 1 - BM25_B + BM25_B * (doc.docLen / this.avgdl)
-      let rawScore = 0          // 개념에 속하지 않는 term(서브토큰·날짜 조합)의 기여
+      let rawScore = 0          // contribution of terms not belonging to a concept (subtokens, date combinations)
       let matchedConcepts = 0
 
       for (let i = 0; i < qTerms.length; i++) {
@@ -609,9 +609,9 @@ export class TfIdfIndex {
         conceptScore[ci] += contrib
       }
 
-      // 한 개념 안에서 동의어가 여러 개 동시에 매칭돼도 그 개념 상한의 2배를
-      // 넘지 못하게만 제한한다. (완전히 상한으로 조이면 순위가 뭉개지고,
-      // 전혀 제한하지 않으면 상위권이 최종 clamp 에 걸려 1.0 으로 뭉친다)
+      // Even when several synonyms within one concept match at once, only limit it to
+      // at most 2x that concept's cap. (Clamping fully to the cap flattens the ranking;
+      // no limit at all lets top results hit the final clamp and bunch at 1.0)
       for (let k = 0; k < matchedConcepts; k++) {
         const ci = matchedList[k]
         const s = conceptScore[ci]
@@ -621,13 +621,13 @@ export class TfIdfIndex {
 
       if (rawScore <= 0) continue
 
-      // 커버리지 보정: 개념 3개 중 1개만 매칭된 문서는 감점 (coverage^0.5 로 완만하게)
+      // Coverage correction: a document matching only 1 of 3 concepts is penalized (gently, via coverage^0.5)
       const coverage = conceptCount > 1 ? matchedConcepts / conceptCount : 1
       let score = rawScore * Math.sqrt(coverage)
 
-      // 최신성 부스트 — 최대 +10%, 감쇠 180일 (mcp/src/state.ts 와 동일 공식).
-      // contentDate 는 getContentDate() 기준(파일명 날짜 우선)이라
-      // date frontmatter 가 없는 문서(볼트의 27.6%)도 파일명에서 날짜를 얻는다.
+      // Recency boost — max +10%, 180-day decay (same formula as mcp/src/state.ts).
+      // contentDate comes from getContentDate() (filename date first), so documents
+      // without a date frontmatter (27.6% of the vault) still get a date from the filename.
       if (doc.contentDate > 0) {
         const daysOld = (now - doc.contentDate) / 86_400_000
         score *= 1 + RECENCY_MAX_BOOST * Math.exp(-Math.max(0, daysOld) / RECENCY_DECAY_DAYS)
@@ -647,16 +647,16 @@ export class TfIdfIndex {
   }
 
   /**
-   * WikiLink로 연결되지 않은 문서 중 의미적으로 유사한 쌍을 반환합니다.
-   * BM25 가중치 벡터의 코사인 유사도가 threshold 이상인 쌍이 대상입니다.
+   * Returns semantically similar pairs among documents not connected by WikiLinks.
+   * Targets pairs whose BM25 weight vector cosine similarity is at or above threshold.
    *
-   * 전수 O(N²) 비교(문서당 고유 term 수백 개 × 350만 쌍 ≈ 19억 Map 조회)를 피하기 위해
-   *  1. 문서별 상위 가중치(=고-idf) term 만으로 역인덱스를 만들어 **후보 쌍**만 추리고
-   *  2. 후보에 대해서만 정확한 코사인을 계산하며
-   *  3. 전체 쌍을 배열에 모아 정렬하는 대신 크기 제한 top-K 최소 힙을 쓴다.
+   * To avoid an exhaustive O(N²) comparison (hundreds of unique terms per doc × 3.5M pairs ≈ 1.9B Map lookups):
+   *  1. build an inverted index from only each document's top-weighted (= high-idf) terms to narrow down **candidate pairs**,
+   *  2. compute the exact cosine only for candidates, and
+   *  3. use a size-limited top-K min-heap instead of collecting all pairs into an array and sorting.
    *
-   * adjacency 참조가 바뀌지 않으면 캐시된 결과를 반환합니다.
-   * (캐시에는 최대 IMPLICIT_HEAP_CAP 개만 보관되므로 그보다 큰 topN 은 잘린다.)
+   * Returns the cached result if the adjacency reference has not changed.
+   * (The cache holds at most IMPLICIT_HEAP_CAP entries, so a larger topN is truncated.)
    */
   findImplicitLinks(
     adjacency: Map<string, string[]>,
@@ -686,7 +686,7 @@ export class TfIdfIndex {
       }
     }
 
-    // ── 1. 문서별 상위 가중치 term 선별 (최소 힙, 전체 정렬 회피) ──────────
+    // ── 1. Select top-weighted terms per document (min-heap, avoids full sort) ──
     const topTerms: string[][] = new Array(n)
     const topWeights: Float64Array[] = new Array(n)
     for (let i = 0; i < n; i++) {
@@ -704,7 +704,7 @@ export class TfIdfIndex {
       topWeights[i] = Float64Array.from(hW)
     }
 
-    // ── 2. 역인덱스 구축 (term → 해당 term 이 상위인 문서들) ───────────────
+    // ── 2. Build inverted index (term → documents where that term is top-ranked) ──
     const postDocs = new Map<string, number[]>()
     const postWeights = new Map<string, number[]>()
     for (let i = 0; i < n; i++) {
@@ -721,9 +721,9 @@ export class TfIdfIndex {
       }
     }
 
-    // ── 3. 후보 쌍 채점 ───────────────────────────────────────────────────
-    const acc = new Float64Array(n)          // 부분 내적 누적 (재사용)
-    const touched = new Int32Array(n)        // 이번 i 에서 건드린 j 목록
+    // ── 3. Score candidate pairs ──────────────────────────────────────────
+    const acc = new Float64Array(n)          // partial dot-product accumulator (reused)
+    const touched = new Int32Array(n)        // list of j touched in this i iteration
     const candCut = threshold * IMPLICIT_CAND_RATIO
     const heapCap = Math.max(topN, IMPLICIT_HEAP_CAP)
     const hLink: ImplicitLink[] = []
@@ -737,7 +737,7 @@ export class TfIdfIndex {
       const ts = topTerms[i], ws = topWeights[i]
       for (let k = 0; k < ts.length; k++) {
         const pd = postDocs.get(ts[k])!
-        // 고빈도(저-idf) term 은 후보 생성에 기여하지 않으면서 비용만 크다
+        // High-frequency (low-idf) terms add cost without contributing to candidate generation
         if (pd.length > IMPLICIT_MAX_POSTING) continue
         const pw = postWeights.get(ts[k])!
         const wi = ws[k]
@@ -756,11 +756,11 @@ export class TfIdfIndex {
         const b = docs[j]
         if (b.bm25Norm === 0) continue
         const normProd = a.bm25Norm * b.bm25Norm
-        // partial 은 실제 내적의 하한 (상위 term 교집합만 반영)
+        // partial is a lower bound of the true dot product (reflects only the top-term intersection)
         if (partial < candCut * normProd) continue
         if (existingLinks.has(i * n + j)) continue
 
-        // 정확 코사인 — 작은 벡터를 순회해 Map 조회 횟수를 줄인다
+        // Exact cosine — iterate the smaller vector to reduce Map lookups
         const small = a.bm25Vec.size <= b.bm25Vec.size ? a.bm25Vec : b.bm25Vec
         const large = small === a.bm25Vec ? b.bm25Vec : a.bm25Vec
         let dot = 0
@@ -792,26 +792,26 @@ export class TfIdfIndex {
     this._implicitLinks = pairs
     this._implicitAdjRef = adjacency
     logger.debug(
-      `[graphAnalysis] 묵시적 연결 top-${pairs.length} 확정 ` +
-      `(docs=${n}, 후보=${candidateCount}, threshold=${threshold})`
+      `[graphAnalysis] Implicit links top-${pairs.length} finalized ` +
+      `(docs=${n}, candidates=${candidateCount}, threshold=${threshold})`
     )
 
     return pairs.slice(0, topN)
   }
 }
 
-// ── 묵시적 링크 탐색 튜닝 상수 ────────────────────────────────────────────────
+// ── Implicit link search tuning constants ─────────────────────────────────────
 
-/** 후보 생성에 쓰는 문서별 상위 가중치 term 수 */
+/** Number of top-weighted terms per document used for candidate generation */
 const IMPLICIT_TOP_TERMS = 64
-/** 이보다 긴 포스팅 리스트(=저-idf 범용어)는 후보 생성에서 제외 */
+/** Posting lists longer than this (= low-idf generic terms) are excluded from candidate generation */
 const IMPLICIT_MAX_POSTING = 600
-/** 부분 내적이 threshold 의 이 비율 이상이면 정확 계산 대상 */
+/** Exact computation is done when the partial dot product is at least this ratio of threshold */
 const IMPLICIT_CAND_RATIO = 0.45
-/** 결과 힙 용량 — 호출자는 topN=4~6 만 쓰므로 여유분만 보관 */
+/** Result heap capacity — callers only use topN=4~6, so keep just some headroom */
 const IMPLICIT_HEAP_CAP = 32
 
-/** 병렬 배열(payload[], key[]) 최소 힙 push */
+/** Parallel-array (payload[], key[]) min-heap push */
 function minHeapPush<T>(items: T[], keys: number[], item: T, key: number): void {
   items.push(item)
   keys.push(key)
@@ -825,7 +825,7 @@ function minHeapPush<T>(items: T[], keys: number[], item: T, key: number): void 
   }
 }
 
-/** 병렬 배열 최소 힙 pop (최솟값 제거) */
+/** Parallel-array min-heap pop (removes the minimum) */
 function minHeapPop<T>(items: T[], keys: number[]): void {
   const last = keys.length - 1
   keys[0] = keys[last]
@@ -846,14 +846,14 @@ function minHeapPop<T>(items: T[], keys: number[]): void {
   }
 }
 
-/** BM25 인덱스 싱글톤 — 볼트 로드 시 build() 호출 필요 */
+/** BM25 index singleton — build() must be called on vault load */
 export const tfidfIndex = new TfIdfIndex()
 
 // ── B. PageRank ───────────────────────────────────────────────────────────────
 
 /**
- * 문서 그래프에서 PageRank를 계산합니다.
- * 많은 문서로부터 참조될수록 높은 순위를 받습니다.
+ * Computes PageRank over the document graph.
+ * Documents referenced by many others rank higher.
  *
  * @returns Map<docId, normalizedRank 0..1>
  */
@@ -866,7 +866,7 @@ export function computePageRank(
   const N = nodes.length
   if (N === 0) return new Map()
 
-  // 역방향 엣지 (in-edges) 사전 계산 — O(N+M) 순회를 위해
+  // Precompute reverse edges (in-edges) — for O(N+M) traversal
   const inEdges = new Map<string, string[]>()
   for (const id of nodes) inEdges.set(id, [])
   for (const [from, neighbors] of adjacency) {
@@ -880,7 +880,7 @@ export function computePageRank(
   for (const id of nodes) rank.set(id, 1 / N)
 
   for (let iter = 0; iter < iterations; iter++) {
-    // 아웃링크 없는 노드의 랭크 합 (dangling nodes)
+    // Sum of ranks of nodes without outlinks (dangling nodes)
     const danglingSum = nodes
       .filter(id => (adjacency.get(id)?.length ?? 0) === 0)
       .reduce((sum, id) => sum + (rank.get(id) ?? 0), 0)
@@ -897,20 +897,20 @@ export function computePageRank(
     for (const [id, r] of newRank) rank.set(id, r)
   }
 
-  // 0..1 정규화
+  // Normalize to 0..1
   const max = Math.max(1e-10, ...rank.values())
   for (const [id, r] of rank) rank.set(id, r / max)
 
   return rank
 }
 
-// ── C. 클러스터 감지 (Union-Find) ─────────────────────────────────────────────
+// ── C. Cluster detection (Union-Find) ────────────────────────────────────────
 
 /**
- * Union-Find로 연결 컴포넌트(클러스터)를 감지합니다.
- * 같은 WikiLink 네트워크로 연결된 문서들은 같은 클러스터 번호를 받습니다.
+ * Detects connected components (clusters) using Union-Find.
+ * Documents connected through the same WikiLink network receive the same cluster number.
  *
- * @returns Map<docId, clusterId> — clusterId 0이 가장 큰 클러스터
+ * @returns Map<docId, clusterId> — clusterId 0 is the largest cluster
  */
 export function detectClusters(
   adjacency: Map<string, string[]>
@@ -932,7 +932,7 @@ export function detectClusters(
     for (const nb of neighbors) union(id, nb)
   }
 
-  // 루트별 그룹화
+  // Group by root
   const groups = new Map<string, string[]>()
   for (const id of adjacency.keys()) {
     const root = find(id)
@@ -940,7 +940,7 @@ export function detectClusters(
     groups.get(root)!.push(id)
   }
 
-  // 클러스터 크기 내림차순 정렬 (0 = 가장 큰 클러스터)
+  // Sort by cluster size descending (0 = largest cluster)
   const sorted = [...groups.values()].sort((a, b) => b.length - a.length)
   const clusterMap = new Map<string, number>()
   sorted.forEach((members, idx) => {
@@ -950,7 +950,7 @@ export function detectClusters(
   return clusterMap
 }
 
-// ── 그래프 메트릭 캐시 ────────────────────────────────────────────────────────
+// ── Graph metrics cache ──────────────────────────────────────────────────────
 
 export interface GraphMetrics {
   pageRank: Map<string, number>
@@ -961,7 +961,7 @@ export interface GraphMetrics {
 let _metricsCache: GraphMetrics | null = null
 let _metricsLinksRef: unknown = null
 
-/** 볼트 교체 시 캐시를 명시적으로 초기화합니다. */
+/** Explicitly clears the cache when the vault is swapped. */
 export function clearMetricsCache(): void {
   _metricsCache = null
   _metricsLinksRef = null
@@ -970,8 +970,8 @@ export function clearMetricsCache(): void {
 }
 
 /**
- * PageRank + 클러스터를 한 번 계산하고 캐시합니다.
- * links 배열 참조가 바뀌면 자동으로 재계산됩니다.
+ * Computes PageRank + clusters once and caches them.
+ * Recomputed automatically when the links array reference changes.
  */
 export function getGraphMetrics(
   adjacency: Map<string, string[]>,
@@ -988,21 +988,21 @@ export function getGraphMetrics(
   return _metricsCache
 }
 
-// ── D. 브릿지 노드 탐지 ───────────────────────────────────────────────────────
+// ── D. Bridge node detection ─────────────────────────────────────────────────
 
 export interface BridgeNode {
   docId: string
-  /** 이 노드가 연결하는 서로 다른 클러스터 수 (자신의 클러스터 포함) */
+  /** Number of distinct clusters this node connects (including its own) */
   clusterCount: number
 }
 
 /**
- * 여러 클러스터에 걸쳐 이웃을 가진 브릿지 노드를 탐지합니다.
+ * Detects bridge nodes that have neighbors across multiple clusters.
  *
- * 브릿지 노드 = 자신과 다른 클러스터에 속한 이웃을 1개 이상 가진 노드.
- * 이런 노드는 주제 영역들을 연결하는 아키텍처 핵심 문서입니다.
+ * Bridge node = a node with at least one neighbor belonging to a different cluster than its own.
+ * Such nodes are architecturally key documents connecting topic areas.
  *
- * @returns clusterCount 내림차순으로 정렬된 배열
+ * @returns array sorted by clusterCount descending
  */
 export function detectBridgeNodes(
   adjacency: Map<string, string[]>,
@@ -1028,9 +1028,9 @@ export function detectBridgeNodes(
   return results.sort((a, b) => b.clusterCount - a.clusterCount)
 }
 
-// ── E. 클러스터 주제 키워드 ──────────────────────────────────────────────────
+// ── E. Cluster topic keywords ────────────────────────────────────────────────
 
-/** 클러스터 토픽 추출 시 제외할 한국어 범용 불용어 */
+/** Generic Korean stopwords excluded from cluster topic extraction */
 const KO_STOPWORDS = new Set([
   '게임', '회의', '문서', '내용', '진행', '확인', '관련', '작업', '기획', '개발',
   '결과', '현재', '이후', '정리', '사항', '대한', '통해', '위해', '가능', '필요',
@@ -1038,18 +1038,18 @@ const KO_STOPWORDS = new Set([
 ])
 
 /**
- * 각 클러스터의 TF-IDF 상위 키워드를 추출합니다.
+ * Extracts the top TF-IDF keywords for each cluster.
  *
- * 전체 볼트 문서에서 IDF(Inverse Document Frequency)를 계산하고,
- * 클러스터 내 TF × IDF 점수로 범용어 대신 클러스터 고유 키워드를 반환합니다.
- * 구조 헤더에 "클러스터 1 [전투/스킬/밸런스]" 형태로 활용됩니다.
+ * Computes IDF (Inverse Document Frequency) over all vault documents and returns
+ * cluster-specific keywords, rather than generic terms, using TF × IDF scores within the cluster.
+ * Used in the structure header in the form "Cluster 1 [combat/skills/balance]".
  *
  * @param clusters  Map<docId, clusterId>
- * @param docs      볼트 문서 배열
- * @param topK      클러스터당 반환할 키워드 수
+ * @param docs      vault document array
+ * @param topK      number of keywords to return per cluster
  * @returns Map<clusterId, topKeywords[]>
  */
-// 클러스터 토픽 캐시 — clusters Map 참조와 topK가 동일하면 재계산 생략
+// Cluster topic cache — skips recomputation when the clusters Map reference and topK are the same
 let _cachedClusterTopicsResult: Map<number, string[]> | null = null
 let _cachedClusterTopicsClusters: Map<string, number> | null = null
 let _cachedClusterTopicsTopK = 0
@@ -1067,7 +1067,7 @@ export function getClusterTopics(
     return _cachedClusterTopicsResult
   }
 
-  // ── 1. 전체 볼트 IDF 계산: 각 토큰이 등장하는 문서 수(DF) ──
+  // ── 1. Compute vault-wide IDF: number of documents each token appears in (DF) ──
   const globalDF = new Map<string, number>()
   const totalDocs = docs.length
 
@@ -1086,7 +1086,7 @@ export function getClusterTopics(
     }
   }
 
-  // ── 2. 클러스터별 텍스트 수집 ──
+  // ── 2. Collect text per cluster ──
   const clusterTexts = new Map<number, string[]>()
 
   for (const doc of docs) {
@@ -1102,7 +1102,7 @@ export function getClusterTopics(
     clusterTexts.get(cId)!.push(text)
   }
 
-  // ── 3. 클러스터별 TF × IDF 점수로 키워드 추출 ──
+  // ── 3. Extract keywords per cluster by TF × IDF score ──
   const result = new Map<number, string[]>()
   for (const [cId, texts] of clusterTexts) {
     const freq = new Map<string, number>()
@@ -1130,31 +1130,31 @@ export function getClusterTopics(
   return result
 }
 
-// ── F. 볼트 인사이트 종합 분석 ───────────────────────────────────────────────
+// ── F. Vault insight analysis ────────────────────────────────────────────────
 
 export interface InsightResult {
-  /** 많은 문서에서 참조되는 허브 문서들 */
+  /** Hub documents referenced by many other documents */
   bridgeNodes: { docId: string; filename: string; inboundCount: number; outboundCount: number }[]
-  /** 인바운드/아웃바운드 링크가 모두 없는 고립 문서 */
+  /** Orphan documents with neither inbound nor outbound links */
   orphanDocs: { docId: string; filename: string }[]
-  /** 여러 문서에서 참조되지만 실제 파일이 없는 주제 (작성 필요) */
+  /** Topics referenced by several documents but with no actual file (needs writing) */
   gapTopics: { topic: string; referenceCount: number }[]
-  /** 연결 컴포넌트 클러스터 요약 */
+  /** Connected-component cluster summary */
   clusters: { size: number; representative: string; clusterIdx: number }[]
 }
 
 /**
- * 볼트 전체를 분석하여 인사이트를 생성합니다.
- * - 브리지 노드: 많이 참조되는 허브 문서
- * - 고립 문서: 링크가 전혀 없는 문서
- * - 빈틈 주제: 여러 곳에서 참조되지만 파일이 없는 [[링크]]
- * - 클러스터: 연결 컴포넌트 요약
+ * Analyzes the whole vault and generates insights.
+ * - Bridge nodes: heavily referenced hub documents
+ * - Orphan documents: documents with no links at all
+ * - Gap topics: [[links]] referenced from several places but with no file
+ * - Clusters: connected-component summary
  */
 export function computeInsights(docs: LoadedDocument[]): InsightResult {
   if (docs.length === 0) return { bridgeNodes: [], orphanDocs: [], gapTopics: [], clusters: [] }
 
   const docIds = new Set(docs.map(d => d.id))
-  // stem → docId 매핑 (파일명 기반 역조회)
+  // stem → docId mapping (filename-based reverse lookup)
   const stemToId = new Map<string, string>()
   for (const doc of docs) {
     const stem = doc.filename.replace(/\.md$/i, '').toLowerCase()
@@ -1256,9 +1256,9 @@ export function computeInsights(docs: LoadedDocument[]): InsightResult {
   return { bridgeNodes, orphanDocs, gapTopics, clusters: clusterList.slice(0, 5) }
 }
 
-// ── G. Co-occurrence 기반 동의어 추출 ────────────────────────────────────────
+// ── G. Co-occurrence-based synonym extraction ────────────────────────────────
 
-/** 범용 불용어 (조사, 접속사, 관사 등) — 동의어 후보에서 제외 */
+/** Generic stopwords (particles, conjunctions, articles, etc.) — excluded from synonym candidates */
 const CO_STOPWORDS = new Set([
   '그리고', '그러나', '하지만', '그래서', '또는', '혹은', '및', '등',
   '있다', '없다', '하다', '되다', '이다', '것이', '수가', '때문',
@@ -1268,18 +1268,18 @@ const CO_STOPWORDS = new Set([
 ])
 
 /**
- * 볼트 문서들에서 섹션 단위 co-occurrence 분석으로 동의어 후보를 추출합니다.
+ * Extracts synonym candidates from vault documents via section-level co-occurrence analysis.
  *
- * 알고리즘:
- *  1. 각 섹션을 토크나이즈하여 고유 용어 집합 추출
- *  2. 같은 섹션에 등장하는 모든 용어 쌍의 공동 출현 빈도 집계
- *  3. PMI(Pointwise Mutual Information) 계산으로 우연적 공동 출현 제거
- *  4. 공동 출현 빈도 >= 3 && PMI >= 임계값인 쌍만 반환
+ * Algorithm:
+ *  1. Tokenize each section and extract its set of unique terms
+ *  2. Count co-occurrence frequency for every term pair appearing in the same section
+ *  3. Compute PMI (Pointwise Mutual Information) to remove coincidental co-occurrences
+ *  4. Return only pairs with co-occurrence count >= 3 && PMI >= threshold
  *
- * @param docs 볼트 문서 배열
- * @param minCoOccurrence 최소 공동 출현 횟수 (기본 3)
- * @param pmiThreshold PMI 최소 임계값 (기본 2.0)
- * @returns Map<term, synonym[]> — 양방향 동의어 쌍
+ * @param docs vault document array
+ * @param minCoOccurrence minimum co-occurrence count (default 3)
+ * @param pmiThreshold minimum PMI threshold (default 2.0)
+ * @returns Map<term, synonym[]> — bidirectional synonym pairs
  */
 export function extractCoOccurrenceSynonyms(
   docs: LoadedDocument[],
@@ -1293,43 +1293,43 @@ export function extractCoOccurrenceSynonyms(
   return extractCoOccurrenceSynonymsFromSections(sectionTexts, minCoOccurrence, pmiThreshold)
 }
 
-/** 섹션당 쌍 생성에 사용할 최대 용어 수 (df 가 낮은 = 변별력 높은 순으로 선택) */
+/** Max terms per section used for pair generation (selected by lowest df = most discriminative) */
 const CO_MAX_TERMS_PER_SECTION = 60
-/** co-occurrence Map 안전 상한 (JS Map 한계는 2^24) */
+/** Safe upper bound for the co-occurrence Map (JS Map limit is 2^24) */
 const CO_MAX_PAIRS = 8_000_000
-/** 용어당 등록할 최대 동의어 수 — expandTerms 폭발 방지 */
+/** Max synonyms to register per term — prevents expandTerms explosion */
 const CO_MAX_SYNONYMS = 3
 
 /**
- * 최소 포함도(containment) — count / min(dfA, dfB).
+ * Minimum containment — count / min(dfA, dfB).
  *
- * PMI 는 저빈도 편향이 심해서 df=10 짜리 두 용어가 3번만 같이 나와도 PMI≈9 가 되어
- * 통과한다. 그 결과는 "동의어"가 아니라 단순 주제 연관어이고, 쿼리 확장에 넣으면
- * 검색 품질이 떨어진다(실측: 무제한 등록 시 "사운드 밸런스" 1위가 관련 없는
- * 문서로 바뀜). 드문 쪽 용어가 등장하는 섹션의 절반 이상에서 함께 등장할 때만
- * 동의어 후보로 인정한다.
+ * PMI has a strong low-frequency bias: two terms with df=10 co-occurring only 3 times get
+ * PMI≈9 and pass. The result is not a "synonym" but a mere topical associate, and adding it
+ * to query expansion degrades search quality (measured: with unlimited registration, the #1 result
+ * for "사운드 밸런스" changed to an unrelated document). Only accept a synonym candidate when the
+ * pair co-occurs in at least half of the sections where the rarer term appears.
  */
 const CO_MIN_CONTAINMENT = 0.5
 
 /**
- * 섹션 텍스트 배열에서 co-occurrence 동의어를 추출합니다.
- * (워커에 문서 전체 대신 섹션 문자열만 전송할 수 있도록 분리된 진입점)
+ * Extracts co-occurrence synonyms from an array of section texts.
+ * (Separate entry point so the worker can receive only section strings instead of whole documents)
  *
- * 기존 구현은 섹션마다 최대 80개 용어의 **전체 쌍**을 문자열 키 Map 에 집계해
- * C(80,2)=3,160 × 섹션 수 ≈ 2,500만 회 연산 후 `RangeError: Map maximum size
- * exceeded` 로 죽었다(결과 0개, 비용은 전액 지불). 개선점:
- *  - df < minCoOccurrence 인 용어는 **쌍 생성 전에** 제거. 3개 미만 섹션에
- *    등장하는 용어는 정의상 임계값을 넘을 수 없는데 전체 쌍의 대부분을 차지한다.
- *  - 용어를 정수 id 로 매핑해 `idA * V + idB` 숫자 키 사용 (문자열 concat 제거).
- *  - 2-gram 서브토큰 제외 (의미 없는 쌍의 주요 발생원).
- *  - Map 크기 상한 도달 시 신규 키만 차단하고 경고 (예외로 죽지 않음).
+ * The previous implementation aggregated **all pairs** of up to 80 terms per section into a
+ * string-keyed Map, and after C(80,2)=3,160 × section count ≈ 25M operations died with
+ * `RangeError: Map maximum size exceeded` (0 results, full cost paid). Improvements:
+ *  - Terms with df < minCoOccurrence are removed **before pair generation**. Terms appearing in
+ *    fewer than 3 sections can by definition never pass the threshold, yet make up most of the pairs.
+ *  - Terms are mapped to integer ids and a numeric key `idA * V + idB` is used (no string concat).
+ *  - 2-gram subtokens are excluded (the main source of meaningless pairs).
+ *  - When the Map size cap is reached, only new keys are blocked and a warning is logged (no fatal exception).
  */
 export function extractCoOccurrenceSynonymsFromSections(
   sectionTexts: string[],
   minCoOccurrence: number = 3,
   pmiThreshold: number = 2.0,
 ): Map<string, string[]> {
-  // ── 1. 섹션별 고유 용어를 플랫 버퍼에 수집 + df(등장 섹션 수) 집계 ──────
+  // ── 1. Collect unique terms per section into a flat buffer + count df (number of sections) ──
   const flat: string[] = []
   const offsets: number[] = [0]
   const df = new Map<string, number>()
@@ -1351,7 +1351,7 @@ export function extractCoOccurrenceSynonymsFromSections(
   const totalSections = offsets.length - 1
   if (totalSections < 3) return new Map()
 
-  // ── 2. df 필터 + 정수 id 매핑 ─────────────────────────────────────────
+  // ── 2. df filter + integer id mapping ─────────────────────────────────
   const termId = new Map<string, number>()
   const idTerm: string[] = []
   for (const [t, d] of df) {
@@ -1364,7 +1364,7 @@ export function extractCoOccurrenceSynonymsFromSections(
   const dfById = new Int32Array(V)
   for (let i = 0; i < V; i++) dfById[i] = df.get(idTerm[i])!
 
-  // ── 3. 공동 출현 빈도 집계 (숫자 키) ──────────────────────────────────
+  // ── 3. Count co-occurrence frequency (numeric keys) ───────────────────
   const coOccurrence = new Map<number, number>()
   const buf: number[] = []
   let truncated = false
@@ -1379,7 +1379,7 @@ export function extractCoOccurrenceSynonymsFromSections(
     if (buf.length < 2) continue
     let ids = buf
     if (ids.length > CO_MAX_TERMS_PER_SECTION) {
-      // df 오름차순 = 변별력 높은 용어 우선
+      // df ascending = most discriminative terms first
       ids = buf.slice().sort((a, b) => dfById[a] - dfById[b]).slice(0, CO_MAX_TERMS_PER_SECTION)
     }
     ids.sort((a, b) => a - b)
@@ -1399,10 +1399,10 @@ export function extractCoOccurrenceSynonymsFromSections(
     }
   }
   if (truncated) {
-    logger.warn(`[coOccurrence] 쌍 상한 ${CO_MAX_PAIRS} 도달 — 일부 쌍이 누락됩니다 (섹션=${totalSections}, 어휘=${V})`)
+    logger.warn(`[coOccurrence] Pair cap ${CO_MAX_PAIRS} reached — some pairs will be dropped (sections=${totalSections}, vocab=${V})`)
   }
 
-  // ── 4. PMI 필터 + 용어당 상위 N개만 등록 ──────────────────────────────
+  // ── 4. PMI filter + register only top N per term ──────────────────────
   const cand = new Map<number, { id: number; pmi: number }[]>()
   const addCand = (a: number, b: number, pmi: number) => {
     let list = cand.get(a)
@@ -1415,7 +1415,7 @@ export function extractCoOccurrenceSynonymsFromSections(
     const a = Math.floor(key / V)
     const b = key - a * V
     const dfA = dfById[a], dfB = dfById[b]
-    // 포함도 필터 — PMI 저빈도 편향으로 들어오는 단순 주제 연관어 제거
+    // Containment filter — removes mere topical associates let in by PMI's low-frequency bias
     if (count < CO_MIN_CONTAINMENT * (dfA < dfB ? dfA : dfB)) continue
     // PMI = log2( P(a,b) / (P(a) * P(b)) )
     const pmi = Math.log2((count * totalSections) / (dfA * dfB))
@@ -1431,8 +1431,8 @@ export function extractCoOccurrenceSynonymsFromSections(
   }
 
   logger.debug(
-    `[coOccurrence] ${result.size}개 용어의 동적 동의어 추출 완료 ` +
-    `(섹션=${totalSections}, 어휘=${V}, 쌍=${coOccurrence.size})`
+    `[coOccurrence] Dynamic synonym extraction complete for ${result.size} terms ` +
+    `(sections=${totalSections}, vocab=${V}, pairs=${coOccurrence.size})`
   )
   return result
 }

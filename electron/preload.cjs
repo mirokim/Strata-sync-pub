@@ -1,16 +1,16 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 // ── electronAPI ────────────────────────────────────────────────────────────────
-// 렌더러가 main으로 단방향 IPC를 보낼 수 있는 허용 채널 목록 (화이트리스트)
+// Allowed channels the renderer may use for one-way IPC to main (whitelist)
 const _ALLOWED_IPC_SEND = new Set(['rag:mirofish:progress'])
 
 contextBridge.exposeInMainWorld('electronAPI', {
   isElectron: true,
   platform: process.platform,
-  /** main 프로세스에 단방향 IPC 전송 — 허용된 채널만 통과 */
+  /** Send one-way IPC to the main process — only allowed channels pass */
   ipcSend: (channel, data) => {
     if (!_ALLOWED_IPC_SEND.has(channel)) {
-      console.warn('[preload] ipcSend: 차단된 채널:', channel)
+      console.warn('[preload] ipcSend: blocked channel:', channel)
       return
     }
     ipcRenderer.send(channel, data)
@@ -45,7 +45,7 @@ contextBridge.exposeInMainWorld('vaultAPI', {
   /** Save a file to the filesystem (used by MD converter and editor) */
   saveFile: (filePath, content) => ipcRenderer.invoke('vault:save-file', filePath, content),
 
-  /** 볼트 전환 시 currentVaultPath를 선제 갱신 (loadVaultCached → vault:save-file 보안 검사용) */
+  /** Proactively update currentVaultPath on vault switch (for the loadVaultCached → vault:save-file security check) */
   setActivePath: (vaultPath) => ipcRenderer.invoke('vault:set-active-path', vaultPath),
 
   /** Rename a file — newFilename is just the filename (no path) */
@@ -168,7 +168,7 @@ contextBridge.exposeInMainWorld('cronAPI', {
     ipcRenderer.on('cron:log-append', listener)
     return () => ipcRenderer.removeListener('cron:log-append', listener)
   },
-  /** @deprecated — onStateUpdate 로 대체, 기존 훅 호환용 별칭 */
+  /** @deprecated — replaced by onStateUpdate, alias kept for existing hook compatibility */
   onJobStatus: (callback) => {
     const listener = (_event, data) => callback(data)
     ipcRenderer.on('cron:state-update', listener)
@@ -196,7 +196,7 @@ async function backendFetch(urlPath, options) {
     const res = await fetch(`${BACKEND_BASE}${urlPath}`, {
       ...options,
       headers: { 'Content-Type': 'application/json', ...(options && options.headers) },
-      signal: controller.signal,  // 항상 고정 — caller가 signal을 넘겨도 타임아웃 abort 보장
+      signal: controller.signal,  // always fixed — guarantees timeout abort even if the caller passes a signal
     })
     if (!res.ok) {
       const text = await res.text().catch(() => String(res.status))
@@ -286,8 +286,8 @@ contextBridge.exposeInMainWorld('ragAPI', {
     try {
       ipcRenderer.send('rag:result', { requestId, results })
     } catch (err) {
-      // structured clone 실패 시 (BigInt, circular refs 등) — fallback: 빈 결과 전달
-      console.error('[preload] sendResult 직렬화 실패:', err)
+      // On structured clone failure (BigInt, circular refs, etc.) — fallback: send empty results
+      console.error('[preload] sendResult serialization failed:', err)
       ipcRenderer.send('rag:result', { requestId, results: [] })
     }
   },
@@ -312,29 +312,29 @@ contextBridge.exposeInMainWorld('botAPI', {
   },
 })
 
-// ── reportAPI (PDF 보고서 내보내기) ───────────────────────────────────────────
+// ── reportAPI (PDF report export) ─────────────────────────────────────────────
 contextBridge.exposeInMainWorld('reportAPI', {
-  /** HTML 문자열을 PDF로 변환해 저장 다이얼로그로 내보냄 */
+  /** Convert an HTML string to PDF and export via the save dialog */
   exportPdf: (html, suggestedName) =>
     ipcRenderer.invoke('report:export-pdf', html, suggestedName),
 })
 
 // ── webSearchAPI (DuckDuckGo via IPC) ─────────────────────────────────────────
 contextBridge.exposeInMainWorld('webSearchAPI', {
-  /** DuckDuckGo HTML 검색 — 결과 HTML 문자열 반환 */
+  /** DuckDuckGo HTML search — returns the result HTML string */
   search: (query) => ipcRenderer.invoke('web:search', query),
 })
 
-// ── toolsAPI — Edit Agent용 tools/ 폴더 파이썬 스크립트 실행 ──────────────────
+// ── toolsAPI — run Python scripts in the tools/ folder for the Edit Agent ─────
 contextBridge.exposeInMainWorld('toolsAPI', {
-  /** tools/ 폴더의 파이썬 스크립트 실행. Returns { stdout, stderr, exitCode }. */
+  /** Run a Python script in the tools/ folder. Returns { stdout, stderr, exitCode }. */
   runVaultTool: (scriptName, args) =>
     ipcRenderer.invoke('tools:run-vault-tool', scriptName, args),
 })
 
-// ── gstackAPI — gstack 헤드리스 브라우저 자동화 ────────────────────────────────
+// ── gstackAPI — gstack headless browser automation ────────────────────────────
 contextBridge.exposeInMainWorld('gstackAPI', {
-  /** gstack 브라우저 명령 실행. Returns { success, output, error? }. */
+  /** Run a gstack browser command. Returns { success, output, error? }. */
   execute: (command, args) =>
     ipcRenderer.invoke('gstack:execute', command, args),
 })

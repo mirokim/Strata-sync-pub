@@ -2,13 +2,13 @@
 """
 fix_image_links.py — Fix broken image links for filenames with parentheses
 
-문제: 파일명에 ')'가 포함된 첨부파일을 참조할 때
-  ![[stem_without_paren]]_N.ext)   ← 잘못된 형식
-  ![[stem_without_paren) rest]]_N.ext)  ← 잘못된 형식
+Problem: when referencing attachments whose filename contains ')'
+  ![[stem_without_paren]]_N.ext)   ← malformed
+  ![[stem_without_paren) rest]]_N.ext)  ← malformed
 
-원인: postprocess_md에서 정규식 [^)]+ 이 ')'에서 멈춰 파일명 잘림
+Cause: in postprocess_md the regex [^)]+ stops at ')', truncating the filename
 
-Modified: 두 가지 패턴을 attachment 파일 목록과 대조하여 복원
+Fix: restore both patterns by matching against the attachment file list
 
 Usage:
   python fix_image_links.py <active_dir> <attachments_dir>
@@ -22,10 +22,10 @@ from pathlib import Path
 def fix_image_links(active_dir: Path, attachments_dir: Path) -> int:
     all_attachments = {f.name for f in attachments_dir.iterdir()} if attachments_dir.exists() else set()
 
-    # 패턴 1: ![[STEM]]_N.ext)  → STEM + ')' + _N.ext 가 attachment에 있는 경우
+    # Pattern 1: ![[STEM]]_N.ext)  → when STEM + ')' + _N.ext exists in attachments
     pattern1 = re.compile(r'!\[\[([^\]]+)\]\](_\d+\.\w+)\)')
 
-    # 패턴 2: ![[STEM]] REST)   → STEM + ')' + REST 가 attachment에 있는 경우
+    # Pattern 2: ![[STEM]] REST)   → when STEM + ')' + REST exists in attachments
     pattern2 = re.compile(r'!\[\[([^\]]+)\]\]([^)]*)\)')
 
     total_fixed = 0
@@ -54,7 +54,7 @@ def fix_image_links(active_dir: Path, attachments_dir: Path) -> int:
         if n > 0:
             md.write_text(new_content, encoding='utf-8')
             total_fixed += n
-            print(f"  Modified: {md.name} ({n}개)")
+            print(f"  Modified: {md.name} ({n})")
 
     return total_fixed
 
@@ -67,9 +67,9 @@ def main():
     active_dir = Path(sys.argv[1])
     attachments_dir = Path(sys.argv[2])
 
-    print("이미지 링크 버그 수정 starting...")
+    print("Image link bug fix starting...")
     n = fix_image_links(active_dir, attachments_dir)
-    print(f"\n총 {n}개 링크 수정 Complete")
+    print(f"\n{n} links fixed, Complete")
 
 
 if __name__ == '__main__':

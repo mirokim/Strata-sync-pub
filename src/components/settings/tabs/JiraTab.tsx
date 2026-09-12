@@ -1,6 +1,6 @@
 /**
- * JiraTab — Edit Agent가 사용하는 Jira 연결 설정.
- * 가져오기 실행은 Edit Agent 탭에서 활성화한 자동 동기화가 처리합니다.
+ * JiraTab — Jira connection settings used by the Edit Agent.
+ * The actual import is handled by the auto-sync enabled in the Edit Agent tab.
  */
 
 import { useState, useEffect, useRef } from 'react'
@@ -43,7 +43,7 @@ function FieldRow({ label, value, onChange, placeholder, type = 'text', isPasswo
               cursor: 'pointer', padding: '1px 4px', borderRadius: 3,
             }}
             tabIndex={-1}
-          >{visible ? '숨김' : '보기'}</button>
+          >{visible ? 'Hide' : 'Show'}</button>
         )}
       </div>
     </div>
@@ -75,7 +75,7 @@ export default function JiraTab() {
     ?? jiraConfigs[MIGRATED_CONFIG_KEY]
     ?? DEFAULT_JIRA_CONFIG
 
-  // mcp-config.json 자동 동기화 (1초 디바운스)
+  // Auto-sync mcp-config.json (1s debounce)
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     if (!cfg.baseUrl && !cfg.apiToken) return
@@ -99,9 +99,9 @@ export default function JiraTab() {
         apiToken: cfg.apiToken,
         bypassSSL: cfg.bypassSSL,
       })
-      setTestStatus({ state: 'ok', name: result.displayName || '인증 성공' })
+      setTestStatus({ state: 'ok', name: result.displayName || 'Authenticated' })
     } catch (e: any) {
-      setTestStatus({ state: 'err', msg: e?.message ?? '연결 실패' })
+      setTestStatus({ state: 'err', msg: e?.message ?? 'Connection failed' })
     }
   }
 
@@ -113,15 +113,15 @@ export default function JiraTab() {
     <div className="flex flex-col gap-5">
       <section>
         <p style={{ fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.7 }}>
-          Edit Agent가 Jira 데이터를 자동으로 가져올 때 사용하는 연결 설정입니다.<br />
-          자동 동기화 활성화는 <strong style={{ color: 'var(--color-text-secondary)' }}>설정 › Edit Agent</strong>에서 하세요.
+          Connection settings used when the Edit Agent automatically imports Jira data.<br />
+          Enable auto-sync under <strong style={{ color: 'var(--color-text-secondary)' }}>Settings › Edit Agent</strong>.
         </p>
       </section>
 
-      {/* 볼트 선택기 */}
+      {/* Vault selector */}
       {vaultEntries.length > 0 && (
         <section>
-          <SectionTitle>대상 볼트</SectionTitle>
+          <SectionTitle>Target Vault</SectionTitle>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {vaultEntries.map(([id, v]) => {
               const isActive = selectedVaultId === id
@@ -151,12 +151,12 @@ export default function JiraTab() {
 
       <div style={{ borderTop: '1px solid var(--color-border)' }} />
 
-      {/* 인증 */}
+      {/* Auth */}
       <section>
-        <SectionTitle>Jira 연결</SectionTitle>
+        <SectionTitle>Jira Connection</SectionTitle>
 
         <div style={{ marginBottom: 16 }}>
-          <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', display: 'block', marginBottom: 6 }}>인증 방식</label>
+          <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', display: 'block', marginBottom: 6 }}>Auth Method</label>
           <div style={{ display: 'flex', border: '1px solid var(--color-border)', borderRadius: 2, overflow: 'hidden', width: 'fit-content' }}>
             {([
               { id: 'cloud',        label: 'Cloud' },
@@ -177,9 +177,9 @@ export default function JiraTab() {
             ))}
           </div>
           <p style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 5 }}>
-            {cfg.authType === 'cloud'        && 'Atlassian Cloud — 이메일 + API 토큰 (id.atlassian.com → 보안 → API 토큰)'}
-            {cfg.authType === 'server_pat'   && 'Data Center/Server — Personal Access Token (프로필 → Personal Access Tokens)'}
-            {cfg.authType === 'server_basic' && 'Data Center/Server — 사용자명 + 비밀번호'}
+            {cfg.authType === 'cloud'        && 'Atlassian Cloud — email + API token (id.atlassian.com → Security → API tokens)'}
+            {cfg.authType === 'server_pat'   && 'Data Center/Server — Personal Access Token (Profile → Personal Access Tokens)'}
+            {cfg.authType === 'server_basic' && 'Data Center/Server — username + password'}
           </p>
         </div>
 
@@ -194,35 +194,35 @@ export default function JiraTab() {
                   set({ baseUrl: parsed.origin })
                   return
                 }
-              } catch { /* 입력 중이면 무시 */ }
+              } catch { /* ignore while typing */ }
               set({ baseUrl: v })
             }}
             placeholder={cfg.authType === 'cloud' ? 'https://yourcompany.atlassian.net' : 'https://jira.company.com'}
           />
           {cfg.authType !== 'server_pat' && (
             <FieldRow
-              label={cfg.authType === 'server_basic' ? '사용자명' : '이메일'}
+              label={cfg.authType === 'server_basic' ? 'Username' : 'Email'}
               value={cfg.email} onChange={v => set({ email: v })}
               placeholder={cfg.authType === 'server_basic' ? 'username' : 'you@company.com'} />
           )}
           <FieldRow
-            label={cfg.authType === 'server_pat' ? 'PAT 토큰' : cfg.authType === 'server_basic' ? '비밀번호' : 'API 토큰'}
+            label={cfg.authType === 'server_pat' ? 'PAT Token' : cfg.authType === 'server_basic' ? 'Password' : 'API Token'}
             value={cfg.apiToken} onChange={v => set({ apiToken: v })}
-            isPassword placeholder={cfg.authType === 'server_pat' ? 'Personal Access Token' : 'API 토큰'} />
+            isPassword placeholder={cfg.authType === 'server_pat' ? 'Personal Access Token' : 'API token'} />
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
           <input id="jira-bypass-ssl" type="checkbox" checked={cfg.bypassSSL} onChange={e => set({ bypassSSL: e.target.checked })} style={{ width: 13, height: 13, cursor: 'pointer' }} />
           <label htmlFor="jira-bypass-ssl" style={{ fontSize: 11, color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
-            SSL 인증서 검증 우회
-            <span style={{ color: 'var(--color-text-muted)', marginLeft: 4 }}>(사내 자체 서명 인증서 사용 시)</span>
+            Bypass SSL certificate verification
+            <span style={{ color: 'var(--color-text-muted)', marginLeft: 4 }}>(for self-signed internal certificates)</span>
           </label>
         </div>
         {cfg.bypassSSL && (
-          <p style={{ fontSize: 10, color: 'var(--color-warning)', marginTop: 4 }}>⚠ SSL 검증 비활성화 시 중간자 공격에 취약합니다. 사내망에서만 사용하세요.</p>
+          <p style={{ fontSize: 10, color: 'var(--color-warning)', marginTop: 4 }}>⚠ Disabling SSL verification exposes you to man-in-the-middle attacks. Use only on internal networks.</p>
         )}
 
-        {/* 연결 테스트 */}
+        {/* Connection test */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14 }}>
           <button
             onClick={handleTest}
@@ -235,7 +235,7 @@ export default function JiraTab() {
               opacity: canTest ? 1 : 0.5,
             }}
           >
-            {testStatus.state === 'testing' ? '확인 중…' : '연결 테스트'}
+            {testStatus.state === 'testing' ? 'Checking…' : 'Test Connection'}
           </button>
 
           {testStatus.state === 'ok' && (
@@ -254,16 +254,16 @@ export default function JiraTab() {
 
       <div style={{ borderTop: '1px solid var(--color-border)' }} />
 
-      {/* 이슈 범위 */}
+      {/* Issue scope */}
       <section>
-        <SectionTitle>이슈 범위</SectionTitle>
+        <SectionTitle>Issue Scope</SectionTitle>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <FieldRow label="Project Key" value={cfg.projectKey} onChange={v => set({ projectKey: v })} placeholder="PROJ (JQL 직접 입력 시 비워도 됨)" />
-          <FieldRow label="저장 폴더" value={cfg.targetFolder} onChange={v => set({ targetFolder: v })} placeholder="jira" />
-          <FieldRow label="증분 시작일" type="date" value={cfg.dateFrom} onChange={v => set({ dateFrom: v })} />
+          <FieldRow label="Project Key" value={cfg.projectKey} onChange={v => set({ projectKey: v })} placeholder="PROJ (may be left empty when using custom JQL)" />
+          <FieldRow label="Target Folder" value={cfg.targetFolder} onChange={v => set({ targetFolder: v })} placeholder="jira" />
+          <FieldRow label="Incremental Start Date" type="date" value={cfg.dateFrom} onChange={v => set({ dateFrom: v })} />
           <div>
             <label style={{ fontSize: 11, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>
-              JQL 직접 입력 <span style={{ opacity: 0.7 }}>(입력 시 Project Key / 날짜 무시)</span>
+              Custom JQL <span style={{ opacity: 0.7 }}>(overrides Project Key / date when set)</span>
             </label>
             <input
               type="text"
@@ -279,7 +279,7 @@ export default function JiraTab() {
           </div>
         </div>
         <p style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 8 }}>
-          증분 시작일 이후 변경된 이슈만 가져옵니다. Edit Agent 실행 시마다 이 날짜 이후 변경분을 동기화합니다.
+          Only issues changed after the start date are imported. Each Edit Agent run syncs changes made after this date.
         </p>
       </section>
     </div>

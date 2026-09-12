@@ -53,7 +53,7 @@ describe('vectorEmbedCache', () => {
   })
 
   describe('loadVectorEmbedCacheIncremental', () => {
-    it('캐시 없을 때 → 전체 staleDocIds 반환', async () => {
+    it('no cache → returns all staleDocIds', async () => {
       mockVaultAPI.readFile.mockResolvedValue(null)
       const docMtimes = new Map([['doc1', 100], ['doc2', 200]])
 
@@ -63,7 +63,7 @@ describe('vectorEmbedCache', () => {
       expect(staleDocIds).toEqual(new Set(['doc1', 'doc2']))
     })
 
-    it('v5 캐시에서 mtime 일치하는 엔트리만 복원', async () => {
+    it('restores only entries with matching mtime from v5 cache', async () => {
       const cacheData = makeV5Cache({
         'doc1#sec0': { embedding: [1, 2, 3], docId: 'doc1', mtime: 100 },
         'doc2#sec0': { embedding: [4, 5, 6], docId: 'doc2', mtime: 200 },
@@ -79,12 +79,12 @@ describe('vectorEmbedCache', () => {
       expect(staleDocIds.size).toBe(0)
     })
 
-    it('mtime 불일치 → staleDocIds에 포함', async () => {
+    it('mtime mismatch → included in staleDocIds', async () => {
       const cacheData = makeV5Cache({
         'doc1#sec0': { embedding: [1, 2, 3], docId: 'doc1', mtime: 100 },
       })
       mockVaultAPI.readFile.mockResolvedValue(cacheData)
-      // doc1 mtime이 변경됨 (100 → 999)
+      // doc1 mtime changed (100 → 999)
       const docMtimes = new Map([['doc1', 999]])
 
       const { cached, staleDocIds } = await loadVectorEmbedCacheIncremental(VAULT, docMtimes)
@@ -93,13 +93,13 @@ describe('vectorEmbedCache', () => {
       expect(staleDocIds.has('doc1')).toBe(true)
     })
 
-    it('삭제된 문서(docMtimes에 없는) → cached에 미포함', async () => {
+    it('deleted document (not in docMtimes) → not included in cached', async () => {
       const cacheData = makeV5Cache({
         'deleted#sec0': { embedding: [1, 2, 3], docId: 'deleted', mtime: 100 },
         'alive#sec0': { embedding: [4, 5, 6], docId: 'alive', mtime: 200 },
       })
       mockVaultAPI.readFile.mockResolvedValue(cacheData)
-      // 'deleted' 문서는 docMtimes에 없음
+      // the 'deleted' document is not in docMtimes
       const docMtimes = new Map([['alive', 200]])
 
       const { cached, staleDocIds } = await loadVectorEmbedCacheIncremental(VAULT, docMtimes)
@@ -109,7 +109,7 @@ describe('vectorEmbedCache', () => {
       expect(staleDocIds.size).toBe(0)
     })
 
-    it('version이 5가 아닌 캐시 → 전량 stale', async () => {
+    it('cache with version other than 5 → everything stale', async () => {
       const oldCache = JSON.stringify({ version: 4, entries: { 'doc1#sec0': { embedding: [1], docId: 'doc1', mtime: 100 } } })
       mockVaultAPI.readFile.mockResolvedValue(oldCache)
       const docMtimes = new Map([['doc1', 100]])
@@ -122,7 +122,7 @@ describe('vectorEmbedCache', () => {
   })
 
   describe('saveVectorEmbedCacheIncremental', () => {
-    it('정상 저장 후 JSON 구조 검증', async () => {
+    it('validates JSON structure after a normal save', async () => {
       mockVaultAPI.saveFile.mockResolvedValue(undefined)
 
       const embeddings = new Map<string, Float32Array>([
@@ -146,7 +146,7 @@ describe('vectorEmbedCache', () => {
       expect(parsed.entries['doc1#sec1']).toBeDefined()
     })
 
-    it('sectionDocMap에 없는 sectionId → 저장 안 됨', async () => {
+    it('sectionId missing from sectionDocMap → not saved', async () => {
       mockVaultAPI.saveFile.mockResolvedValue(undefined)
 
       const embeddings = new Map<string, Float32Array>([
@@ -154,7 +154,7 @@ describe('vectorEmbedCache', () => {
         ['orphan#sec0', new Float32Array([3, 4])],
       ])
       const sectionDocMap = new Map([['doc1#sec0', 'doc1']])
-      // orphan#sec0은 sectionDocMap에 없음
+      // orphan#sec0 is not in sectionDocMap
       const docMtimes = new Map([['doc1', 100]])
 
       await saveVectorEmbedCacheIncremental(VAULT, embeddings, sectionDocMap, docMtimes)
@@ -166,7 +166,7 @@ describe('vectorEmbedCache', () => {
   })
 
   describe('invalidateVectorEmbedCache', () => {
-    it('v5, v4 두 파일 모두 삭제 호출', async () => {
+    it('calls delete for both v5 and v4 files', async () => {
       mockVaultAPI.deleteFile.mockResolvedValue(undefined)
 
       await invalidateVectorEmbedCache(VAULT)
@@ -182,24 +182,24 @@ describe('vectorEmbedCache', () => {
 // ── vectorEmbedIndex.ts — rrfScore ──────────────────────────────────────────
 
 describe('rrfScore', () => {
-  it('기본 k=60에서 단일 랭크 → 1/(60+rank)', () => {
+  it('single rank with default k=60 → 1/(60+rank)', () => {
     expect(rrfScore([1])).toBeCloseTo(1 / 61, 10)
     expect(rrfScore([5])).toBeCloseTo(1 / 65, 10)
   })
 
-  it('두 랭크 합산 검증', () => {
+  it('sums two ranks', () => {
     const result = rrfScore([1, 3])
     const expected = 1 / 61 + 1 / 63
     expect(result).toBeCloseTo(expected, 10)
   })
 
-  it('커스텀 k 값', () => {
+  it('custom k value', () => {
     expect(rrfScore([1], 0)).toBeCloseTo(1, 10)
     expect(rrfScore([2], 10)).toBeCloseTo(1 / 12, 10)
   })
 })
 
-// ── vectorEmbedIndex.buildIncremental 통합 테스트 ────────────────────────────
+// ── vectorEmbedIndex.buildIncremental integration tests ─────────────────────
 
 describe('vectorEmbedIndex.buildIncremental', () => {
   beforeEach(() => {
@@ -207,8 +207,8 @@ describe('vectorEmbedIndex.buildIncremental', () => {
     vectorEmbedIndex.reset()
   })
 
-  it('캐시 100% 히트 시 → API 호출 0회, built=true', async () => {
-    // doc1은 섹션 4개 이상 → 섹션별 임베딩
+  it('100% cache hit → 0 API calls, built=true', async () => {
+    // doc1 has 4+ sections → per-section embedding
     const doc = mockDoc('doc1', 100, 4)
     const cacheEntries: Record<string, { embedding: number[]; docId: string; mtime: number }> = {}
     for (const sec of doc.sections) {
@@ -220,7 +220,7 @@ describe('vectorEmbedIndex.buildIncremental', () => {
     }
     mockVaultAPI.readFile.mockResolvedValue(makeV5Cache(cacheEntries))
 
-    // fetch가 호출되지 않아야 함
+    // fetch must not be called
     const fetchSpy = vi.fn()
     global.fetch = fetchSpy
 
@@ -231,11 +231,11 @@ describe('vectorEmbedIndex.buildIncremental', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
-  it('캐시 부분 히트 시 → stale 문서만 API 호출', async () => {
-    const doc1 = mockDoc('doc1', 100, 4) // 캐시 있음
-    const doc2 = mockDoc('doc2', 200, 4) // 캐시 없음 (stale)
+  it('partial cache hit → API called only for stale documents', async () => {
+    const doc1 = mockDoc('doc1', 100, 4) // cached
+    const doc2 = mockDoc('doc2', 200, 4) // not cached (stale)
 
-    // doc1만 캐시에 있음
+    // only doc1 is in the cache
     const cacheEntries: Record<string, { embedding: number[]; docId: string; mtime: number }> = {}
     for (const sec of doc1.sections) {
       cacheEntries[sec.id] = {
@@ -261,17 +261,17 @@ describe('vectorEmbedIndex.buildIncremental', () => {
     await vectorEmbedIndex.buildIncremental([doc1, doc2], 'fake-key', VAULT)
 
     expect(vectorEmbedIndex.isBuilt).toBe(true)
-    // doc2의 4개 섹션만 API 호출
+    // API called only for doc2's 4 sections
     expect(fetchCalls.length).toBe(4)
-    // API로 전달된 텍스트에 doc2 내용만 포함되어야 함
+    // text sent to the API must contain only doc2 content
     for (const text of fetchCalls) {
       expect(text).toContain('doc2')
     }
   })
 
-  it('API 실패 시 → lastError 설정', async () => {
+  it('API failure → sets lastError', async () => {
     const doc = mockDoc('doc1', 100, 4)
-    mockVaultAPI.readFile.mockResolvedValue(null) // 캐시 없음
+    mockVaultAPI.readFile.mockResolvedValue(null) // no cache
 
     global.fetch = vi.fn().mockResolvedValue({
       ok: false,
@@ -285,7 +285,7 @@ describe('vectorEmbedIndex.buildIncremental', () => {
     expect(vectorEmbedIndex.lastError).toContain('403')
   })
 
-  it('reset() 후 상태 초기화', () => {
+  it('resets state after reset()', () => {
     vectorEmbedIndex.reset()
 
     expect(vectorEmbedIndex.isBuilt).toBe(false)

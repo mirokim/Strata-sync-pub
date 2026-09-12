@@ -2,7 +2,7 @@
  * SettingsPanel — Full-area tab panel (replaces old modal popup).
  *
  * Layout: fills its container (center editor area in MainLayout)
- *   Left  186px : nav sidebar (도구 / 설정 / 기타 groups)
+ *   Left  186px : nav sidebar (Tools / Settings / Other groups)
  *   Right rest  : content area (header + scrollable body + footer)
  */
 
@@ -55,50 +55,50 @@ type NavGroup = { label: string; items: NavItem[] }
 
 const NAV: NavGroup[] = [
   {
-    label: '연동',
+    label: 'Integrations',
     items: [
-      { id: 'confluence',         icon: Download, label: 'Confluence 가져오기' },
-      { id: 'confluence-publish', icon: Send,     label: 'Confluence 발행' },
-      { id: 'jira',               icon: Download, label: 'Jira 가져오기' },
-      { id: 'jira-dispatch',      icon: Send,     label: 'Jira 일감 발행' },
-      { id: 'slack-bot',          icon: Bot,      label: 'Slack 봇' },
+      { id: 'confluence',         icon: Download, label: 'Confluence Import' },
+      { id: 'confluence-publish', icon: Send,     label: 'Confluence Publish' },
+      { id: 'jira',               icon: Download, label: 'Jira Import' },
+      { id: 'jira-dispatch',      icon: Send,     label: 'Jira Dispatch' },
+      { id: 'slack-bot',          icon: Bot,      label: 'Slack Bot' },
     ],
   },
   {
-    label: '에이전트',
+    label: 'Agents',
     items: [
-      { id: 'edit-agent', icon: Wand2, label: '편집 에이전트' },
-      { id: 'cron-jobs',  icon: Clock, label: '크론잡' },
+      { id: 'edit-agent', icon: Wand2, label: 'Edit Agent' },
+      { id: 'cron-jobs',  icon: Clock, label: 'Cron Jobs' },
       { id: 'mirofish',   icon: Fish,  label: 'MiroFish' },
     ],
   },
   {
-    label: '볼트',
+    label: 'Vault',
     items: [
-      { id: 'stats',         icon: BarChart2, label: '통계' },
-      { id: 'vault-manager', icon: HardDrive, label: '볼트 관리자' },
-      { id: 'usage',         icon: Coins,     label: '토큰 사용량' },
-      { id: 'trash',         icon: Trash2,    label: '휴지통' },
+      { id: 'stats',         icon: BarChart2, label: 'Statistics' },
+      { id: 'vault-manager', icon: HardDrive, label: 'Vault Manager' },
+      { id: 'usage',         icon: Coins,     label: 'Token Usage' },
+      { id: 'trash',         icon: Trash2,    label: 'Trash' },
     ],
   },
   {
-    label: '설정',
+    label: 'Settings',
     items: [
-      { id: 'general',   icon: Settings,  label: '일반' },
-      { id: 'ai',        icon: Cpu,       label: 'AI 설정' },
-      { id: 'search',       icon: Search,    label: '검색 튜닝' },
-      { id: 'vector-embed', icon: Sparkles,  label: '벡터 임베딩' },
-      { id: 'tags',      icon: Tag,       label: '태그' },
-      { id: 'personas',  icon: Users,     label: '페르소나' },
-      { id: 'project',   icon: Layers,    label: '프로젝트' },
-      { id: 'debate',    icon: GitMerge,  label: '토론' },
-      { id: 'shortcuts', icon: Keyboard,  label: '단축키' },
+      { id: 'general',   icon: Settings,  label: 'General' },
+      { id: 'ai',        icon: Cpu,       label: 'AI Settings' },
+      { id: 'search',       icon: Search,    label: 'Search Tuning' },
+      { id: 'vector-embed', icon: Sparkles,  label: 'Vector Embed' },
+      { id: 'tags',      icon: Tag,       label: 'Tags' },
+      { id: 'personas',  icon: Users,     label: 'Personas' },
+      { id: 'project',   icon: Layers,    label: 'Project' },
+      { id: 'debate',    icon: GitMerge,  label: 'Debate' },
+      { id: 'shortcuts', icon: Keyboard,  label: 'Shortcuts' },
     ],
   },
   {
-    label: '기타',
+    label: 'Other',
     items: [
-      { id: 'about', icon: Info, label: '정보' },
+      { id: 'about', icon: Info, label: 'About' },
     ],
   },
 ]
@@ -163,7 +163,7 @@ export default function SettingsPanel() {
           style={{ borderBottom: '1px solid var(--color-border)' }}
         >
           <span className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
-            설정
+            Settings
           </span>
         </div>
 
@@ -224,7 +224,7 @@ export default function SettingsPanel() {
             onClick={close}
             className="p-1 rounded transition-colors hover:bg-[var(--color-bg-hover)]"
             style={{ color: 'var(--color-text-muted)' }}
-            aria-label="닫기"
+            aria-label="Close"
             data-testid="settings-close"
           >
             <X size={14} />
@@ -247,7 +247,7 @@ export default function SettingsPanel() {
             style={{ color: 'var(--color-text-muted)' }}
             data-testid="settings-reset"
           >
-            기본값으로 초기화
+            Reset to Defaults
           </button>
           <button
             onClick={close}
@@ -255,7 +255,7 @@ export default function SettingsPanel() {
             style={{ background: 'var(--color-accent)', color: '#fff' }}
             data-testid="settings-save"
           >
-            닫기
+            Close
           </button>
         </div>
       </div>

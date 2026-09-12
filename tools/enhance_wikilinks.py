@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 enhance_wikilinks.py — §7 Wikilink primary enhancement
-- §7.1 Cluster links injected: 동일 태그 파일 간 ## 관련 문서 섹션 생성
-- §7.2 제목 매칭 Links: 본문 내 다른 파일 제목 텍스트 → [[wikilink]] 변환
+- §7.1 Cluster links injected: creates a ## 관련 문서 (related documents) section between files sharing tags
+- §7.2 Title matching links: other files' title text in the body -> [[wikilink]] conversion
        (placeholder approach required — prevents v1 bug)
 
 Usage:
@@ -26,7 +26,7 @@ def parse_tags(content: str) -> list:
 
 
 def get_stem_title_map(active_dir: Path) -> dict:
-    """stem → (title, tags) 매핑 구축."""
+    """Build the stem -> (title, tags) mapping."""
     result = {}
     for md in active_dir.glob('*.md'):
         try:
@@ -41,15 +41,15 @@ def get_stem_title_map(active_dir: Path) -> dict:
 
 
 def cluster_links(active_dir: Path, max_per_cluster: int = 8):
-    """§7.1 동일 태그 클러스터 링크 주입."""
+    """§7.1 Inject cluster links between files sharing the same tags."""
     print("Building cluster links...")
     stem_map = get_stem_title_map(active_dir)
 
-    # 태그 → 파일 목록
+    # Tag -> list of files
     tag_files = defaultdict(list)
     for stem, (title, tags, path) in stem_map.items():
         for tag in tags:
-            if tag not in ('hub', 'generated'):  # 허브/생성 태그 제외
+            if tag not in ('hub', 'generated'):  # Exclude hub/generated tags
                 tag_files[tag].append(stem)
 
     injected = 0
@@ -109,22 +109,22 @@ def cluster_links(active_dir: Path, max_per_cluster: int = 8):
 
 def title_match_links(active_dir: Path):
     """
-    §7.2 제목 매칭 링크 주입.
-    본문에 다른 파일의 제목이 텍스트로 등장하면 [[wikilink]] 변환.
-    placeholder 방식으로 기존 링크 보호.
+    §7.2 Inject title-matching links.
+    When another file's title appears as text in the body, convert it to a [[wikilink]].
+    Existing links are protected via placeholders.
     """
     print("\nBuilding title matching links...")
     stem_map = get_stem_title_map(active_dir)
 
     # Exclude short or too common titles (prevent false positives)
-    # 길이 8자 이상, 숫자만인 경우 제외
+    # Length 8+ chars, excluding digit-only titles
     candidates = {}
     for stem, (title, tags, path) in stem_map.items():
         title_clean = title.strip()
         if len(title_clean) >= 8 and not title_clean.isdigit():
             candidates[title_clean] = stem
 
-    # 길이 내림차순 정렬 (긴 제목 먼저 매칭)
+    # Sort by length descending (match longer titles first)
     sorted_candidates = sorted(candidates.items(), key=lambda x: -len(x[0]))
 
     injected = 0
@@ -146,7 +146,7 @@ def title_match_links(active_dir: Path):
             fm = content[:fm_end + 5]
             body = content[fm_end + 5:]
 
-        # Step 1: 기존 [[...]] 링크를 placeholder로 치환
+        # Step 1: Replace existing [[...]] links with placeholders
         placeholders = {}
         ph_counter = [0]
 
@@ -158,7 +158,7 @@ def title_match_links(active_dir: Path):
 
         body_protected = re.sub(r'\[\[[^\]]+\]\]', replace_wlink, body)
 
-        # Step 2: 코드블록도 보호
+        # Step 2: Protect code blocks too
         code_placeholders = {}
         code_counter = [0]
 
@@ -171,14 +171,14 @@ def title_match_links(active_dir: Path):
         body_protected = re.sub(r'```.*?```', replace_code, body_protected, flags=re.DOTALL)
         body_protected = re.sub(r'`[^`]+`', replace_code, body_protected)
 
-        # Step 3: 제목 매칭 (현재 파일 자신의 제목은 제외)
+        # Step 3: Title matching (excluding the current file's own title)
         changed = False
         for title, stem in sorted_candidates:
             if stem == current_stem:
                 continue
-            # 이미 링크가 있는 경우 스킵 (placeholder로 보호됨)
-            # 첫 등장 위치만 교체
-            # 경계 조건: 앞뒤가 문자/숫자가 아닌 경우
+            # Skip if already linked (protected by placeholder)
+            # Replace only the first occurrence
+            # Boundary condition: not preceded/followed by a letter/digit
             pattern = r'(?<![가-힣\w\[])\Q' + re.escape(title) + r'\E(?![가-힣\w\]])'
             if re.search(re.escape(title), body_protected):
                 new_link = f'[[{stem}|{title}]]'
@@ -186,13 +186,13 @@ def title_match_links(active_dir: Path):
                     re.escape(title),
                     new_link,
                     body_protected,
-                    count=1  # 첫 등장 1회만
+                    count=1  # First occurrence only
                 )
                 if count > 0:
                     changed = True
 
         if changed:
-            # Step 4: placeholder 복원
+            # Step 4: Restore placeholders
             for key, orig in code_placeholders.items():
                 body_protected = body_protected.replace(key, orig)
             for key, orig in placeholders.items():
@@ -206,7 +206,7 @@ def title_match_links(active_dir: Path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='위키링크 1차 강화 (§7)')
+    parser = argparse.ArgumentParser(description='Wikilink primary enhancement (§7)')
     parser.add_argument('active_dir', help='active/ folder')
     parser.add_argument('--max-cluster', type=int, default=8,
                         help='Max links per cluster (default: 8)')
@@ -216,17 +216,17 @@ def main():
 
     active_dir = Path(args.active_dir)
 
-    # §7.1 클러스터 링크
+    # §7.1 Cluster links
     n1 = cluster_links(active_dir, args.max_cluster)
 
-    # §7.2 제목 매칭 링크
+    # §7.2 Title matching links
     if not args.skip_title_match:
         n2 = title_match_links(active_dir)
     else:
         n2 = 0
 
-    print(f"\n=== §7 위키링크 1차 강화 Complete ===")
-    print(f"  클러스터 Links: {n1} files")
+    print(f"\n=== §7 Wikilink primary enhancement Complete ===")
+    print(f"  Cluster links:     {n1} files")
     print(f"  Title matching:    {n2} files")
 
 

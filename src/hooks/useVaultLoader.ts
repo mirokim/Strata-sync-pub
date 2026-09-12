@@ -29,12 +29,12 @@ import { buildStatsSnapshot, saveStatsSnapshot } from '@/lib/vaultStatsLog'
 import type { VaultFile, LoadedDocument } from '@/types'
 
 /**
- * Co-occurrence 기반 동적 동의어 등록 — 워커에서 실행.
+ * Co-occurrence based dynamic synonym registration — runs in a worker.
  *
- * 이전에는 메인 스레드에서 `extractCoOccurrenceSynonyms(docs)` 를 직접 호출해
- * 13초를 블로킹한 뒤 `RangeError: Map maximum size exceeded` 로 끝났고,
- * 호출부 try/catch 가 그 예외를 조용히 삼켜 **동의어는 하나도 등록되지 않으면서
- * 비용만 전부 지불**했다. 이제 워커에서 돌리고 실패는 로그로 남긴다.
+ * Previously `extractCoOccurrenceSynonyms(docs)` was called directly on the main thread,
+ * blocked for 13 seconds and then died with `RangeError: Map maximum size exceeded`;
+ * the caller's try/catch silently swallowed it, so **no synonyms were registered while
+ * the full cost was still paid**. It now runs in a worker and failures are logged.
  */
 async function registerDynamicSynonyms(docs: LoadedDocument[]): Promise<void> {
   const sectionTexts: string[] = []
@@ -47,7 +47,7 @@ async function registerDynamicSynonyms(docs: LoadedDocument[]): Promise<void> {
   for (const [term, synonyms] of entries) {
     for (const syn of synonyms) addDynamicSynonym(term, syn)
   }
-  logger.debug(`[vault] 동적 동의어 ${entries.length}개 용어 등록 완료 (워커 ${Date.now() - t0}ms)`)
+  logger.debug(`[vault] Registered ${entries.length} dynamic synonym terms (worker ${Date.now() - t0}ms)`)
 }
 
 export function useVaultLoader() {
@@ -60,22 +60,22 @@ export function useVaultLoader() {
   const loadVault = useCallback(
     async (dirPath: string) => {
       if (!window.vaultAPI) {
-        setError('Electron 환경이 아닙니다. 브라우저에서는 볼트를 로드할 수 없습니다.')
+        setError('Not running in Electron. Vaults cannot be loaded in the browser.')
         return
       }
       setIsLoading(true)
       setVaultReady(false)
-      setLoadingProgress(0, '볼트 초기화 중...')
+      setLoadingProgress(0, 'Initializing vault...')
       setError(null)
       try {
-        // ── 1단계: scanMetadata (mtime만, 파일 내용 없음) → 캐시 지문 확인 ──
+        // ── Step 1: scanMetadata (mtime only, no file contents) → check cache fingerprint ──
         let docs = null
         let folders: string[] = []
         let imageRegistry: Record<string, { relativePath: string; absolutePath: string }> | null = null
 
         if (window.vaultAPI.scanMetadata) {
           try {
-            setLoadingProgress(2, '메타데이터 스캔 중...')
+            setLoadingProgress(2, 'Scanning metadata...')
             const meta = await window.vaultAPI.scanMetadata(dirPath)
             if (meta && meta.length > 0) {
               const docsFingerprint = buildDocsFingerprint(
@@ -83,8 +83,8 @@ export function useVaultLoader() {
               )
               const hit = await loadDocsCache(dirPath, docsFingerprint)
               if (hit) {
-                logger.debug(`[vault] 캐시 히트 — loadFiles·파싱 모두 건너뜀 (${hit.docs.length}개 문서)`)
-                setLoadingProgress(90, '캐시에서 복원 중...')
+                logger.debug(`[vault] Cache hit — skipping loadFiles and parsing (${hit.docs.length} docs)`)
+                setLoadingProgress(90, 'Restoring from cache...')
                 docs = hit.docs
                 folders = hit.folders
                 imageRegistry = hit.imageRegistry
@@ -93,21 +93,21 @@ export function useVaultLoader() {
                 setImagePathRegistry(imageRegistry)
               }
             }
-          } catch { /* scanMetadata 실패 → loadFiles fallback */ }
+          } catch { /* scanMetadata failed → loadFiles fallback */ }
         }
 
-        // ── 2단계: 캐시 미스 시 loadFiles (파일 내용 포함) ─────────────────
+        // ── Step 2: on cache miss, loadFiles (with file contents) ──────────
         let files: VaultFile[] | null = null
         if (!docs) {
           const loaded = await window.vaultAPI.loadFiles(dirPath)
           files = loaded.files
           folders = loaded.folders ?? []
           imageRegistry = loaded.imageRegistry ?? null
-          logger.debug(`[vault] ${files?.length ?? 0}개 파일, ${folders.length}개 폴더, ${Object.keys(imageRegistry ?? {}).length}개 이미지 로드됨 (${dirPath})`)
+          logger.debug(`[vault] Loaded ${files?.length ?? 0} files, ${folders.length} folders, ${Object.keys(imageRegistry ?? {}).length} images (${dirPath})`)
           setVaultFolders(folders)
           setImagePathRegistry(imageRegistry)
           setPendingFileCount(files?.length ?? 0)
-          setLoadingProgress(5, '파일 목록 로드 완료')
+          setLoadingProgress(5, 'File list loaded')
 
           if (!files || files.length === 0) {
             setLoadedDocuments(null)
@@ -117,20 +117,20 @@ export function useVaultLoader() {
           }
         }
 
-        // ── 3단계: 캐시 미스 시 전체 파싱 ──────────────────────────────────
+        // ── Step 3: on cache miss, full parse ─────────────────────────────
         if (!docs) {
           const total = files!.length
           docs = await parseVaultFilesAsync(files!, (parsed) => {
             const pct = 5 + Math.round((parsed / total) * 80)
-            setLoadingProgress(pct, `문서 파싱 중... (${parsed}/${total})`)
+            setLoadingProgress(pct, `Parsing documents... (${parsed}/${total})`)
           })
-          logger.debug(`[vault] ${docs.length}/${files!.length}개 문서 파싱 성공`)
+          logger.debug(`[vault] Parsed ${docs.length}/${files!.length} documents successfully`)
 
-          // 파싱 완료 후 캐시 저장 (백그라운드, folders+imageRegistry 포함)
+          // Save the cache after parsing (background, includes folders+imageRegistry)
           const metaForCache = files!.map(f => ({ relativePath: f.relativePath, mtime: f.mtime ?? 0 }))
           const fp = buildDocsFingerprint(metaForCache)
           saveDocsCache(dirPath, fp, docs, folders, imageRegistry)
-            .catch((e: unknown) => logger.warn('[docsCache] 저장 실패:', e))
+            .catch((e: unknown) => logger.warn('[docsCache] Save failed:', e))
         }
         setLoadedDocuments(docs)
 
@@ -142,7 +142,7 @@ export function useVaultLoader() {
             const config = parsePersonaConfig(configContent)
             if (config) {
               loadVaultPersonas(config)
-              logger.debug('[vault] 페르소나 설정 로드됨')
+              logger.debug('[vault] Persona settings loaded')
             } else {
               resetVaultPersonas()
             }
@@ -153,55 +153,55 @@ export function useVaultLoader() {
           resetVaultPersonas()
         }
 
-        // 동적 동의어 초기화 (이전 볼트 데이터 제거) + 새 볼트 co-occurrence 분석
+        // Reset dynamic synonyms (drop previous vault data) + co-occurrence analysis for the new vault
         clearDynamicSynonyms()
 
         // Update graph (clear stale metrics cache from previous vault)
         clearMetricsCache()
-        setLoadingProgress(95, '완료 중...')
+        setLoadingProgress(95, 'Finishing...')
 
-        // 그래프 빌드: finally(setVaultReady) 전에 동기 실행하여
-        // setGraph → graphLayoutReady=false → 오버레이 재활성화 레이스 방지
+        // Graph build: run synchronously before finally(setVaultReady) to avoid the
+        // setGraph → graphLayoutReady=false → overlay re-activation race
         try {
           const { nodes, links } = buildGraph(docs)
-          logger.debug(`[vault] 그래프: ${nodes.length}개 노드, ${links.length}개 링크`)
+          logger.debug(`[vault] Graph: ${nodes.length} nodes, ${links.length} links`)
           setGraph(nodes, links)
         } catch (e: unknown) {
-          logger.warn('[vault] 그래프 빌드 실패:', e instanceof Error ? e.message : String(e))
+          logger.warn('[vault] Graph build failed:', e instanceof Error ? e.message : String(e))
         }
-        // D3 시뮬레이션 수렴을 기다리지 않고 즉시 오버레이 해제
-        // (시뮬레이션은 백그라운드에서 계속 실행되며 fitView가 나중에 호출됨)
+        // Dismiss the overlay immediately without waiting for the D3 simulation to converge
+        // (the simulation keeps running in the background and fitView is called later)
         setGraphLayoutReady(true)
 
-        // BM25 인덱스 + 후속 작업: requestIdleCallback으로 UI 프레임 양보
-        // BM25 build/findImplicitLinks은 Web Worker에서 실행 (O(N²) 메인 스레드 블로킹 제거)
+        // BM25 index + follow-up work: yield UI frames via requestIdleCallback
+        // BM25 build/findImplicitLinks run in a Web Worker (removes O(N²) main-thread blocking)
         const fingerprint = buildFingerprint(docs)
-        const startVaultId = useVaultStore.getState().activeVaultId  // 캡처: 비동기 완료 시 vault가 바뀌었는지 확인용
+        const startVaultId = useVaultStore.getState().activeVaultId  // Captured: used to check whether the vault changed by the time async work completes
         const deferToIdle = () => new Promise<void>(r => {
           (window.requestIdleCallback ?? ((cb: () => void) => setTimeout(cb, 16)))((() => r()) as IdleRequestCallback)
         })
         setTimeout(async () => {
-          // BM25 인덱스: 캐시 히트 → 복원(빠름) + 워커에서 묵시적 링크 계산
-          //              캐시 미스 → 워커에서 빌드 + 묵시적 링크 계산 (메인 스레드 비블로킹)
+          // BM25 index: cache hit  → restore (fast) + compute implicit links in the worker
+          //             cache miss → build in the worker + compute implicit links (non-blocking main thread)
           const { links: currentLinks } = useGraphStore.getState()
           const adj = buildAdjacencyMap(currentLinks)
           try {
             const cached = await loadTfIdfCache(dirPath, fingerprint)
-            // 비동기 완료 후 vault가 바뀌었으면 stale 결과를 tfidfIndex에 적용하지 않음
+            // If the vault changed while the async work ran, do not apply the stale result to tfidfIndex
             if (useVaultStore.getState().activeVaultId !== startVaultId) return
             if (cached) {
               tfidfIndex.restore(cached)
               if (cached.implicitLinks) {
-                // 캐시에 사전 계산된 묵시적 링크가 있으면 O(N²) 재계산을 완전히 생략
+                // If the cache has precomputed implicit links, skip the O(N²) recomputation entirely
                 tfidfIndex.setImplicitLinks(cached.implicitLinks, adj)
               } else if (currentLinks.length > 0) {
-                // 구버전 캐시 — 한 번만 계산해 캐시에 채워 넣는다
+                // Legacy cache — compute once and backfill the cache
                 findLinksFromCache(cached, adj)
                   .then(links => {
                     tfidfIndex.setImplicitLinks(links, adj)
                     return saveTfIdfCache(dirPath, { ...cached, implicitLinks: links })
                   })
-                  .catch((e: unknown) => logger.warn('[BM25] 묵시적 링크 계산 실패:', e instanceof Error ? e.message : String(e)))
+                  .catch((e: unknown) => logger.warn('[BM25] Implicit link computation failed:', e instanceof Error ? e.message : String(e)))
               }
             } else {
               try {
@@ -210,35 +210,35 @@ export function useVaultLoader() {
                 tfidfIndex.restore(serialized)
                 tfidfIndex.setImplicitLinks(implicitLinks, adj)
                 saveTfIdfCache(dirPath, serialized)
-                  .catch((e: unknown) => logger.warn('[BM25] 캐시 저장 실패:', e instanceof Error ? e.message : String(e)))
+                  .catch((e: unknown) => logger.warn('[BM25] Cache save failed:', e instanceof Error ? e.message : String(e)))
               } catch (e: unknown) {
-                logger.warn('[BM25] 워커 빌드 실패, 메인 스레드 폴백:', e instanceof Error ? e.message : String(e))
+                logger.warn('[BM25] Worker build failed, falling back to main thread:', e instanceof Error ? e.message : String(e))
                 if (useVaultStore.getState().activeVaultId === startVaultId) {
-                  try { tfidfIndex.build(docs) } catch { /* 재빌드도 실패 시 무음 */ }
+                  try { tfidfIndex.build(docs) } catch { /* silent if the rebuild also fails */ }
                 }
               }
             }
           } catch (e: unknown) {
-            logger.warn('[BM25] 인덱스 초기화 실패, 재빌드 시도:', e instanceof Error ? e.message : String(e))
+            logger.warn('[BM25] Index init failed, attempting rebuild:', e instanceof Error ? e.message : String(e))
             if (useVaultStore.getState().activeVaultId === startVaultId) {
-              try { tfidfIndex.build(docs) } catch { /* 재빌드도 실패 시 무음 */ }
+              try { tfidfIndex.build(docs) } catch { /* silent if the rebuild also fails */ }
             }
           }
 
-          await deferToIdle() // BM25 완료 후 UI 프레임 양보
+          await deferToIdle() // Yield a UI frame after BM25 completes
 
-          // 벡터 임베딩 증분 빌드 (로컬 임베딩 서버 또는 Gemini 키가 있을 때)
+          // Incremental vector embedding build (when a local embedding server or Gemini key is available)
           const geminiKey = useSettingsStore.getState().apiKeys['gemini']?.trim()
           const canEmbed = await isEmbeddingReady(geminiKey)
           if (canEmbed && docs.length > 0 && useVaultStore.getState().activeVaultId === startVaultId) {
             vectorEmbedIndex.buildIncremental(docs, geminiKey ?? '', dirPath)
-              .catch((e: unknown) => logger.warn('[vector] 임베딩 빌드 실패:', e instanceof Error ? e.message : String(e)))
+              .catch((e: unknown) => logger.warn('[vector] Embedding build failed:', e instanceof Error ? e.message : String(e)))
           }
 
-          // Co-occurrence 기반 동적 동의어 추출 (워커, 백그라운드)
+          // Co-occurrence based dynamic synonym extraction (worker, background)
           if (docs.length > 0 && useVaultStore.getState().activeVaultId === startVaultId) {
             registerDynamicSynonyms(docs).catch((e: unknown) =>
-              logger.warn('[vault] co-occurrence 동의어 추출 실패:', e instanceof Error ? e.message : String(e)))
+              logger.warn('[vault] Co-occurrence synonym extraction failed:', e instanceof Error ? e.message : String(e)))
           }
         }, 0)
 
@@ -261,18 +261,18 @@ export function useVaultLoader() {
             // Backend not running — silently skip indexing
           }
         }
-        // 이미지는 on-demand로 로드 (ChatInput.tsx readImage IPC fallback)
-        // 볼트 로드 시 전체 사전 인덱싱을 하지 않아 메모리를 절약
+        // Images are loaded on demand (ChatInput.tsx readImage IPC fallback)
+        // Skipping full pre-indexing at vault load saves memory
         clearImageDataCache()
 
-        // 볼트 통계 스냅샷 기록 (백그라운드)
+        // Record a vault stats snapshot (background)
         if (docs && docs.length > 0) {
           const snapshot = buildStatsSnapshot(docs)
           saveStatsSnapshot(dirPath, snapshot).catch(() => {})
         }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : '파일 로드 실패'
-        logger.error('[vault] 로드 실패:', msg)
+        const msg = err instanceof Error ? err.message : 'File load failed'
+        logger.error('[vault] Load failed:', msg)
         setError(msg)
         setLoadedDocuments(null)
         resetToMock()
@@ -301,12 +301,12 @@ export function useVaultLoader() {
       }
 
       if (!window.vaultAPI) return
-      // currentVaultPath를 선제 갱신 — usePersonaVaultSaver의 vault:save-file 보안 검사 통과용
-      try { await window.vaultAPI.setActivePath?.(dirPath) } catch { /* 실패해도 캐시 복원은 계속 */ }
+      // Update currentVaultPath up front — so usePersonaVaultSaver's vault:save-file security check passes
+      try { await window.vaultAPI.setActivePath?.(dirPath) } catch { /* cache restore continues even on failure */ }
       setIsLoading(true)
       setVaultReady(false)
       setError(null)
-      // 캐시 복원 시엔 pendingFileCount 미설정 → 품질 선택 화면 재표시 방지
+      // Do not set pendingFileCount on cache restore → prevents re-showing the quality picker
       try {
         // Restore image registry + folders from cache (or empty defaults)
         setImagePathRegistry(cachedMeta?.imageRegistry ?? null)
@@ -327,20 +327,20 @@ export function useVaultLoader() {
         clearDynamicSynonyms()
         clearMetricsCache()
 
-        // buildGraph: 한 틱 후로 이동 — 메인 스레드 블로킹 방지
+        // buildGraph: deferred by one tick — avoids blocking the main thread
         await new Promise<void>(r => setTimeout(r, 0))
         if (useVaultStore.getState().activeVaultId !== startVaultId) return
         try {
           const { nodes, links } = buildGraph(cachedDocs)
           setGraph(nodes, links)
         } catch (e: unknown) {
-          logger.warn('[vault] 그래프 빌드 실패:', e instanceof Error ? e.message : String(e))
+          logger.warn('[vault] Graph build failed:', e instanceof Error ? e.message : String(e))
         }
         setGraphLayoutReady(true)
 
         const fingerprint = buildFingerprint(cachedDocs)
         setTimeout(async () => {
-          // 비동기 콜백 실행 전에 다른 볼트로 전환됐으면 중단 (stale index 방지)
+          // Abort if another vault was activated before the async callback ran (prevents a stale index)
           if (useVaultStore.getState().activeVaultId !== startVaultId) return
           const { links: currentLinks } = useGraphStore.getState()
           const adj = buildAdjacencyMap(currentLinks)
@@ -357,7 +357,7 @@ export function useVaultLoader() {
                     tfidfIndex.setImplicitLinks(links, adj)
                     return saveTfIdfCache(dirPath, { ...cached, implicitLinks: links })
                   })
-                  .catch((e: unknown) => logger.warn('[BM25] 묵시적 링크 계산 실패:', e instanceof Error ? e.message : String(e)))
+                  .catch((e: unknown) => logger.warn('[BM25] Implicit link computation failed:', e instanceof Error ? e.message : String(e)))
               }
             } else {
               try {
@@ -365,40 +365,40 @@ export function useVaultLoader() {
                 tfidfIndex.restore(serialized)
                 tfidfIndex.setImplicitLinks(implicitLinks, adj)
                 saveTfIdfCache(dirPath, serialized)
-                  .catch((e: unknown) => logger.warn('[BM25] 캐시 저장 실패:', e instanceof Error ? e.message : String(e)))
+                  .catch((e: unknown) => logger.warn('[BM25] Cache save failed:', e instanceof Error ? e.message : String(e)))
               } catch (e: unknown) {
-                logger.warn('[BM25] 워커 빌드 실패, 메인 스레드 폴백:', e instanceof Error ? e.message : String(e))
-                try { tfidfIndex.build(cachedDocs) } catch { /* 재빌드도 실패 시 무음 */ }
+                logger.warn('[BM25] Worker build failed, falling back to main thread:', e instanceof Error ? e.message : String(e))
+                try { tfidfIndex.build(cachedDocs) } catch { /* silent if the rebuild also fails */ }
               }
             }
           } catch (e: unknown) {
-            logger.warn('[BM25] 인덱스 초기화 실패, 재빌드 시도:', e instanceof Error ? e.message : String(e))
-            try { tfidfIndex.build(cachedDocs) } catch { /* 재빌드도 실패 시 무음 */ }
+            logger.warn('[BM25] Index init failed, attempting rebuild:', e instanceof Error ? e.message : String(e))
+            try { tfidfIndex.build(cachedDocs) } catch { /* silent if the rebuild also fails */ }
           }
 
           if (useVaultStore.getState().activeVaultId !== startVaultId) return
 
-          // ── 벡터 인덱스 리셋 + 재빌드 ────────────────────────────────────
-          // 볼트를 탭으로 전환하면 이전 볼트의 임베딩이 그대로 남아 다른 볼트
-          // 문서에 점수를 매긴다. loadVault() 와 동일하게 리셋 후 증분 재빌드.
+          // ── Vector index reset + rebuild ─────────────────────────────────
+          // Switching vaults via tabs leaves the previous vault's embeddings in place,
+          // scoring the other vault's documents. Reset then rebuild incrementally, same as loadVault().
           vectorEmbedIndex.reset()
           const geminiKey = useSettingsStore.getState().apiKeys['gemini']?.trim()
           const canEmbed = await isEmbeddingReady(geminiKey)
           if (canEmbed && cachedDocs.length > 0 && useVaultStore.getState().activeVaultId === startVaultId) {
             vectorEmbedIndex.buildIncremental(cachedDocs, geminiKey ?? '', dirPath)
-              .catch((e: unknown) => logger.warn('[vector] 임베딩 빌드 실패:', e instanceof Error ? e.message : String(e)))
+              .catch((e: unknown) => logger.warn('[vector] Embedding build failed:', e instanceof Error ? e.message : String(e)))
           }
 
-          // Co-occurrence 기반 동적 동의어 추출 (워커, 백그라운드)
+          // Co-occurrence based dynamic synonym extraction (worker, background)
           if (cachedDocs.length > 0 && useVaultStore.getState().activeVaultId === startVaultId) {
             registerDynamicSynonyms(cachedDocs).catch((e: unknown) =>
-              logger.warn('[vault] co-occurrence 동의어 추출 실패:', e instanceof Error ? e.message : String(e)))
+              logger.warn('[vault] Co-occurrence synonym extraction failed:', e instanceof Error ? e.message : String(e)))
           }
         }, 0)
 
         clearImageDataCache()
       } catch (err) {
-        const msg = err instanceof Error ? err.message : '복원 실패'
+        const msg = err instanceof Error ? err.message : 'Restore failed'
         setError(msg)
         setLoadedDocuments(null)
         resetToMock()
@@ -419,7 +419,7 @@ export function useVaultLoader() {
       const { vaultDocsCache } = useVaultStore.getState()
       if (vaultDocsCache[vaultId]?.length) return  // already in-memory
       try {
-        // ── docsCache 히트 시 파일 읽기·파싱 전체 생략 ──────────────────────
+        // ── On docsCache hit, skip file reading and parsing entirely ───────
         if (window.vaultAPI.scanMetadata) {
           try {
             const meta = await window.vaultAPI.scanMetadata(dirPath)
@@ -440,7 +440,7 @@ export function useVaultLoader() {
           } catch { /* docsCache miss → fall through to loadFiles */ }
         }
 
-        // ── 캐시 미스: 파일 읽기 + 파싱 후 저장 ────────────────────────────
+        // ── Cache miss: read files + parse, then save ──────────────────────
         const { files, folders, imageRegistry } = await window.vaultAPI.loadFiles(dirPath)
         if (!files?.length) return
         const docs = await parseVaultFilesAsync(files)
@@ -451,10 +451,10 @@ export function useVaultLoader() {
             [vaultId]: { imageRegistry: imageRegistry ?? null, folders: folders ?? [] }
           }
         }))
-        // 다음 재시작에서 캐시 히트되도록 저장
+        // Save so the next restart gets a cache hit
         const metaForFp = files.map(f => ({ relativePath: f.relativePath, mtime: f.mtime ?? 0 }))
         saveDocsCache(dirPath, buildDocsFingerprint(metaForFp), docs, folders ?? [], imageRegistry ?? null)
-          .catch(() => { /* 백그라운드 저장 실패는 무음 처리 */ })
+          .catch(() => { /* background save failures are silent */ })
       } catch {
         // Silent failure
       }

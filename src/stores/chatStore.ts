@@ -13,7 +13,7 @@ import { SPEAKER_IDS } from '@/lib/speakerConfig'
 
 const DEFAULT_PERSONA = SPEAKER_IDS[0]
 
-/** 메시지 배열이 200개를 초과하면 오래된 메시지부터 잘라냄 */
+/** Trims the oldest messages when the array exceeds 200 entries */
 const MAX_MESSAGES = 200
 function capMessages(msgs: ChatMessage[]): ChatMessage[] {
   return msgs.length > MAX_MESSAGES ? msgs.slice(-MAX_MESSAGES) : msgs
@@ -22,7 +22,7 @@ function capMessages(msgs: ChatMessage[]): ChatMessage[] {
 // Module-level abort controller — replaced each sendMessage, aborted by stopStreaming
 let _activeAbortController: AbortController | null = null
 
-// 청크 배치 버퍼 — 50ms마다 한 번에 setState해 React 리렌더링 횟수 감소
+// Chunk batch buffer — one setState every 50ms to reduce React re-renders
 const _pendingChunks = new Map<string, string>()
 const _pendingThinkingChunks = new Map<string, string>()
 let _flushTimer: ReturnType<typeof setTimeout> | null = null
@@ -57,9 +57,10 @@ function _scheduleFlush() {
   }, 50)
 }
 
-// 보고서 생성 인텐트:
-//   "보고서 써줘 / 만들어줘 / 작성해줘 / 정리해줘" 등 생성 동사가 따라오거나
-//   "대화/채팅 보고서", "PDF 만들어" 처럼 명시적 내보내기 요청일 때만 PDF 플로우
+// Report generation intent (Korean user input):
+//   enters the PDF flow only when "보고서" (report) is followed by a creation verb
+//   (써/만들/작성/정리 = write/make/compose/organize), or on an explicit export request
+//   such as "대화/채팅 보고서" (chat report) or "PDF 만들어" (make a PDF)
 const REPORT_INTENT_RE = /보고서.{0,20}(써|만들|작성|뽑아|정리|export|pdf)|(대화|채팅).{0,20}보고서|보고서.{0,20}(대화|채팅)|(pdf|PDF).{0,20}(만들|보고서|저장|export)/i
 
 interface ChatState {
@@ -79,7 +80,7 @@ interface ChatState {
   /** Abort any in-flight streaming requests */
   stopStreaming: () => void
   clearMessages: () => void
-  /** IndexedDB에서 이전 세션 복원 */
+  /** Restore the previous session from IndexedDB */
   restoreSession: () => Promise<void>
 }
 
@@ -100,19 +101,19 @@ export const useChatStore = create<ChatState>()((set, get) => {
   setPersonas: (ids) => set({ activePersonas: ids }),
 
   appendChunk: (messageId, chunk) => {
-    // 버퍼에 누적 후 50ms마다 일괄 적용 — 매 청크 setState 방지
+    // Accumulate in the buffer and apply in batches every 50ms — avoids a setState per chunk
     _pendingChunks.set(messageId, (_pendingChunks.get(messageId) ?? '') + chunk)
     _scheduleFlush()
   },
 
   appendThinkingChunk: (messageId, chunk) => {
-    // 버퍼에 누적 후 50ms마다 일괄 적용 — appendChunk와 동일한 배치 패턴
+    // Accumulate in the buffer and apply in batches every 50ms — same batching pattern as appendChunk
     _pendingThinkingChunks.set(messageId, (_pendingThinkingChunks.get(messageId) ?? '') + chunk)
     _scheduleFlush()
   },
 
   finishStreaming: (messageId) => {
-    // 버퍼에 남은 청크를 즉시 반영 후 streaming: false 처리
+    // Flush any remaining buffered chunks immediately, then set streaming: false
     if (_flushTimer !== null) {
       clearTimeout(_flushTimer)
       _flushTimer = null
@@ -120,7 +121,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
     set((state) => {
       const messages = state.messages.slice()
       let changed = false
-      // 남은 content 버퍼 flush
+      // Flush the remaining content buffer
       const pending = _pendingChunks.get(messageId)
       if (pending) {
         _pendingChunks.delete(messageId)
@@ -130,7 +131,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
           changed = true
         }
       }
-      // 남은 thinking 버퍼 flush
+      // Flush the remaining thinking buffer
       const pendingThinking = _pendingThinkingChunks.get(messageId)
       if (pendingThinking) {
         _pendingThinkingChunks.delete(messageId)
@@ -160,12 +161,12 @@ export const useChatStore = create<ChatState>()((set, get) => {
     _activeAbortController = abortController
     const signal = abortController.signal
 
-    // ── 보고서 생성 인텐트 감지 ────────────────────────────────────────────────
-    // LLM에게 보고서 작성을 맡기고, 완료 후 그 내용을 PDF로 내보냅니다.
+    // ── Report generation intent detection ───────────────────────────────────
+    // Let the LLM write the report, then export its content to PDF once finished.
     if (REPORT_INTENT_RE.test(trimmed) && window.reportAPI) {
       const reportPersona = activePersonas[0] ?? DEFAULT_PERSONA
 
-      // 유저 메시지 추가
+      // Add the user message
       const userMsg: ChatMessage = {
         id: generateId(),
         persona: reportPersona,
@@ -173,7 +174,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
         content: trimmed,
         timestamp: Date.now(),
       }
-      // LLM 스트리밍 플레이스홀더 (보고서 작성중 표시)
+      // LLM streaming placeholder (shows the report being written)
       const reportMsgId = generateId()
       const reportMsg: ChatMessage = {
         id: reportMsgId,
@@ -186,7 +187,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
       const history = get().messages.slice()
       set((state) => ({ messages: capMessages([...state.messages, userMsg, reportMsg]), isLoading: true }))
 
-      // LLM 스트리밍 — 보고서 내용을 마크다운으로 받습니다
+      // LLM streaming — receives the report content as markdown
       try {
         await streamMessage(reportPersona, trimmed, history, (chunk) => {
           get().appendChunk(reportMsgId, chunk)
@@ -195,42 +196,42 @@ export const useChatStore = create<ChatState>()((set, get) => {
         }, signal)
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {
-          get().appendChunk(reportMsgId, '\n\n[중단됨]')
+          get().appendChunk(reportMsgId, '\n\n[Stopped]')
         } else {
           const errMsg = err instanceof Error ? err.message : String(err)
-          get().appendChunk(reportMsgId, `[오류] ${errMsg}`)
+          get().appendChunk(reportMsgId, `[Error] ${errMsg}`)
         }
       } finally {
         get().finishStreaming(reportMsgId)
       }
 
-      // 완료된 LLM 응답 → PDF 내보내기
+      // Completed LLM response → PDF export
       const reportContent = get().messages.find(m => m.id === reportMsgId)?.content ?? ''
-      if (reportContent.trim() && !reportContent.startsWith('[오류]')) {
-        // "PDF 저장 중..." 알림 메시지
+      if (reportContent.trim() && !reportContent.startsWith('[Error]')) {
+        // "Saving PDF..." notification message
         const notifId = generateId()
         set((state) => ({
           messages: capMessages([...state.messages, {
             id: notifId,
             persona: reportPersona,
             role: 'assistant',
-            content: 'PDF로 저장하는 중...',
+            content: 'Saving as PDF...',
             timestamp: Date.now(),
             streaming: true,
           } as ChatMessage]),
         }))
 
-        // 보고서 제목: 유저 메시지에서 따거나 기본값
+        // Report title: taken from the user message, or the default
         const titleMatch = trimmed.match(/["「『](.+?)["」』]/)
-        const reportTitle = titleMatch?.[1] ?? '대화 보고서'
+        const reportTitle = titleMatch?.[1] ?? 'Chat Report'
         const html = generateReportHtmlFromContent(reportContent, reportTitle)
         const result = await window.reportAPI!.exportPdf(html, `${reportTitle}.pdf`)
 
         const notifContent = result.ok
-          ? `📄 보고서 저장 완료\n\`${result.filePath}\``
+          ? `📄 Report saved\n\`${result.filePath}\``
           : result.reason === 'canceled'
-            ? '저장이 취소됐어요.'
-            : `저장 실패: ${result.reason}`
+            ? 'Save was canceled.'
+            : `Save failed: ${result.reason}`
 
         set((state) => ({
           isLoading: false,
@@ -273,7 +274,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
         timestamp: Date.now(),
         streaming: true,
       }
-      // 히스토리를 플레이스홀더 추가 전에 스냅샷 — 동시 스트리밍 시 빈 플레이스홀더가 섞이지 않도록
+      // Snapshot the history before adding the placeholder — keeps empty placeholders out of concurrent streams
       const history = get().messages.slice()
       set((state) => ({ messages: capMessages([...state.messages, assistantMsg]) }))
 
@@ -318,10 +319,10 @@ export const useChatStore = create<ChatState>()((set, get) => {
           // User stopped streaming — mark message as finished without appending error
         } else {
           const errMsg = err instanceof Error ? err.message : String(err)
-          const friendlyMsg = errMsg.includes('401') ? '[오류] API 키가 유효하지 않습니다. 설정에서 API 키를 확인해주세요.'
-            : errMsg.includes('429') ? '[오류] API 사용량 한도 초과. 잠시 후 다시 시도해주세요.'
-            : errMsg.includes('network') || errMsg.includes('fetch') ? '[오류] 네트워크 연결을 확인해주세요.'
-            : `[오류] ${errMsg}`
+          const friendlyMsg = errMsg.includes('401') ? '[Error] API key is invalid. Please check your API key in settings.'
+            : errMsg.includes('429') ? '[Error] API rate limit exceeded. Please try again later.'
+            : errMsg.includes('network') || errMsg.includes('fetch') ? '[Error] Please check your network connection.'
+            : `[Error] ${errMsg}`
           get().appendChunk(assistantMsgId, friendlyMsg)
         }
       } finally {
@@ -331,7 +332,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
 
     // allSettled: each persona streams to completion independently; one failure doesn't abort others
     await Promise.allSettled(streamingPromises)
-    // stopStreaming이 먼저 호출됐어도 확실히 isLoading 해제
+    // Make sure isLoading is cleared even if stopStreaming was called first
     if (_activeAbortController === abortController) {
       _activeAbortController = null
       set({ isLoading: false })

@@ -34,7 +34,7 @@ async function main() {
   }
 }
 
-// ── 크래시 방지: unhandled rejection/exception이 프로세스를 종료하지 않도록 ──
+// ── Crash protection: keep unhandled rejections/exceptions from killing the process ──
 process.on('uncaughtException', (err) => {
   console.error('[strata-sync] uncaughtException:', err)
 })

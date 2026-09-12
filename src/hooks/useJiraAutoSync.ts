@@ -1,9 +1,9 @@
 /**
- * useJiraAutoSync.ts — Jira 이슈 자동 동기화 훅
+ * useJiraAutoSync.ts — Jira issue auto-sync hook
  *
- * JiraConfig.autoSync=true 이면 설정된 주기마다 Jira에서 변경된 이슈를 가져와 볼트에 저장.
- * 앱 시작 시 오늘 아직 동기화 안 됐으면 즉시 catch-up 실행.
- * lastJiraSyncAt을 "YYYY-MM-DD HH:mm" (UTC) datetime으로 JQL에 전달해 분 단위 증분 동기화.
+ * When JiraConfig.autoSync=true, fetches changed issues from Jira at the configured interval and saves them to the vault.
+ * On app start, runs an immediate catch-up if no sync has happened today yet.
+ * Passes lastJiraSyncAt to JQL as a "YYYY-MM-DD HH:mm" (UTC) datetime for minute-level incremental sync.
  */
 import { useEffect, useRef } from 'react'
 import { useSettingsStore, MIGRATED_CONFIG_KEY } from '@/stores/settingsStore'
@@ -47,7 +47,7 @@ export function useJiraAutoSync() {
       if (!vaultPath || !cfg.baseUrl || !cfg.apiToken) { isSyncingRef.current = false; return }
 
       try {
-        // 안전장치: lastJiraSyncAt과 cfg.dateFrom 모두 없으면 최근 7일만 가져옴
+        // Safety net: if neither lastJiraSyncAt nor cfg.dateFrom is set, fetch only the last 7 days
         const fallbackDate = cfg.dateFrom || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
         const dateFrom = toSyncDatetime(lastJiraSyncAt, fallbackDate)
 
@@ -66,7 +66,7 @@ export function useJiraAutoSync() {
         const now = new Date().toISOString()
 
         if (!issues || issues.length === 0) {
-          setLastJiraSyncAt(now)  // 변경사항 없어도 타임스탬프 갱신
+          setLastJiraSyncAt(now)  // Update the timestamp even when nothing changed
           return
         }
 
@@ -82,15 +82,15 @@ export function useJiraAutoSync() {
         await loadVault(vaultPath)
 
         setLastJiraSyncAt(now)
-        setNotification({ message: 'Jira 자동 동기화 완료', count: issues.length, at: now })
+        setNotification({ message: 'Jira auto-sync complete', count: issues.length, at: now })
       } catch (e) {
-        logger.warn('[JiraAutoSync] 동기화 실패:', e instanceof Error ? e.message : String(e))
+        logger.warn('[JiraAutoSync] Sync failed:', e instanceof Error ? e.message : String(e))
       } finally {
         isSyncingRef.current = false
       }
     }
 
-    // Catch-up: 앱 시작 시 오늘 아직 동기화 안 됐으면 즉시 실행
+    // Catch-up: run immediately on app start if no sync has happened today yet
     const { lastJiraSyncAt } = useSyncStore.getState()
     const last = lastJiraSyncAt ? new Date(lastJiraSyncAt) : null
     const isStale = !last || last.toDateString() !== new Date().toDateString()

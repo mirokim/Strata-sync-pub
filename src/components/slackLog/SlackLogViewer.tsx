@@ -1,19 +1,19 @@
 /**
- * SlackLogViewer.tsx — Slack 봇 로그 뷰어
+ * SlackLogViewer.tsx — Slack bot log viewer
  *
- * bot/slackbot_logs/YYYY-MM-DD.log 파일을 파싱하여 보기 좋게 렌더링.
- * TopBar의 ScrollText 버튼으로 열림.
+ * Parses bot/slackbot_logs/YYYY-MM-DD.log files and renders them in a readable form.
+ * Opened via the ScrollText button in the TopBar.
  */
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { ChevronLeft, ChevronRight, X, RefreshCw } from 'lucide-react'
 import { useUIStore } from '@/stores/uiStore'
 
-// ── 로그 라인 파싱 ───────────────────────────────────────────────────────────
+// ── Log line parsing ─────────────────────────────────────────────────────────
 
 interface LogEntry {
   time: string
-  elapsed?: string       // [52.8s] 등
-  tag: string            // READY, ERR, Slack, RAG, Image, 완료, 쿼리정제 등
+  elapsed?: string       // e.g. [52.8s]
+  tag: string            // READY, ERR, Slack, RAG, Image, 완료 (done), 쿼리정제 (query refine), etc.
   message: string
   level: 'info' | 'warn' | 'error' | 'success' | 'query' | 'system'
 }
@@ -34,13 +34,13 @@ function parseLine(raw: string): LogEntry | null {
   const trimmed = raw.trim()
   if (!trimmed) return null
 
-  // [HH:MM:SS] 추출
+  // Extract [HH:MM:SS]
   const timeMatch = trimmed.match(/^\[(\d{2}:\d{2}:\d{2})\]\s*/)
   if (!timeMatch) return null
   const time = timeMatch[1]
   let rest = trimmed.slice(timeMatch[0].length)
 
-  // [52.8s] 등 elapsed 추출
+  // Extract elapsed, e.g. [52.8s]
   let elapsed: string | undefined
   const elapsedMatch = rest.match(/^\[(\d+\.?\d*s)\]\s*/)
   if (elapsedMatch) {
@@ -48,7 +48,7 @@ function parseLine(raw: string): LogEntry | null {
     rest = rest.slice(elapsedMatch[0].length)
   }
 
-  // [TAG] 추출
+  // Extract [TAG]
   const tagMatch = rest.match(/^\[([^\]]+)\]\s*/)
   let tag = ''
   let message = rest
@@ -67,7 +67,7 @@ function parseLine(raw: string): LogEntry | null {
     message = rest
   }
 
-  // level 결정
+  // Determine level
   const style = TAG_STYLES[tag]
   let level: LogEntry['level'] = style?.level ?? 'info'
   if (message.includes('실패') || message.includes('error') || message.includes('Error')) level = 'error'
@@ -76,7 +76,7 @@ function parseLine(raw: string): LogEntry | null {
   return { time, elapsed, tag, message, level }
 }
 
-// ── 날짜 헬퍼 ────────────────────────────────────────────────────────────────
+// ── Date helpers ─────────────────────────────────────────────────────────────
 
 function formatDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -88,7 +88,7 @@ function addDays(d: Date, n: number): Date {
   return r
 }
 
-// ── 메인 컴포넌트 ────────────────────────────────────────────────────────────
+// ── Main component ───────────────────────────────────────────────────────────
 
 export default function SlackLogViewer() {
   const setCenterTab = useUIStore(s => s.setCenterTab)
@@ -112,7 +112,7 @@ export default function SlackLogViewer() {
 
   useEffect(() => { loadLog(date) }, [date, loadLog])
 
-  // 실시간 로그 수신 — 오늘 날짜일 때만 라인 추가
+  // Live log stream — only append lines when viewing today
   useEffect(() => {
     const unsub = (window as any).botAPI?.onLog?.((line: string) => {
       if (date === formatDate(new Date())) {
@@ -155,14 +155,14 @@ export default function SlackLogViewer() {
       display: 'flex', flexDirection: 'column', height: '100%',
       background: 'var(--color-bg-primary)',
     }}>
-      {/* 헤더 */}
+      {/* Header */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
         padding: '8px 16px', borderBottom: '1px solid var(--color-border)',
         background: 'var(--color-bg-surface)',
       }}>
         <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-          Slack 봇 로그
+          Slack Bot Logs
         </span>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginLeft: 8 }}>
@@ -173,13 +173,13 @@ export default function SlackLogViewer() {
           <button onClick={nextDay} style={navBtnStyle}><ChevronRight size={14} /></button>
         </div>
 
-        <button onClick={() => loadLog(date)} style={{ ...navBtnStyle, marginLeft: 4 }} title="새로고침">
+        <button onClick={() => loadLog(date)} style={{ ...navBtnStyle, marginLeft: 4 }} title="Refresh">
           <RefreshCw size={12} />
         </button>
 
-        {/* 필터 버튼 */}
+        {/* Filter buttons */}
         <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
-          {([['all', '전체', counts.all], ['query', '쿼리', counts.query], ['error', '오류', counts.error], ['success', '완료', counts.success]] as const).map(([key, label, count]) => (
+          {([['all', 'All', counts.all], ['query', 'Query', counts.query], ['error', 'Error', counts.error], ['success', 'Done', counts.success]] as const).map(([key, label, count]) => (
             <button
               key={key}
               onClick={() => setFilter(key as typeof filter)}
@@ -196,12 +196,12 @@ export default function SlackLogViewer() {
           ))}
         </div>
 
-        <button onClick={() => setCenterTab('graph')} style={navBtnStyle} title="닫기">
+        <button onClick={() => setCenterTab('graph')} style={navBtnStyle} title="Close">
           <X size={14} />
         </button>
       </div>
 
-      {/* 로그 본문 */}
+      {/* Log body */}
       <div
         ref={scrollRef}
         style={{
@@ -211,11 +211,11 @@ export default function SlackLogViewer() {
         }}
       >
         {loading && (
-          <div style={{ padding: 16, color: 'var(--color-text-muted)', textAlign: 'center' }}>로딩 중...</div>
+          <div style={{ padding: 16, color: 'var(--color-text-muted)', textAlign: 'center' }}>Loading...</div>
         )}
         {!loading && entries.length === 0 && (
           <div style={{ padding: 16, color: 'var(--color-text-muted)', textAlign: 'center' }}>
-            {date} 로그가 없습니다
+            No logs for {date}
           </div>
         )}
         {entries.map((entry, i) => (
@@ -226,7 +226,7 @@ export default function SlackLogViewer() {
   )
 }
 
-// ── 로그 행 컴포넌트 ─────────────────────────────────────────────────────────
+// ── Log row component ────────────────────────────────────────────────────────
 
 function LogRow({ entry }: { entry: LogEntry }) {
   const style = TAG_STYLES[entry.tag]
@@ -242,7 +242,7 @@ function LogRow({ entry }: { entry: LogEntry }) {
     system: '#60a5fa',
   }[entry.level]
 
-  // 에러 메시지의 긴 URL/스택은 축약
+  // Truncate long URLs/stacks in error messages
   let displayMsg = entry.message
   if (entry.level === 'error' && displayMsg.length > 200) {
     const urlMatch = displayMsg.match(/https?:\/\/\S+/)
@@ -261,12 +261,12 @@ function LogRow({ entry }: { entry: LogEntry }) {
       borderLeft: `2px solid ${entry.level === 'error' ? '#ef4444' : entry.level === 'warn' ? '#eab308' : 'transparent'}`,
       background: entry.level === 'error' ? 'rgba(239,68,68,0.04)' : entry.level === 'query' ? 'rgba(245,158,11,0.03)' : 'transparent',
     }}>
-      {/* 시간 */}
+      {/* Time */}
       <span style={{ color: 'var(--color-text-muted)', opacity: 0.6, fontSize: 10 }}>
         {entry.time}
       </span>
 
-      {/* 태그 뱃지 */}
+      {/* Tag badge */}
       <span style={{
         display: 'inline-block',
         padding: '0 5px', borderRadius: 3,
@@ -278,7 +278,7 @@ function LogRow({ entry }: { entry: LogEntry }) {
         {entry.tag || '—'}
       </span>
 
-      {/* 메시지 */}
+      {/* Message */}
       <span style={{ color: levelColor, wordBreak: 'break-word' }}>
         {entry.elapsed && (
           <span style={{ color: 'var(--color-text-muted)', opacity: 0.5, marginRight: 4, fontSize: 10 }}>
@@ -291,7 +291,7 @@ function LogRow({ entry }: { entry: LogEntry }) {
   )
 }
 
-// ── 스타일 ───────────────────────────────────────────────────────────────────
+// ── Styles ───────────────────────────────────────────────────────────────────
 
 const navBtnStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'center',

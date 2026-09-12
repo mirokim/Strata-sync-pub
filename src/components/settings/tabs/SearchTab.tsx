@@ -224,24 +224,24 @@ export default function SearchTab() {
         />
       </Section>
 
-      {/* AI 추론 설정 */}
-      <Section title="AI 추론 & 인사이트">
+      {/* AI reasoning settings */}
+      <Section title="AI Reasoning & Insights">
         <ToggleRow
-          label="구조화 추론"
-          desc="분석·설계·의사결정 질문에 [관찰]→[연결고리]→[분석]→[결론/제안] 구조 강제. 단순 질문은 자동 생략"
+          label="Structured Reasoning"
+          desc="Forces an [Observation]→[Connection]→[Analysis]→[Conclusion/Proposal] structure for analysis, design and decision questions. Skipped automatically for simple questions"
           checked={rc.structuredReasoning ?? DEFAULT_REASONING_CONFIG.structuredReasoning}
           onChange={v => rtoggle('structuredReasoning', v)}
         />
         <ToggleRow
           label="Extended Thinking"
-          desc="Claude가 응답 전 내부 추론 과정을 거침 — 복잡한 설계·분석 질문에서 답변 품질 대폭 향상 (Anthropic 전용, Haiku 미지원, 응답 느려짐)"
+          desc="Claude reasons internally before responding — greatly improves answer quality on complex design/analysis questions (Anthropic only, not supported on Haiku, slower responses)"
           checked={rc.extendedThinking ?? DEFAULT_REASONING_CONFIG.extendedThinking}
           onChange={v => rtoggle('extendedThinking', v)}
         />
         {(rc.extendedThinking ?? DEFAULT_REASONING_CONFIG.extendedThinking) && (
           <ReasoningNumRow
-            label="추론 토큰 예산"
-            desc="Extended Thinking에 할당할 최대 토큰 수 (높을수록 깊은 추론, 비용 증가)"
+            label="Thinking Token Budget"
+            desc="Maximum tokens allocated to Extended Thinking (higher = deeper reasoning, higher cost)"
             value={rc.thinkingBudget ?? DEFAULT_REASONING_CONFIG.thinkingBudget}
             min={1000} max={32000} step={1000}
             onChange={v => setReasoningConfig({ thinkingBudget: v })}
@@ -249,23 +249,23 @@ export default function SearchTab() {
         )}
       </Section>
 
-      {/* AI 검색 품질 향상 */}
-      <Section title="검색 품질 향상 (AI 보조)">
+      {/* AI search quality improvements */}
+      <Section title="Search Quality (AI-assisted)">
         <ToggleRow
-          label="메타데이터 필터"
-          desc="쿼리에서 화자·태그를 자동 감지해 관련 문서만 사전 필터링 — 특정 인물/주제 검색 정밀도 향상"
+          label="Metadata Filter"
+          desc="Auto-detects speakers/tags in the query and pre-filters to relevant documents — improves precision for person/topic searches"
           checked={sc.metadataFilter ?? DEFAULT_SEARCH_CONFIG.metadataFilter}
           onChange={v => toggle('metadataFilter', v)}
         />
         <ToggleRow
-          label="쿼리 확장"
-          desc="모호하거나 짧은 쿼리를 LLM(Haiku)으로 보강해 벡터 검색 재현율 향상 (Anthropic API 키 필요, ~5초 추가)"
+          label="Query Expansion"
+          desc="Enriches vague or short queries with an LLM (Haiku) to improve vector search recall (requires Anthropic API key, adds ~5s)"
           checked={sc.queryExpansion ?? DEFAULT_SEARCH_CONFIG.queryExpansion}
           onChange={v => toggle('queryExpansion', v)}
         />
         <ToggleRow
-          label="LLM 리랭킹"
-          desc="벡터 검색 후보를 LLM(Haiku)으로 재평가해 관련성 높은 문서 우선 배치 (Anthropic API 키 필요, ~8초 추가)"
+          label="LLM Reranking"
+          desc="Re-evaluates vector search candidates with an LLM (Haiku) so the most relevant documents rank first (requires Anthropic API key, adds ~8s)"
           checked={sc.llmRerank ?? DEFAULT_SEARCH_CONFIG.llmRerank}
           onChange={v => toggle('llmRerank', v)}
         />

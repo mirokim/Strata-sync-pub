@@ -1195,7 +1195,7 @@ export default function Graph3D({ width, height }: Props) {
     >
       <div
         role="img"
-        aria-label={`지식 그래프: ${nodes.length}개 노드, ${links.length}개 링크`}
+        aria-label={`Knowledge graph: ${nodes.length} nodes, ${links.length} links`}
         style={{
           position: 'absolute',
           width: 1,

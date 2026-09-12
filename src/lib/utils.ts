@@ -24,9 +24,9 @@ export function truncate(text: string, max = 40): string {
 }
 
 /** Extract [[slug]] references from a markdown string.
- *  ![[embed]] 형식의 이미지 임베드는 제외합니다. */
+ *  Image embeds of the form ![[embed]] are excluded. */
 export function extractWikiLinks(text: string): string[] {
-  // negative lookbehind: '!' 바로 앞에 오는 [[...]] 는 이미지 임베드이므로 제외
+  // negative lookbehind: [[...]] immediately preceded by '!' is an image embed, so exclude it
   const matches = text.match(/(?<!!)\[\[(.*?)\]\]/gs) ?? []
   return matches.map(m => m.slice(2, -2).trim())
 }
@@ -43,7 +43,7 @@ export function extractImageRefs(text: string): string[] {
  */
 export function normalizePath(p: string, stripLeading = false): string {
   let result = p.replace(/\\/g, '/')
-  // Windows 드라이브 문자 소문자 정규화 (C:/ → c:/)
+  // Normalize Windows drive letter to lowercase (C:/ → c:/)
   if (/^[A-Z]:\//.test(result)) {
     result = result[0].toLowerCase() + result.slice(1)
   }
@@ -59,12 +59,12 @@ export async function safeFileOp<T>(label: string, fn: () => Promise<T>): Promis
   try {
     return await fn()
   } catch (e) {
-    console.error(`[FileOp] ${label} 실패:`, e)
-    // 동적 import로 순환 의존성 방지
+    console.error(`[FileOp] ${label} failed:`, e)
+    // Dynamic import to avoid circular dependency
     try {
       const { showToast } = await import('@/stores/toastStore')
-      showToast(`${label} 실패: ${e instanceof Error ? e.message : String(e)}`, 'error')
-    } catch { /* toast 실패는 무시 */ }
+      showToast(`${label} failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
+    } catch { /* ignore toast failure */ }
     return null
   }
 }

@@ -23,7 +23,7 @@ async def test_index_returns_indexed_count(client, sample_chunks):
 
 @pytest.mark.asyncio
 async def test_index_count_reflects_stored_chunks(client):
-    """indexed 는 실제 저장된 청크 수여야 한다 (중복 ID 는 1건으로 집계)."""
+    """indexed must be the number of chunks actually stored (duplicate IDs count as one)."""
     doc = {
         "doc_id": "dup_001",
         "filename": "dup.md",
@@ -81,10 +81,10 @@ async def test_clear_empty_collection(client):
 
 @pytest.mark.asyncio
 async def test_requests_still_work_after_clear(client, sample_chunks):
-    """clear() 후에도 stats/index/search 가 동작해야 한다.
+    """stats/index/search must keep working after clear().
 
-    _ensure_ready 가 _client 만 보고 조기 반환하면 _collection 이 None 인 채로
-    남아 이후 모든 요청이 500 이 되고 재시작 전까지 복구되지 않는다.
+    If _ensure_ready returns early by checking only _client, _collection stays None
+    and every subsequent request returns 500 until a restart.
     """
     await client.post("/docs/index", json={"documents": sample_chunks})
     assert (await client.delete("/docs/clear")).status_code == 200

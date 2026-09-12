@@ -61,11 +61,11 @@
 
 /* ── Semantic status colors (theme-agnostic) ── */
 :root {
-  --color-error:        #f87171;  /* red-400   — 오류 텍스트/아이콘 */
-  --color-success:      #22c55e;  /* green-400 — 성공 텍스트/아이콘 */
-  --color-info:         #3b82f6;  /* blue-400  — 정보/활성 */
-  --color-warning:      #f59e0b;  /* amber-400 — 경고 */
-  --color-bg-tertiary:  rgba(255,255,255,0.06); /* 미묘한 입력창/카드 배경 */
+  --color-error:        #f87171;  /* red-400   — error text/icons */
+  --color-success:      #22c55e;  /* green-400 — success text/icons */
+  --color-info:         #3b82f6;  /* blue-400  — info/active */
+  --color-warning:      #f59e0b;  /* amber-400 — warning */
+  --color-bg-tertiary:  rgba(255,255,255,0.06); /* subtle input/card background */
 
   /* Semi-transparent status backgrounds */
   --color-error-bg:     rgba(239,68,68,0.1);

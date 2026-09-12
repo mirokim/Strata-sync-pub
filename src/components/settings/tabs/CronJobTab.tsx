@@ -1,7 +1,7 @@
 /**
- * CronJobTab — 크론잡 설정 + 실행 이력/로그 뷰
+ * CronJobTab — Cron job settings + run history/log view
  *
- * 로그 뷰: run 단위 그루핑 카드 + 필터(잡/레벨/검색) + 이력(날짜별 JSONL) + export
+ * Log view: per-run grouped cards + filters (job/level/search) + history (daily JSONL) + export
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -17,25 +17,25 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 const JOB_LABELS: Record<string, string> = {
-  'daily-run': '일일 실행',
+  'daily-run': 'Daily Run',
   'edit-agent': 'Edit Agent',
   'vault-reload': 'Vault Reload',
   'vector-rebuild': 'Vector Rebuild',
-  'health-check': '헬스체크',
-  'system': '시스템',
+  'health-check': 'Health Check',
+  'system': 'System',
 }
 
 function relativeTime(iso: string | null): string {
   if (!iso) return '-'
   const diff = Date.now() - new Date(iso).getTime()
-  if (diff < 0) return '방금'
+  if (diff < 0) return 'just now'
   const s = Math.floor(diff / 1000)
-  if (s < 60) return `${s}초 전`
+  if (s < 60) return `${s}s ago`
   const m = Math.floor(s / 60)
-  if (m < 60) return `${m}분 전`
+  if (m < 60) return `${m}m ago`
   const h = Math.floor(m / 60)
-  if (h < 24) return `${h}시간 전`
-  return `${Math.floor(h / 24)}일 전`
+  if (h < 24) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
 }
 
 function formatTime(iso: string | null): string {
@@ -47,9 +47,9 @@ function formatDuration(ms?: number): string {
   if (!ms || ms < 0) return '-'
   if (ms < 1000) return `${ms}ms`
   const s = Math.round(ms / 1000)
-  if (s < 60) return `${s}초`
+  if (s < 60) return `${s}s`
   const m = Math.floor(s / 60)
-  return `${m}분 ${s % 60}초`
+  return `${m}m ${s % 60}s`
 }
 
 function parseCronTime(expr: string): { hour: number; minute: number } {
@@ -57,7 +57,7 @@ function parseCronTime(expr: string): { hour: number; minute: number } {
   return { minute: parseInt(parts[0]) || 0, hour: parseInt(parts[1]) || 4 }
 }
 
-// run 단위 그루핑: runId 없는 엔트리는 __floating__ 그룹으로 모음
+// Group by run: entries without a runId are collected into the __floating__ group
 interface RunGroup {
   runId: string
   jobId: string
@@ -98,7 +98,7 @@ function groupByRun(entries: CronLogEntry[]): RunGroup[] {
     if (e.timestamp < g.firstTs) g.firstTs = e.timestamp
     if (e.timestamp > g.lastTs) g.lastTs = e.timestamp
   }
-  // running 판정: end 없고 최근 60초 이내 → running, 그 외 unknown
+  // Running detection: no end and within the last 60s → running, otherwise unknown
   const now = Date.now()
   for (const g of map.values()) {
     if (!g.endEntry) {
@@ -129,7 +129,7 @@ export default function CronJobTab() {
   const [search, setSearch] = useState('')
   const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set())
 
-  // ── daily-run 설정 ──
+  // ── daily-run settings ──
   const dailyConfig = cronConfigs['daily-run'] ?? { enabled: true, cronExpression: '0 4 * * *' }
   const dailyJob = jobs['daily-run']
   const dailyTime = parseCronTime(dailyConfig.cronExpression || '0 4 * * *')
@@ -147,7 +147,7 @@ export default function CronJobTab() {
     window.cronAPI?.updateConfig('daily-run', { cronExpression: expr })
   }
 
-  // ── health-check 설정 ──
+  // ── health-check settings ──
   const hcConfig = cronConfigs['health-check'] ?? { enabled: true, intervalMinutes: 5 }
   const hcJob = jobs['health-check']
   const hcEnabled = hcJob?.enabled ?? hcConfig.enabled ?? true
@@ -157,10 +157,10 @@ export default function CronJobTab() {
     window.cronAPI?.updateConfig('health-check', { enabled })
   }
 
-  // ── 활성 로그 소스 (이력 선택 시 historyLogs, 아니면 라이브 logs) ──
+  // ── Active log source (historyLogs when a history date is selected, otherwise live logs) ──
   const activeLogs = historyDate ? historyLogs : logs
 
-  // ── 필터 적용 ──
+  // ── Apply filters ──
   const filtered = useMemo(() => {
     let arr = activeLogs
     if (filterJob !== '__all__') arr = arr.filter(e => e.jobId === filterJob)
@@ -178,17 +178,17 @@ export default function CronJobTab() {
 
   const runGroups = useMemo(() => groupByRun(filtered), [filtered])
 
-  // 로그 뷰어 처음 열 때 이력 파일 목록 갱신
+  // Refresh the history file list when the log viewer is first opened
   useEffect(() => {
     if (logsOpen) refreshLogFiles()
   }, [logsOpen, refreshLogFiles])
 
-  // H8. 이력 날짜 변경 시 파일 목록 자동 갱신
+  // H8. Auto-refresh the file list when the history date changes
   useEffect(() => {
     refreshLogFiles()
   }, [historyDate, refreshLogFiles])
 
-  // H8. 새 run 기록 시 파일 크기 변경 가능 — 30초 쿨다운 rate limit
+  // H8. File sizes may change when a new run is recorded — 30s cooldown rate limit
   const lastLogFilesRefreshRef = useRef(0)
   useEffect(() => {
     const now = Date.now()
@@ -198,12 +198,12 @@ export default function CronJobTab() {
     }
   }, [logs.length, refreshLogFiles])
 
-  // H7. 이력 전환 시 expandedRuns 리셋 (메모리 누수 방지)
+  // H7. Reset expandedRuns when switching history (prevents memory leaks)
   useEffect(() => {
     setExpandedRuns(new Set())
   }, [historyDate])
 
-  // H7. 200개 초과 시 runGroups 에 없는 runId 를 prune
+  // H7. Prune runIds not present in runGroups once over 200
   useEffect(() => {
     setExpandedRuns(prev => {
       if (prev.size <= 200) return prev
@@ -216,9 +216,9 @@ export default function CronJobTab() {
 
   // ── export ──
   const handleExport = (fmt: 'json' | 'csv') => {
-    // JSON export 크기 가드
+    // JSON export size guard
     if (fmt === 'json' && filtered.length > 50000) {
-      alert('50000 라인 초과 — CSV 사용 권장')
+      alert('Over 50000 lines — CSV recommended')
       return
     }
     const csvEscape = (v: unknown) => {
@@ -240,7 +240,7 @@ export default function CronJobTab() {
         csvEscape(e.message || ''),
         csvEscape(e.durationMs ?? ''), csvEscape(e.fileCount ?? ''), csvEscape(e.errorCount ?? ''),
       ].join(','))
-      // BOM + \r\n 줄바꿈 (Excel 한글 호환)
+      // BOM + \r\n line endings (Excel compatibility for Korean text)
       text = '\uFEFF' + header + '\r\n' + rows.join('\r\n')
       mime = 'text/csv'
       name = `cron-logs-${historyDate ?? 'live'}.csv`
@@ -279,7 +279,7 @@ export default function CronJobTab() {
     return Array.from(s).sort()
   }, [activeLogs])
 
-  // H10. filterJob 이 현재 목록에 없으면 전체로 리셋
+  // H10. Reset filterJob to all when it is no longer in the current list
   useEffect(() => {
     if (filterJob !== '__all__' && !uniqueJobs.includes(filterJob)) setFilterJob('__all__')
   }, [filterJob, uniqueJobs])
@@ -288,7 +288,7 @@ export default function CronJobTab() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '2px 0' }}>
       <style>{hideSpinnerCSS}</style>
 
-      {/* ── 일일 실행 카드 ── */}
+      {/* ── Daily run card ── */}
       <div style={{
         padding: '16px 18px', borderRadius: 3,
         background: 'var(--color-bg-surface)',
@@ -299,7 +299,7 @@ export default function CronJobTab() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Clock size={15} style={{ color: 'var(--color-accent)', flexShrink: 0 }} />
             <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-              일일 자동 실행
+              Daily Auto Run
             </span>
           </div>
           <label style={{ position: 'relative', display: 'inline-block', width: 36, height: 20, flexShrink: 0 }}>
@@ -319,13 +319,13 @@ export default function CronJobTab() {
         </div>
 
         <div style={{ fontSize: 11, color: 'var(--color-text-muted)', lineHeight: 1.6 }}>
-          Edit Agent 사이클 (Confluence/Jira 동기화 → 문서 정제 → 품질 체크)
-          · 완료 후 볼트 리로드 + 벡터 임베딩 자동 리빌드
+          Edit Agent cycle (Confluence/Jira sync → document refinement → quality check)
+          · then vault reload + automatic vector embedding rebuild
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--color-text-muted)' }}>
-            <span>매일</span>
+            <span>Every day at</span>
             <input type="number" min={0} max={23} value={dailyTime.hour}
               onChange={e => handleTime(Math.min(23, Math.max(0, Number(e.target.value) || 0)), dailyTime.minute)}
               style={{ ...inputStyle, width: 34 }} />
@@ -345,15 +345,15 @@ export default function CronJobTab() {
               color: dailyStatus === 'running' ? 'var(--color-text-muted)' : '#fff',
               opacity: dailyStatus === 'running' ? 0.5 : 1, whiteSpace: 'nowrap',
             }}>
-            <Play size={10} /> 지금 실행
+            <Play size={10} /> Run Now
           </button>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--color-text-muted)', borderTop: '1px solid var(--color-border)', paddingTop: 10 }}>
           <div style={{ width: 7, height: 7, borderRadius: '50%', background: statusColor, flexShrink: 0 }} />
-          <span>{dailyStatus === 'running' ? '실행 중...' : dailyStatus === 'success' ? '정상' : dailyStatus === 'error' ? '오류' : '대기'}</span>
+          <span>{dailyStatus === 'running' ? 'Running...' : dailyStatus === 'success' ? 'OK' : dailyStatus === 'error' ? 'Error' : 'Idle'}</span>
           <span style={{ opacity: 0.6 }}>·</span>
-          <span>마지막 {relativeTime(dailyJob?.lastRunAt ?? null)}</span>
+          <span>Last run {relativeTime(dailyJob?.lastRunAt ?? null)}</span>
           {dailyJob?.lastResult && (
             <span style={{ color: dailyStatus === 'error' ? 'var(--color-error)' : undefined, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
               title={dailyJob.lastResult}>
@@ -363,7 +363,7 @@ export default function CronJobTab() {
         </div>
       </div>
 
-      {/* ── 헬스체크 카드 ── */}
+      {/* ── Health check card ── */}
       <div style={{
         padding: '12px 18px', borderRadius: 3, background: 'var(--color-bg-surface)',
         border: '1px solid var(--color-border)',
@@ -375,10 +375,10 @@ export default function CronJobTab() {
         }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)' }}>
-            시스템 헬스체크
+            System Health Check
           </span>
           <span style={{ fontSize: 11, color: 'var(--color-text-muted)', marginLeft: 8 }}>
-            5분 주기 · 봇 프로세스 + 메모리 점검
+            Every 5 min · checks bot process + memory
           </span>
         </div>
         <span style={{ fontSize: 11, color: 'var(--color-text-muted)', flexShrink: 0 }}>
@@ -400,7 +400,7 @@ export default function CronJobTab() {
         </label>
       </div>
 
-      {/* ── 로그 토글 ── */}
+      {/* ── Log toggle ── */}
       <button onClick={() => setLogsOpen(v => !v)}
         style={{
           display: 'flex', alignItems: 'center', gap: 6,
@@ -408,12 +408,12 @@ export default function CronJobTab() {
           color: 'var(--color-text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0',
         }}>
         {logsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        실행 로그 {runGroups.length > 0 && `· ${runGroups.length} runs / ${filtered.length} lines`}
+        Run Logs {runGroups.length > 0 && `· ${runGroups.length} runs / ${filtered.length} lines`}
       </button>
 
       {logsOpen && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {/* ── 필터 바 ── */}
+          {/* ── Filter bar ── */}
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
             padding: '8px 10px', background: 'var(--color-bg-surface)',
@@ -421,34 +421,34 @@ export default function CronJobTab() {
           }}>
             <Filter size={12} style={{ color: 'var(--color-text-muted)' }} />
             <select value={filterJob} onChange={e => setFilterJob(e.target.value)} style={selectStyle}>
-              <option value="__all__">모든 잡</option>
+              <option value="__all__">All jobs</option>
               {uniqueJobs.map(j => <option key={j} value={j}>{JOB_LABELS[j] ?? j}</option>)}
             </select>
             <select value={filterLevel} onChange={e => setFilterLevel(e.target.value as 'all' | 'info' | 'warn' | 'error')} style={selectStyle}>
-              <option value="all">모든 레벨</option>
+              <option value="all">All levels</option>
               <option value="info">info</option>
               <option value="warn">warn</option>
               <option value="error">error</option>
             </select>
-            <input type="text" placeholder="검색 (message / runId)" value={search}
+            <input type="text" placeholder="Search (message / runId)" value={search}
               onChange={e => setSearch(e.target.value)}
               style={{ ...selectStyle, flex: 1, minWidth: 120, textAlign: 'left' }} />
 
-            {/* 이력 날짜 선택 */}
+            {/* History date picker */}
             <select value={historyDate ?? ''} onChange={e => loadHistory(e.target.value || null)} style={selectStyle}>
-              <option value="">라이브</option>
+              <option value="">Live</option>
               {logFiles.map(f => <option key={f.date} value={f.date}>{f.date}</option>)}
             </select>
-            {historyLoading && <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>불러오는 중...</span>}
+            {historyLoading && <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>Loading...</span>}
 
             {/* export */}
-            <button onClick={() => handleExport('json')} title="JSON 내보내기"
+            <button onClick={() => handleExport('json')} title="Export JSON"
               style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '3px 8px', fontSize: 10,
                 background: 'var(--color-bg-base)', border: '1px solid var(--color-border)', borderRadius: 2,
                 color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
               <Download size={10} /> JSON
             </button>
-            <button onClick={() => handleExport('csv')} title="CSV 내보내기"
+            <button onClick={() => handleExport('csv')} title="Export CSV"
               style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '3px 8px', fontSize: 10,
                 background: 'var(--color-bg-base)', border: '1px solid var(--color-border)', borderRadius: 2,
                 color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
@@ -456,14 +456,14 @@ export default function CronJobTab() {
             </button>
           </div>
 
-          {/* ── run 그룹 리스트 ── */}
+          {/* ── Run group list ── */}
           <div style={{
             maxHeight: 420, overflowY: 'auto', background: 'var(--color-bg-base)',
             border: '1px solid var(--color-border)', borderRadius: 2, padding: '4px',
           }}>
             {runGroups.length === 0
               ? <div style={{ padding: 12, textAlign: 'center', fontSize: 11, color: 'var(--color-text-muted)' }}>
-                  로그가 없습니다.
+                  No logs.
                 </div>
               : runGroups.map(g => {
                 const expanded = expandedRuns.has(g.runId)
@@ -500,17 +500,17 @@ export default function CronJobTab() {
                         <span style={{ color: 'var(--color-text-muted)' }}>· {formatDuration(duration)}</span>
                       )}
                       {typeof fileCount === 'number' && fileCount > 0 && (
-                        <span style={{ color: 'var(--color-text-muted)' }}>· {fileCount}파일</span>
+                        <span style={{ color: 'var(--color-text-muted)' }}>· {fileCount} files</span>
                       )}
                       {tokens != null && tokens > 0 && (
                         <span style={{ color: 'var(--color-text-muted)' }}>· {tokens.toLocaleString()} tok</span>
                       )}
                       {g.errorCount > 0 && (
-                        <span style={{ color: 'var(--color-error)' }}>· {g.errorCount} 에러</span>
+                        <span style={{ color: 'var(--color-error)' }}>· {g.errorCount} errors</span>
                       )}
                       <span style={{ flex: 1 }} />
                       <span style={{ color: 'var(--color-text-muted)', fontSize: 10 }}>
-                        {g.entries.length} 라인
+                        {g.entries.length} lines
                       </span>
                     </div>
                     {expanded && (

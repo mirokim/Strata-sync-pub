@@ -65,7 +65,7 @@ class ChromaService:
         self._ensure_ready()
         assert self._collection is not None
 
-        # 동일 ID 는 upsert 로 덮어써지므로 실제 저장 건수는 고유 ID 수
+        # Identical IDs are overwritten by upsert, so the actual stored count is the number of unique IDs
         deduped: dict[str, dict] = {}
         for c in chunks:
             deduped[c["id"]] = c

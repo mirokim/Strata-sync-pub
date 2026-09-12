@@ -1,4 +1,4 @@
-"""사용자 메모리 관리 모듈"""
+"""User memory management module"""
 from __future__ import annotations
 import json
 import logging
@@ -26,10 +26,10 @@ class UserMemoryStore:
                     with self._lock:
                         self._memory.update(data)
             except Exception as e:
-                logger.warning("[user_memory] load 실패: %s", e)
+                logger.warning("[user_memory] load failed: %s", e)
 
     def save(self) -> None:
-        """원자적 저장: tmp 파일에 쓰고 os.replace 로 교체 (부분 write 방지)."""
+        """Atomic save: write to a tmp file and swap with os.replace (prevents partial writes)."""
         try:
             with self._lock:
                 snapshot = dict(self._memory)
@@ -38,7 +38,7 @@ class UserMemoryStore:
             tmp_path.write_text(payload, "utf-8")
             os.replace(tmp_path, _USER_MEMORY_PATH)
         except Exception as e:
-            logger.error("[user_memory] save 실패: %s", e)
+            logger.error("[user_memory] save failed: %s", e)
 
     def get(self, user_id: str) -> str:
         with self._lock:
@@ -59,14 +59,14 @@ class UserMemoryStore:
         claude: Any,
         api_key: str | None = None,
     ) -> None:
-        """매 5턴마다 대화를 요약해 사용자 기억 갱신."""
+        """Every 5 turns, summarize the conversation and refresh the user memory."""
         if not user_id or len(history) < 10:
             return
         turn_count = len(history) // 2
         if turn_count % 5 != 0:
             return
 
-        # claude가 없으면 api_key로 직접 anthropic 클라이언트 생성
+        # If no claude client is given, create an anthropic client directly from api_key
         _client = claude
         if _client is None:
             if not api_key:
@@ -76,7 +76,7 @@ class UserMemoryStore:
                 _raw = _anthropic.Anthropic(api_key=api_key)
 
                 class _SimpleClient:
-                    """anthropic.Anthropic를 ClaudeClient.complete() 인터페이스로 감싸는 어댑터."""
+                    """Adapter wrapping anthropic.Anthropic in the ClaudeClient.complete() interface."""
                     def __init__(self, raw: Any) -> None:
                         self._raw = raw
 
@@ -100,12 +100,12 @@ class UserMemoryStore:
             for m in history[-10:]
         )
         summary_prompt = (
-            "아래 대화를 300자 이내로 핵심 결정사항·합의·중요 컨텍스트 중심으로 요약하세요. 요약만 출력."
+            "Summarize the conversation below in 300 characters or less, focusing on key decisions, agreements, and important context. Output only the summary."
         )
         if existing:
-            summary_prompt += f"\n\n기존 기억:\n{existing}"
+            summary_prompt += f"\n\nExisting memory:\n{existing}"
         try:
-            summary = _client.complete(summary_prompt, f"대화:\n{hist_text}", max_tokens=400).strip()
+            summary = _client.complete(summary_prompt, f"Conversation:\n{hist_text}", max_tokens=400).strip()
             if summary:
                 with self._lock:
                     current = self._memory.get(user_id, "")

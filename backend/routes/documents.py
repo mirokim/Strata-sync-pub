@@ -36,8 +36,8 @@ async def index_documents(request: IndexRequest) -> IndexResponse:
     """
     try:
         chunks = prepare_chunks(request.documents)
-        # 실제 저장된(고유 ID) 건수를 반환 — len(chunks) 는 덮어써진 청크까지 세어
-        # 유실을 감춘다
+        # Return the actually stored (unique ID) count — len(chunks) also counts overwritten chunks
+        # and hides the loss
         indexed = chroma_service.add_chunks(chunks)
         return IndexResponse(indexed=indexed)
     except Exception as e:

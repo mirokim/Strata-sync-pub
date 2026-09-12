@@ -1,7 +1,7 @@
 """
-tests/test_bugfixes.py — 조사에서 확인된 버그들의 회귀 테스트
+tests/test_bugfixes.py — regression tests for bugs confirmed during investigation
 
-실행: python -m pytest bot/tests/ -v
+Run: python -m pytest bot/tests/ -v
 """
 import json
 import os
@@ -23,7 +23,7 @@ from modules.slack_formatter import md_to_slack
 from modules.vault_scanner import scan_vault
 
 
-# ── vault_scanner: dot 디렉터리 아래 볼트 ──────────────────────────────────────
+# ── vault_scanner: vault under a dot directory ─────────────────────────────────
 
 class TestScanVaultUnderDotDir(unittest.TestCase):
     def setUp(self):
@@ -38,14 +38,14 @@ class TestScanVaultUnderDotDir(unittest.TestCase):
         p.write_text(text, encoding="utf-8")
 
     def test_vault_under_dot_directory_is_scanned(self):
-        """볼트 루트가 dot 디렉터리 아래여도 문서가 스캔돼야 한다."""
+        """Documents must be scanned even when the vault root is under a dot directory."""
         self._write(".notes/vault/doc1.md")
         self._write(".notes/vault/sub/doc2.md")
         docs = scan_vault(str(self.root / ".notes" / "vault"))
         self.assertEqual({d.stem for d in docs}, {"doc1", "doc2"})
 
     def test_hidden_folder_inside_vault_still_excluded(self):
-        """볼트 내부의 .obsidian 등 숨김 폴더는 여전히 제외돼야 한다."""
+        """Hidden folders inside the vault (e.g. .obsidian) must still be excluded."""
         self._write("vault/keep.md")
         self._write("vault/.obsidian/skip.md")
         docs = scan_vault(str(self.root / "vault"))
@@ -59,7 +59,7 @@ class TestScanVaultUnderDotDir(unittest.TestCase):
         )
 
 
-# ── keyword_store: 로드 실패 시 저장 차단 ─────────────────────────────────────
+# ── keyword_store: block save after load failure ──────────────────────────────
 
 class TestKeywordStoreLoadFailure(unittest.TestCase):
     def setUp(self):
@@ -78,7 +78,7 @@ class TestKeywordStoreLoadFailure(unittest.TestCase):
             self._store().load()
 
     def test_save_blocked_after_failed_load(self):
-        """로드 실패 후 save() 가 기존 인덱스를 덮어쓰면 안 된다."""
+        """save() must not overwrite the existing index after a failed load."""
         path = self.vault / self.rel
         path.write_text("{ broken json", encoding="utf-8")
         store = self._store()
@@ -87,7 +87,7 @@ class TestKeywordStoreLoadFailure(unittest.TestCase):
         store.upsert("신규", "hub")
         with self.assertRaises(KeywordStoreError):
             store.save()
-        # 원본 파일이 그대로 남아 있어야 한다
+        # The original file must remain untouched
         self.assertEqual(path.read_text(encoding="utf-8"), "{ broken json")
 
     def test_save_blocked_without_load(self):
@@ -119,7 +119,7 @@ class TestKeywordStoreLoadFailure(unittest.TestCase):
         self.assertEqual(set(store3.get_keywords()), {"기존", "추가"})
 
 
-# ── slack_formatter: 이미지 렌더 ──────────────────────────────────────────────
+# ── slack_formatter: image rendering ──────────────────────────────────────────
 
 class TestSlackImageFormat(unittest.TestCase):
     def test_image_has_no_stray_bang(self):
@@ -134,7 +134,7 @@ class TestSlackImageFormat(unittest.TestCase):
         self.assertEqual(md_to_slack("[문서](https://x.test/d)"), "<https://x.test/d|문서>")
 
 
-# ── rag_simple: 토크나이저 구분자 ─────────────────────────────────────────────
+# ── rag_simple: tokenizer separators ──────────────────────────────────────────
 
 class TestTokenizerPunctuation(unittest.TestCase):
     def test_question_mark_is_separator(self):
@@ -146,7 +146,7 @@ class TestTokenizerPunctuation(unittest.TestCase):
             self.assertIn(t, tokens)
 
 
-# ── mirofish_handler: vs / 대비 매칭 ──────────────────────────────────────────
+# ── mirofish_handler: vs / 대비 (versus) matching ─────────────────────────────
 
 class TestMiroFishVsMatching(unittest.TestCase):
     def test_vs_returns_both_operands(self):
@@ -156,7 +156,7 @@ class TestMiroFishVsMatching(unittest.TestCase):
         self.assertEqual(match_vs_topics("A안 과 B안 비교"), ("A안", "B안"))
 
     def test_daebi_alone_does_not_match(self):
-        """'비용 대비 효과' 같은 평범한 한국어는 A/B 모드로 오인하면 안 된다."""
+        """Ordinary Korean like '비용 대비 효과' (cost-effectiveness) must not be mistaken for A/B mode."""
         self.assertIsNone(match_vs_topics("비용 대비 효과 시뮬레이션"))
 
     def test_daebi_with_comparison_cue_matches(self):
@@ -169,7 +169,7 @@ class TestMiroFishVsMatching(unittest.TestCase):
         self.assertIsNone(match_vs_topics("시뮬레이션 해줘"))
 
 
-# ── multi_agent_rag: 체크포인트 문서 id 매칭 ──────────────────────────────────
+# ── multi_agent_rag: checkpoint document id matching ──────────────────────────
 
 def _doc(stem: str, score: float = 5.0) -> dict:
     return {
@@ -189,7 +189,7 @@ class TestCheckpointDocKey(unittest.TestCase):
         shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
     def test_checkpoint_follows_document_not_position(self):
-        """hotness 재정렬로 순서가 바뀌어도 캐시된 분석이 원래 문서에 붙어야 한다."""
+        """Cached analyses must stay attached to their original documents even when hotness reranking changes the order."""
         doc_a, doc_b = _doc("alpha"), _doc("beta")
         client = MagicMock()
 
@@ -198,14 +198,14 @@ class TestCheckpointDocKey(unittest.TestCase):
                 return '{"score": 9, "summary": "알파 요약", "key_points": []}'
             return '{"score": 1, "summary": "베타 요약", "key_points": []}'
 
-        # 1차 실행 — 두 문서 모두 분석되어 체크포인트 저장
+        # First run — both documents analyzed and saved to the checkpoint
         client.complete.side_effect = responder
         first = mar.run_sub_agents(client, "질문", [doc_a, doc_b])
         self.assertEqual({a["doc"]["stem"]: a["summary"] for a in first},
                          {"alpha": "알파 요약", "beta": "베타 요약"})
 
-        # 2차 실행 — 순서를 뒤집는다. 전부 체크포인트에서 복원돼야 하고,
-        # 위치 인덱스로 매칭하면 요약이 서로 뒤바뀐다.
+        # Second run — reverse the order. Everything must be restored from the checkpoint,
+        # and matching by positional index would swap the summaries.
         client.complete.side_effect = None
         client.complete.return_value = '{"score": 0, "summary": "재분석", "key_points": []}'
         calls_before = client.complete.call_count
@@ -213,10 +213,10 @@ class TestCheckpointDocKey(unittest.TestCase):
         by_stem = {a["doc"]["stem"]: a for a in second}
         self.assertEqual(by_stem["alpha"]["summary"], "알파 요약")
         self.assertEqual(by_stem["beta"]["summary"], "베타 요약")
-        self.assertEqual(client.complete.call_count, calls_before)  # 재분석 없음
+        self.assertEqual(client.complete.call_count, calls_before)  # no re-analysis
 
 
-# ── bot: 짧은 한국어 키워드 유효성 ────────────────────────────────────────────
+# ── bot: validity of short Korean keywords ────────────────────────────────────
 
 class TestIsValidSearchQuery(unittest.TestCase):
     @classmethod

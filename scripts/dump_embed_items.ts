@@ -1,12 +1,12 @@
 /**
- * dump_embed_items.ts — 앱과 100% 동일한 청킹/ID 체계로 임베딩 대상을 추출
+ * dump_embed_items.ts — extract embedding targets using exactly the same chunking/ID scheme as the app
  *
- * 앱의 parseVaultFiles(markdownParser)를 그대로 호출하므로 sectionId/docId가 일치합니다.
- * vectorEmbedIndex.ts 의 private 함수(sectionText/docText/extractEmbedItems)와
- * 상수(SECTION_EMBED_THRESHOLD/EMBED_TEXT_MAX_CHARS)는 동일 로직으로 복제했습니다
- * — 원본 변경 시 이 파일도 반드시 함께 갱신해야 합니다.
+ * Calls the app's parseVaultFiles (markdownParser) directly, so sectionId/docId match.
+ * The private functions of vectorEmbedIndex.ts (sectionText/docText/extractEmbedItems) and
+ * constants (SECTION_EMBED_THRESHOLD/EMBED_TEXT_MAX_CHARS) are replicated here with identical logic
+ * — whenever the original changes, this file must be updated as well.
  *
- * 실행: npx vite-node scripts/dump_embed_items.ts -- <vaultPath> <out.jsonl>
+ * Run: npx vite-node scripts/dump_embed_items.ts -- <vaultPath> <out.jsonl>
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -14,11 +14,11 @@ import { parseVaultFiles } from '@/lib/markdownParser'
 import type { VaultFile, LoadedDocument, DocSection } from '@/types'
 
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg|bmp)$/i
-// ↓ vectorEmbedIndex.ts 와 동일하게 유지할 것
+// ↓ keep identical to vectorEmbedIndex.ts
 const SECTION_EMBED_THRESHOLD = 1
 const EMBED_TEXT_MAX_CHARS = 4500
 
-// ── 볼트 열거 (electron/main.cjs collectVaultContents 와 동일 규칙) ─────────────
+// ── Vault enumeration (same rules as electron/main.cjs collectVaultContents) ────
 function collect(vaultPath: string, dir: string, depth = 0): string[] {
   if (depth > 10) return []
   let entries: fs.Dirent[]
@@ -29,7 +29,7 @@ function collect(vaultPath: string, dir: string, depth = 0): string[] {
   }
   const files: string[] = []
   for (const e of entries) {
-    if (e.name.startsWith('.')) continue // hidden 제외 (.archive, .obsidian ...)
+    if (e.name.startsWith('.')) continue // skip hidden (.archive, .obsidian ...)
     const full = path.join(dir, e.name)
     if (e.name.toLowerCase().endsWith('.md')) {
       files.push(full)
@@ -44,10 +44,10 @@ function collect(vaultPath: string, dir: string, depth = 0): string[] {
   return files
 }
 
-// ── vectorEmbedIndex.ts 복제 ──────────────────────────────────────────────────
-// 보일러플레이트 접두사(docTypePrefix)는 제거됐다 — 볼트의 45%가 같은 문자열로
-// 시작해 문서 단위 max-pooling 시 섹션 변별이 되지 않았다. tags/speaker 도
-// 검색 필터·부스트에서 이미 쓰므로 임베딩 텍스트에서 뺐다.
+// ── Replicated from vectorEmbedIndex.ts ───────────────────────────────────────
+// The boilerplate prefix (docTypePrefix) was removed — 45% of the vault started with the same
+// string, so sections were indistinguishable under per-document max-pooling. tags/speaker were
+// also dropped from the embedding text since they are already used in search filters/boosts.
 function sectionText(section: DocSection, doc: LoadedDocument): string {
   const title = doc.filename.replace(/\.md$/i, '')
   return `${title}\n${section.heading}\n${section.body}`.slice(0, EMBED_TEXT_MAX_CHARS)
@@ -68,7 +68,7 @@ if (!vaultPath || !outPath) {
 }
 
 const absFiles = collect(vaultPath, vaultPath)
-console.log(`[dump] .md 파일 ${absFiles.length}개 발견`)
+console.log(`[dump] Found ${absFiles.length} .md files`)
 
 const vaultFiles: VaultFile[] = absFiles.map(abs => {
   const stat = fs.statSync(abs)
@@ -81,7 +81,7 @@ const vaultFiles: VaultFile[] = absFiles.map(abs => {
 })
 
 const docs = parseVaultFiles(vaultFiles)
-console.log(`[dump] 문서 파싱 ${docs.length}개`)
+console.log(`[dump] Parsed ${docs.length} documents`)
 
 const out = fs.createWriteStream(outPath, { encoding: 'utf-8' })
 let nSection = 0, nDoc = 0
@@ -102,5 +102,5 @@ for (const doc of docs) {
 out.end()
 
 fs.writeFileSync(outPath.replace(/\.jsonl$/, '_mtimes.json'), JSON.stringify(mtimes), 'utf-8')
-console.log(`[dump] 임베딩 항목 ${nSection + nDoc}개 (섹션 단위 ${nSection} / 문서 단위 ${nDoc})`)
-console.log(`[dump] 저장: ${outPath}`)
+console.log(`[dump] ${nSection + nDoc} embedding items (${nSection} section-level / ${nDoc} document-level)`)
+console.log(`[dump] Saved: ${outPath}`)

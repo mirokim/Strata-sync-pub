@@ -1,4 +1,4 @@
-"""Slack 봇 스케줄러 모듈"""
+"""Slack bot scheduler module"""
 from __future__ import annotations
 import threading
 from datetime import datetime
@@ -14,30 +14,30 @@ class SlackScheduler:
         self._ctx = bot_context
         self._miro = miro_handler
         self._log = log_fn
-        self._handler_ref = None  # SocketModeHandler 참조 (종료 감지용)
+        self._handler_ref = None  # SocketModeHandler reference (for shutdown detection)
 
-        self._sched_fired: set[str] = set()        # "YYYY-MM-DD HH:MM<topic>" 중복 실행 방지
-        self._sim_needed_notified: set[str] = set()  # 이미 알림 보낸 파일명
-        self._sets_lock = threading.Lock()           # _sched_fired / _sim_needed_notified 보호
-        self._stop_event = threading.Event()         # 중단 신호
-        self._thread: threading.Thread | None = None  # 스케줄러 스레드 (중복 실행 방지용)
+        self._sched_fired: set[str] = set()        # "YYYY-MM-DD HH:MM<topic>" prevents duplicate runs
+        self._sim_needed_notified: set[str] = set()  # filenames already notified
+        self._sets_lock = threading.Lock()           # protects _sched_fired / _sim_needed_notified
+        self._stop_event = threading.Event()         # stop signal
+        self._thread: threading.Thread | None = None  # scheduler thread (prevents duplicate runs)
 
     def set_handler(self, handler) -> None:
         self._handler_ref = handler
 
     def stop(self) -> None:
-        """스케줄러 중단 신호 전송."""
+        """Send the scheduler stop signal."""
         self._stop_event.set()
 
     def _interruptible_sleep(self, seconds: int) -> bool:
         """Sleep interruptibly; returns True if stop was requested."""
         return self._stop_event.wait(timeout=seconds)
 
-    # ── 스케줄 체크 ──────────────────────────────────────────────────────────
+    # ── Schedule check ───────────────────────────────────────────────────────
 
     def start_schedule_checker(self) -> threading.Thread:
         if self._thread is not None and self._thread.is_alive():
-            self._log("[스케줄] 스케줄러 스레드가 이미 실행 중입니다. 재시작 생략.")
+            self._log("[Schedule] Scheduler thread is already running. Skipping restart.")
             return self._thread
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._schedule_checker, daemon=True)
@@ -45,7 +45,7 @@ class SlackScheduler:
         return self._thread
 
     def _schedule_checker(self) -> None:
-        """매 30초마다 scheduledTopics 체크. 현재 시각과 일치하면 시뮬레이션 자동 실행."""
+        """Check scheduledTopics every 30 seconds. Auto-run the simulation when the current time matches."""
         from modules.rag_electron import (
             get_electron_settings, search_via_electron, is_electron_alive,
             mirofish_via_electron, ask_via_electron, save_mirofish_to_vault,
@@ -60,7 +60,7 @@ class SlackScheduler:
 
         notify_channel = cfg.get("slack_notify_channel", "").strip()
         if not notify_channel:
-            return  # 알림 채널 미설정 시 스킵
+            return  # skip when no notification channel is configured
 
         while (
             not self._stop_event.is_set()
@@ -86,7 +86,7 @@ class SlackScheduler:
                         if fire_key in self._sched_fired:
                             continue
                         self._sched_fired.add(fire_key)
-                        # 오래된 키 정리
+                        # Clean up stale keys
                         if len(self._sched_fired) > 200:
                             oldest = sorted(self._sched_fired)[:100]
                             for k in oldest:
@@ -95,13 +95,13 @@ class SlackScheduler:
                     sched_topic = sched.get("topic", "").strip()
                     sched_np    = max(3, min(50, int(sched.get("numPersonas", 5))))
                     sched_nr    = max(2, min(10, int(sched.get("numRounds", 3))))
-                    self._log(f"[스케줄] 자동 실행: '{sched_topic}' {sched_np}명 {sched_nr}라운드")
+                    self._log(f"[Schedule] Auto-run: '{sched_topic}' {sched_np} personas, {sched_nr} rounds")
 
                     def _run_sched(t=sched_topic, np=sched_np, nr=sched_nr):
                         try:
                             thinking = web.chat_postMessage(
                                 channel=notify_channel,
-                                text=f"🐟 *[자동 스케줄] MiroFish 시뮬레이션 시작*\n주제: _{t}_\n페르소나: {np}명 | 라운드: {nr}회\n\n_⏳ 실행 중..._",
+                                text=f"🐟 *[Auto schedule] MiroFish simulation started*\nTopic: _{t}_\nPersonas: {np} | Rounds: {nr}\n\n_⏳ Running..._",
                             )
                             think_ts = (thinking or {}).get("ts")
                             context_s: str | None = None
@@ -134,20 +134,20 @@ class SlackScheduler:
                                 if think_ts:
                                     try:
                                         web.chat_update(channel=notify_channel, ts=think_ts,
-                                                        text=f"🐟 [자동 스케줄] 시뮬레이션 실패: _{t}_")
+                                                        text=f"🐟 [Auto schedule] Simulation failed: _{t}_")
                                     except Exception as _ue:
-                                        self._log(f"[스케줄] chat_update 실패 (무시): {_ue}")
+                                        self._log(f"[Schedule] chat_update failed (ignored): {_ue}")
                         except Exception as e:
-                            self._log(f"[스케줄] 실행 오류: {e}")
+                            self._log(f"[Schedule] Run error: {e}")
 
                     threading.Thread(target=_run_sched, daemon=True).start()
 
             except Exception as e:
-                self._log(f"[스케줄] 체크 오류: {e}")
+                self._log(f"[Schedule] Check error: {e}")
             if self._interruptible_sleep(30):
                 break
 
-    # ── 볼트 태그 스캐너 ──────────────────────────────────────────────────────
+    # ── Vault tag scanner ────────────────────────────────────────────────────
 
     def start_vault_tag_scanner(self) -> threading.Thread:
         t = threading.Thread(target=self._vault_tag_scanner, daemon=True)
@@ -155,7 +155,7 @@ class SlackScheduler:
         return t
 
     def _vault_tag_scanner(self) -> None:
-        """20분마다 볼트에서 #시뮬레이션필요 태그 포함 파일 스캔 후 Slack 알림."""
+        """Every 20 minutes, scan the vault for files containing the #시뮬레이션필요 tag and notify Slack."""
         cfg = self._cfg
         web = self._web
 
@@ -164,10 +164,10 @@ class SlackScheduler:
             return
         vault_path_str = cfg.get("vault_path", "").strip()
         if not vault_path_str:
-            self._log("[태그스캔] vault_path가 설정되지 않아 스캔을 건너뜁니다.")
+            self._log("[TagScan] vault_path is not configured; skipping scan.")
             return
         scan_vault_path = Path(vault_path_str)
-        if self._interruptible_sleep(60):  # 봇 시작 1분 후부터 스캔
+        if self._interruptible_sleep(60):  # start scanning 1 minute after bot startup
             return
         while (
             not self._stop_event.is_set()
@@ -194,13 +194,13 @@ class SlackScheduler:
                     web.chat_postMessage(
                         channel=notify_channel,
                         text=(
-                            f"🔖 *#시뮬레이션필요 태그 감지*\n"
-                            f"아래 문서에 시뮬레이션 검토 태그가 붙어 있습니다:\n{items}\n\n"
-                            f"💡 `🐟 <주제>` 로 시뮬레이션을 시작하세요."
+                            f"🔖 *#시뮬레이션필요 tag detected*\n"
+                            f"The following documents are tagged for simulation review:\n{items}\n\n"
+                            f"💡 Start a simulation with `🐟 <topic>`."
                         ),
                     )
-                    self._log(f"[태그스캔] #시뮬레이션필요 {len(found)}건 감지")
+                    self._log(f"[TagScan] #시뮬레이션필요 detected in {len(found)} file(s)")
             except Exception as e:
-                self._log(f"[태그스캔] 오류: {e}")
-            if self._interruptible_sleep(1200):  # 20분 주기
+                self._log(f"[TagScan] Error: {e}")
+            if self._interruptible_sleep(1200):  # 20-minute interval
                 break

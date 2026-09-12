@@ -16,17 +16,17 @@ import LoadingOverlay from '@/components/layout/LoadingOverlay'
 import { useChatStore } from '@/stores/chatStore'
 
 const CRASH_LABELS: Record<string, string> = {
-  oom:        '메모리 부족(OOM)으로 재시작했습니다. 볼트 크기를 줄이거나 그래프 필터를 사용해보세요.',
-  crashed:    '렌더러 프로세스가 비정상 종료되어 재시작했습니다.',
-  killed:     '시스템에 의해 프로세스가 종료되어 재시작했습니다.',
-  'gpu-process-crashed': 'GPU 드라이버 오류로 재시작했습니다.',
+  oom:        'Restarted due to out-of-memory (OOM). Try reducing vault size or using graph filters.',
+  crashed:    'The renderer process terminated unexpectedly and has been restarted.',
+  killed:     'The process was killed by the system and has been restarted.',
+  'gpu-process-crashed': 'Restarted due to a GPU driver error.',
 }
 
 export default function App() {
   const { appState, theme, panelOpacity, setAppState } = useUIStore()
   const [crashBanner, setCrashBanner] = useState<string | null>(() => {
     const p = new URLSearchParams(window.location.search).get('crashed')
-    return p ? (CRASH_LABELS[p] ?? `오류(${p})로 재시작했습니다.`) : null
+    return p ? (CRASH_LABELS[p] ?? `Restarted due to error (${p}).`) : null
   })
   const { vaultPath, loadVault, loadVaultBackground } = useVaultLoader()
   usePersonaVaultSaver()
@@ -36,9 +36,9 @@ export default function App() {
   const vaultLoaded = useRef(false)
   const appReady = useRef(false)
 
-  // ── Chat 세션 영속화 ──────────────────────────────────────────────────────
+  // ── Chat session persistence ──────────────────────────────────────────────
   const { restoreSession } = useChatStore()
-  // 앱 시작 시 이전 세션 복원 (debounce 저장은 chatStore 내부 subscriber가 처리)
+  // Restore the previous session on app start (debounced saving is handled by a subscriber inside chatStore)
   useEffect(() => { restoreSession() }, [])  // eslint-disable-line react-hooks/exhaustive-deps
   const botAutoStarted = useRef(false)
   const slackBotConfig = useSettingsStore(s => s.slackBotConfig)
@@ -68,17 +68,17 @@ export default function App() {
   }, [panelOpacity])
 
   // Auto-load persisted vault on app startup
-  // UI 렌더링 후 지연 실행 — 시작 시 프리징 방지
+  // Deferred until after the UI renders — prevents freezing at startup
   useEffect(() => {
     if (vaultLoaded.current || !vaultPath) return
-    // 첫 프레임 렌더 완료 후 볼트 로드 시작 (requestIdleCallback → setTimeout fallback)
+    // Start loading the vault after the first frame renders (requestIdleCallback → setTimeout fallback)
     const schedule = window.requestIdleCallback ?? ((cb: () => void) => setTimeout(cb, 100))
     const id = schedule(() => {
       if (vaultLoaded.current) return
       vaultLoaded.current = true
       loadVault(vaultPath).then(async () => {
         window.vaultAPI?.watchStart(vaultPath)
-        // 백그라운드 볼트 프리로드: 추가 지연 후 실행 (메인 볼트 로드 완료 안정화 대기)
+        // Background vault preload: runs after an extra delay (waits for the main vault load to settle)
         await new Promise(r => setTimeout(r, 2000))
         const { vaults, activeVaultId } = useVaultStore.getState()
         const others = Object.entries(vaults).filter(([vid, e]) => vid !== activeVaultId && e.path)
@@ -101,7 +101,7 @@ export default function App() {
     }
   }, [vaultPath, loadVault, loadVaultBackground])
 
-  // 슬랙봇 자동 시작 — 토큰이 설정되어 있고 Electron 환경일 때
+  // Slack bot auto-start — when tokens are configured and running in Electron
   useEffect(() => {
     if (botAutoStarted.current) return
     if (!window.botAPI) return
@@ -146,12 +146,12 @@ export default function App() {
               border: '1px solid rgba(245,158,11,0.3)', cursor: 'pointer',
             }}
           >
-            닫기
+            Close
           </button>
         </div>
       )}
 
-      {/* 파일 변경 diff 알림 배너 */}
+      {/* File change diff notification banner */}
       {watchDiff && (
         <div style={{
           position: 'fixed',
@@ -176,7 +176,7 @@ export default function App() {
             <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 2 }}>
               {watchDiff.added > 0 && <span style={{ color: 'var(--color-success)', marginRight: 6 }}>+{watchDiff.added}</span>}
               {watchDiff.removed > 0 && <span style={{ color: 'var(--color-error)', marginRight: 6 }}>−{watchDiff.removed}</span>}
-              {watchDiff.added === 0 && watchDiff.removed === 0 && '변경됨'}
+              {watchDiff.added === 0 && watchDiff.removed === 0 && 'Changed'}
             </div>
             {watchDiff.preview && (
               <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>
@@ -193,7 +193,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Edit Agent 볼트 자동 새로고침 카운트다운 배너 */}
+      {/* Edit Agent vault auto-refresh countdown banner */}
       {vaultRefreshCountdown !== null && (
         <div style={{
           position: 'fixed',
@@ -212,15 +212,15 @@ export default function App() {
           minWidth: 300,
           maxWidth: 380,
         }}>
-          {/* 상단: 아이콘 + 텍스트 + 버튼 */}
+          {/* Top: icon + text + buttons */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 16, flexShrink: 0 }}>✏️</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)' }}>
-                Edit Agent가 파일을 수정했습니다
+                Edit Agent modified files
               </div>
               <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
-                {vaultRefreshCountdown}초 후 볼트를 자동 새로고침합니다
+                The vault will auto-refresh in {vaultRefreshCountdown}s
               </div>
             </div>
             <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
@@ -232,7 +232,7 @@ export default function App() {
                   border: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
                 }}
               >
-                지금
+                Now
               </button>
               <button
                 onClick={cancelVaultRefreshCountdown}
@@ -242,11 +242,11 @@ export default function App() {
                   border: '1px solid var(--color-border)', cursor: 'pointer',
                 }}
               >
-                취소
+                Cancel
               </button>
             </div>
           </div>
-          {/* 프로그레스 바 */}
+          {/* Progress bar */}
           <div style={{
             height: 3, borderRadius: 2,
             background: 'var(--color-border)',
@@ -263,7 +263,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Confluence 자동 동기화 알림 배너 */}
+      {/* Confluence auto-sync notification banner */}
       {notification && (
         <div style={{
           position: 'fixed',
@@ -286,7 +286,7 @@ export default function App() {
               {notification.message}
             </div>
             <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
-              {notification.count}개 문서가 볼트에 업데이트되었습니다.
+              {notification.count} document(s) updated in the vault.
             </div>
           </div>
           <button
@@ -303,7 +303,7 @@ export default function App() {
               whiteSpace: 'nowrap',
             }}
           >
-            확인
+            OK
           </button>
         </div>
       )}

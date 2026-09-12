@@ -14,7 +14,7 @@ import sys
 import argparse
 from pathlib import Path
 
-# KEYWORD_MAP 공유 — inject_keywords.py 에서 import
+# Shared KEYWORD_MAP — imported from inject_keywords.py
 try:
     import importlib.util
     _spec = importlib.util.spec_from_file_location(
@@ -25,7 +25,7 @@ try:
     _spec.loader.exec_module(_mod)                  # type: ignore[union-attr]
     KEYWORD_MAP: dict[str, str] = _mod.KEYWORD_MAP
 except Exception as e:
-    print(f"Error: inject_keywords.py 를 로드할 수 없습니다 — {e}")
+    print(f"Error: cannot load inject_keywords.py — {e}")
     sys.exit(1)
 
 
@@ -41,7 +41,7 @@ def check_density(active_dir: Path, threshold: float = 15.0) -> None:
     md_files = list(active_dir.glob('*.md'))
     total = len(md_files)
     if total == 0:
-        print("Error: .md 파일이 없습니다.")
+        print("Error: no .md files found.")
         sys.exit(1)
 
     # Count files where each keyword appears
@@ -70,13 +70,13 @@ def check_density(active_dir: Path, threshold: float = 15.0) -> None:
 
     # Output
     print("=" * 65)
-    print(f"§9.6 KEYWORD_MAP 밀도 점검 (임계값: {threshold:.0f}%, 총 {total} files)")
+    print(f"§9.6 KEYWORD_MAP density check (threshold: {threshold:.0f}%, {total} files total)")
     print("=" * 65)
 
     warnings: list[tuple[str, float]] = []
     BAR_WIDTH = 20
 
-    print(f"\n{'키워드':<14} {'등장%':>6}  {'막대그래프':<{BAR_WIDTH}}  대상 stem")
+    print(f"\n{'Keyword':<14} {'Rate%':>6}  {'Bar':<{BAR_WIDTH}}  Target stem")
     print("-" * 65)
     for kw, target, pct in results:
         bar_len = int(pct / 100 * BAR_WIDTH)
@@ -89,21 +89,21 @@ def check_density(active_dir: Path, threshold: float = 15.0) -> None:
 
     print()
     if warnings:
-        print(f"⚠️  Threshold({threshold:.0f}%) 초과 키워드: {len(warnings)}개")
+        print(f"⚠️  Keywords above threshold ({threshold:.0f}%): {len(warnings)}")
         for kw, pct in warnings:
-            print(f"   '{kw}' ({pct:.1f}%) — inject_keywords.py 실행 전 제거 검토")
+            print(f"   '{kw}' ({pct:.1f}%) — consider removing before running inject_keywords.py")
         print()
-        print("※ 제거 판단 기준: 고유 허브 의미가 없는 범용어는 제거.")
-        print("  고유명사·캐릭터명은 등장률이 높아도 BFS 탐색 필수이므로 유지.")
+        print("※ Removal criterion: remove generic terms that carry no distinct hub meaning.")
+        print("  Keep proper nouns and character names even at high rates, as they are required for BFS traversal.")
     else:
-        print(f"✅ 모든 키워드 임계값 이하 — inject_keywords.py 실행 가능")
+        print(f"✅ All keywords below threshold — inject_keywords.py can be run")
 
 
 def main():
-    parser = argparse.ArgumentParser(description='§9.6 KEYWORD_MAP 밀도 감시')
+    parser = argparse.ArgumentParser(description='§9.6 KEYWORD_MAP density monitor')
     parser.add_argument('active_dir', help='active/ folder path')
     parser.add_argument('--threshold', type=float, default=15.0,
-                        help='Warning threshold %% (기본: 15)')
+                        help='Warning threshold %% (default: 15)')
     args = parser.parse_args()
 
     active_dir = Path(args.active_dir)

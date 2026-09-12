@@ -91,7 +91,7 @@ def parse_frontmatter(content: str) -> tuple[dict, str, int]:
     if end == -1:
         return {}, '', 0
     fm_raw  = content[3:end].strip()
-    fm_end  = end + 5   # '\n---\n' 이후 위치
+    fm_end  = end + 5   # Position after '\n---\n'
     fields  = {}
     for line in fm_raw.splitlines():
         m = re.match(r'^(\w+):\s*(.*)', line)
@@ -104,7 +104,7 @@ def get_field(fields: dict, key: str) -> str:
     return fields.get(key, '').strip().strip('"\'')
 
 
-# ── Frontmatter 보완 ──────────────────────────────────────────────
+# ── Frontmatter supplementation ──────────────────────────────────
 def supplement_frontmatter(content: str, path: Path) -> tuple[str, list[str]]:
     """Supplement missing fields. Returns list of changed fields."""
     changed = []
@@ -155,7 +155,7 @@ def supplement_frontmatter(content: str, path: Path) -> tuple[str, list[str]]:
         inserts.append(f'tags: {infer_tags_from_stem(path.stem, doc_type)}')
         changed.append('tags')
 
-    # origin: md 추가 (기존 origin 없을 때만)
+    # Add origin: md (only when no origin exists)
     if not has_field('origin'):
         inserts.append('origin: md')
         changed.append('origin')
@@ -165,7 +165,7 @@ def supplement_frontmatter(content: str, path: Path) -> tuple[str, list[str]]:
 
     # Insert: add just above the closing --- line
     fm_lines = fm_block.splitlines()
-    # fm_block의 마지막 줄이 '---' 이므로 그 앞에 삽입
+    # The last line of fm_block is '---', so insert before it
     close_idx = len(fm_lines) - 1
     for i, l in enumerate(fm_lines):
         if i > 0 and l.strip() == '---':
@@ -176,7 +176,7 @@ def supplement_frontmatter(content: str, path: Path) -> tuple[str, list[str]]:
     return new_fm + content[body_start:], changed
 
 
-# ── 이미지 링크 점검 ──────────────────────────────────────────────
+# ── Image link check ─────────────────────────────────────────────
 def check_image_links(content: str, path: Path,
                       attachments_dir: Path) -> list[str]:
     """Return warning list if ![[filename]] link target not found in attachments/."""
@@ -220,7 +220,7 @@ def run(active_dir: Path, attachments_dir: Path | None,
                 stats['img_warnings'] += len(warns)
                 if verbose:
                     for w in warns:
-                        print(f"  ⚠️ 이미지 없음: {md.name[:50]} → {w}")
+                        print(f"  ⚠️ Image missing: {md.name[:50]} → {w}")
 
         if changed_fields:
             stats['changed'] += 1
@@ -235,10 +235,10 @@ def run(active_dir: Path, attachments_dir: Path | None,
 
 
 def main():
-    parser = argparse.ArgumentParser(description='§4.7 MD 파일 frontmatter 정규화')
+    parser = argparse.ArgumentParser(description='§4.7 MD file frontmatter normalization')
     parser.add_argument('active_dir',    help='active/ folder path')
     parser.add_argument('--attachments', default=None,
-                        help='attachments/ 폴더 경로 (기본: active/../attachments)')
+                        help='attachments/ folder path (default: active/../attachments)')
     parser.add_argument('--dry-run',     action='store_true', help='Preview without modifying')
     parser.add_argument('--verbose', '-v', action='store_true')
     args = parser.parse_args()
@@ -250,18 +250,18 @@ def main():
     att_dir = Path(args.attachments) if args.attachments \
               else active_dir.parent / 'attachments'
 
-    print(f"§4.7 md_normalize 시작{'  [DRY-RUN]' if args.dry_run else ''}...")
+    print(f"§4.7 md_normalize starting{'  [DRY-RUN]' if args.dry_run else ''}...")
     stats = run(active_dir, att_dir if att_dir.exists() else None,
                 args.dry_run, args.verbose)
 
     print(f"\n{'='*50}")
     print(f"§4.7 md_normalize Complete{'  [DRY-RUN]' if args.dry_run else ''}")
     print(f"{'='*50}")
-    print(f"  Total MD files:       {stats['total']}개")
-    print(f"  Frontmatter supplemented: {stats['changed']}개")
-    print(f"  No change:        {stats['no_change']}개")
+    print(f"  Total MD files:       {stats['total']}")
+    print(f"  Frontmatter supplemented: {stats['changed']}")
+    print(f"  No change:        {stats['no_change']}")
     if stats['img_warnings']:
-        print(f"  ⚠️ 이미지 링크 경고: {stats['img_warnings']}건 (attachments/ 없음)")
+        print(f"  ⚠️ Image link warnings: {stats['img_warnings']} (missing in attachments/)")
 
 
 if __name__ == '__main__':

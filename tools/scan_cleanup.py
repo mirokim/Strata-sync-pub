@@ -10,8 +10,8 @@ Detection items:
   S5. Operational files (room booking, admin notices, meal info, etc.)  per §3.1
 
 Behavior:
-  --dry-run : 탐지만 하고 Not moved (기본)
-  --fix     : .archive/ 폴더로 Actual move
+  --dry-run : detect only, nothing moved (default)
+  --fix     : actually move into the .archive/ folder
   --verbose : Output detection reasons
 
 Usage:
@@ -27,7 +27,7 @@ from datetime import datetime, timedelta
 
 
 # ── Pattern definitions ───────────────────────────────────────────────────
-STUB_CHAR_LIMIT = 50          # 실질 본문 기준 (§3.1.1)
+STUB_CHAR_LIMIT = 50          # Actual body character threshold (§3.1.1)
 OLD_VERSION_PATTERNS = re.compile(
     r'(?i)_v0\.\d|_old|_backup|_bak|_copy|_draft(?!\d)|_deprecated'
 )
@@ -49,8 +49,8 @@ def body_char_count(content: str) -> int:
     # Remove original link lines (> 원본: ...)
     text = re.sub(r'^>\s*원본\s*:.*', '', text, flags=re.MULTILINE)
     # Only pure characters after removing wikilinks, markdown symbols, and spaces
-    text = re.sub(r'!\[\[[^\]]*\]\]', '', text)     # 이미지 링크 제거
-    text = re.sub(r'\[\[([^\]|]+)\|?[^\]]*\]\]', r'\1', text)  # wikilink → 텍스트
+    text = re.sub(r'!\[\[[^\]]*\]\]', '', text)     # Remove image links
+    text = re.sub(r'\[\[([^\]|]+)\|?[^\]]*\]\]', r'\1', text)  # wikilink → text
     text = re.sub(r'[#\-\*>`\|=_~]', '', text)
     text = re.sub(r'\s+', '', text)
     return len(text.strip())
@@ -71,7 +71,7 @@ def has_image_content(content: str) -> bool:
 def is_stub(content: str) -> bool:
     """Stub determination: body under 50 chars AND no images/tables."""
     if has_image_content(content):
-        return False   # 이미지·테이블 파일은 스텁으로 판정하지 않음
+        return False   # Image/table files are never classified as stubs
     return body_char_count(content) < STUB_CHAR_LIMIT
 
 
@@ -141,10 +141,10 @@ def print_report(results: dict, fix: bool, verbose: bool, moved: dict):
     print(f"{'='*55}")
 
     categories = [
-        ('stub',        'S1 스텁 (본문 50자 미만)'),
-        ('outdated',    'S3 outdated (superseded_by 없음)'),
-        ('old_version', 'S4 구버전 파일명'),
-        ('ops',         'S5 운영성 내용'),
+        ('stub',        'S1 stubs (body under 50 chars)'),
+        ('outdated',    'S3 outdated (no superseded_by)'),
+        ('old_version', 'S4 old-version filenames'),
+        ('ops',         'S5 operational content'),
     ]
 
     total_detected = 0
@@ -153,26 +153,26 @@ def print_report(results: dict, fix: bool, verbose: bool, moved: dict):
         n = len(files)
         total_detected += n
         mv = moved.get(key, 0)
-        status = f"→ {mv}개 이동" if fix and mv else ("→ Not moved" if fix else "→ dry-run")
-        print(f"\n  {label}: {n}개  {status}")
+        status = f"→ {mv} moved" if fix and mv else ("→ Not moved" if fix else "→ dry-run")
+        print(f"\n  {label}: {n}  {status}")
         if verbose or not fix:
             for f in files[:15]:
                 chars = body_char_count(f.read_text(encoding='utf-8', errors='replace')) \
                         if key == 'stub' else ''
-                suffix = f" ({chars}자)" if chars != '' else ''
+                suffix = f" ({chars} chars)" if chars != '' else ''
                 print(f"    · {f.name[:65]}{suffix}")
             if len(files) > 15:
-                print(f"    ... 외 {len(files)-15}개")
+                print(f"    ... and {len(files)-15} more")
 
-    print(f"\n  Total detected: {total_detected}개")
+    print(f"\n  Total detected: {total_detected}")
     if not fix:
-        print("  ⚠️  Actual move하려면 --fix 옵션을 추가하세요.")
+        print("  ⚠️  Add the --fix option to actually move files.")
 
 
 def main():
-    parser = argparse.ArgumentParser(description='§3 스텁·구버전 파일 탐지 및 .archive/ 이동')
+    parser = argparse.ArgumentParser(description='§3 Detect stub/old-version files and move them to .archive/')
     parser.add_argument('active_dir', help='active/ folder path')
-    parser.add_argument('--archive', help='.archive/ 폴더 경로 (기본: active/../.archive)')
+    parser.add_argument('--archive', help='.archive/ folder path (default: active/../.archive)')
     parser.add_argument('--fix', action='store_true', help='Execute actual move to .archive/')
     parser.add_argument('--verbose', '-v', action='store_true', help='Detailed output of detected files')
     parser.add_argument('--category', choices=['stub', 'outdated', 'old_version', 'ops'],
@@ -186,7 +186,7 @@ def main():
     archive_dir = Path(args.archive) if args.archive else active_dir.parent / '.archive'
 
     print(f"§3 scan_cleanup starting...")
-    print(f"  대상: {active_dir}")
+    print(f"  Target: {active_dir}")
     print(f"  archive: {archive_dir}")
 
     results = scan(active_dir)
@@ -199,7 +199,7 @@ def main():
             if files:
                 n = move_to_archive(files, archive_dir, cat)
                 moved[cat] = n
-                print(f"  {cat}: {n}개 → {archive_dir}")
+                print(f"  {cat}: {n} → {archive_dir}")
 
     print_report(results, args.fix, args.verbose, moved)
 

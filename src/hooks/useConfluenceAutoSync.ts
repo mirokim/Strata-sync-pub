@@ -38,8 +38,8 @@ export function useConfluenceAutoSync() {
       if (!vaultPath || !cfg.baseUrl || !cfg.apiToken) { isSyncingRef.current = false; return }
 
       try {
-        // lastSyncAt → "YYYY-MM-DD HH:mm" (UTC) — 날짜만 자르면 당일 중복 발생
-        // 안전장치: lastSyncAt과 cfg.dateFrom 모두 없으면 최근 7일만 가져옴
+        // lastSyncAt → "YYYY-MM-DD HH:mm" (UTC) — truncating to the date alone causes same-day duplicates
+        // Safety net: if neither lastSyncAt nor cfg.dateFrom is set, fetch only the last 7 days
         const fallbackDate = cfg.dateFrom || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
         const dateFrom = toSyncDatetime(lastSyncAt, fallbackDate)
 
@@ -56,14 +56,14 @@ export function useConfluenceAutoSync() {
 
         if (!pages || pages.length === 0) return
 
-        // convert → save (§4.0 frontmatter 자동 생성 포함)
-        // _baseUrl 주입: source URL 필드 생성에 필요 (§6.1 필수)
+        // convert → save (includes §4.0 automatic frontmatter generation)
+        // Inject _baseUrl: needed to build the source URL field (§6.1 required)
         const pagesWithMd = (pages as any[]).map(page =>
           pageToVaultMarkdown({ ...page, _baseUrl: cfg.baseUrl })
         )
         await (window as any).confluenceAPI.savePages(vaultPath, cfg.targetFolder, pagesWithMd)
 
-        // 첨부파일 다운로드 — 실패는 카운트 후 경고 로그
+        // Attachment download — failures are counted and logged as warnings
         let attachFailed = 0
         const attachCfg = {
           baseUrl:   cfg.baseUrl,
@@ -77,14 +77,14 @@ export function useConfluenceAutoSync() {
             .downloadAttachments(attachCfg, vaultPath, cfg.targetFolder, page.id)
             .catch((e: unknown) => {
               attachFailed++
-              logger.warn('[AutoSync] 첨부파일 다운로드 실패:', page.id, e instanceof Error ? e.message : String(e))
+              logger.warn('[AutoSync] Attachment download failed:', page.id, e instanceof Error ? e.message : String(e))
             })
         }
 
         // §17.1.4 post-sync: audit_and_fix → gen_index
         const api = (window as any).confluenceAPI
         if (typeof api?.runScript === 'function') {
-          // 이 스크립트가 실패하면 볼트 인덱스 불일치 — 사용자에게 경고하고 lastSyncAt 미갱신
+          // If this script fails the vault index is inconsistent — warn the user and leave lastSyncAt unchanged
           const CRITICAL_SCRIPTS = new Set(['gen_index.py', 'audit_and_fix.py'])
           let criticalFailed = ''
           for (const script of POST_SYNC_SCRIPTS) {
@@ -95,42 +95,42 @@ export function useConfluenceAutoSync() {
                 if (CRITICAL_SCRIPTS.has(script.name) && !criticalFailed) criticalFailed = script.name
               }
             } catch (e) {
-              logger.warn(`[AutoSync] 스크립트 실행 실패: ${script.name}`, e instanceof Error ? e.message : String(e))
+              logger.warn(`[AutoSync] Script execution failed: ${script.name}`, e instanceof Error ? e.message : String(e))
               if (CRITICAL_SCRIPTS.has(script.name) && !criticalFailed) criticalFailed = script.name
             }
           }
           if (criticalFailed) {
-            const failNoteAttach = attachFailed > 0 ? ` + 첨부 ${attachFailed}개 실패` : ''
+            const failNoteAttach = attachFailed > 0 ? ` + ${attachFailed} attachment(s) failed` : ''
             setNotification({
-              message: `Confluence 동기화 경고: ${criticalFailed} 실패 — 인덱스 불일치 가능${failNoteAttach}`,
+              message: `Confluence sync warning: ${criticalFailed} failed — index may be inconsistent${failNoteAttach}`,
               count: pages.length,
               at: new Date().toISOString(),
             })
-            return  // lastSyncAt 미갱신 → 다음 싱크에서 변경분 재처리
+            return  // lastSyncAt not updated → changes are reprocessed on the next sync
           }
         }
 
-        // 볼트 리로드 — 새 문서가 in-app에 반영되도록
+        // Reload the vault — so new documents show up in-app
         await loadVault(vaultPath)
 
-        // lastSyncAt은 성공적으로 완료된 후에만 기록
+        // Record lastSyncAt only after a successful completion
         const now = new Date().toISOString()
         setLastSyncAt(now)
 
-        const failNote = attachFailed > 0 ? ` (첨부 ${attachFailed}개 실패)` : ''
+        const failNote = attachFailed > 0 ? ` (${attachFailed} attachment(s) failed)` : ''
         setNotification({
-          message: `Confluence 자동 동기화 완료${failNote}`,
+          message: `Confluence auto-sync complete${failNote}`,
           count: pages.length,
           at: now,
         })
       } catch (e) {
-        logger.warn('[AutoSync] 자동 동기화 실패:', e instanceof Error ? e.message : String(e))
+        logger.warn('[AutoSync] Auto-sync failed:', e instanceof Error ? e.message : String(e))
       } finally {
         isSyncingRef.current = false
       }
     }
 
-    // Catch-up: 앱 시작 시 오늘 아직 동기화 안 됐으면 즉시 실행
+    // Catch-up: run immediately on app start if no sync has happened today yet
     const { lastSyncAt: lastAt } = useSyncStore.getState()
     const last = lastAt ? new Date(lastAt) : null
     const isStale = !last || last.toDateString() !== new Date().toDateString()

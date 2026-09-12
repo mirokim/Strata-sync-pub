@@ -79,13 +79,13 @@ export function getUsageLog(limit = 100) { return _usageLog.slice(-limit) }
 
 export interface ChatResult {
   text: string
-  /** 'end_turn' | 'max_tokens' | 'stop_sequence' | ... — 제공자가 보고하지 않으면 null */
+  /** 'end_turn' | 'max_tokens' | 'stop_sequence' | ... — null if the provider does not report it */
   stopReason: string | null
 }
 
 /**
  * Stream a message to any model. Returns the response text **and** the stop reason.
- * stopReason === 'max_tokens' 이면 출력이 잘린 것이므로 저장/덮어쓰기에 쓰면 안 된다.
+ * If stopReason === 'max_tokens' the output was truncated and must not be used for saving/overwriting.
  */
 export async function chatDetailed(
   modelId: string, systemPrompt: string,

@@ -2,15 +2,15 @@
 """
 pdf_import.py — PDF → Markdown conversion and vault storage
 
-opendataloader-pdf 라이브러리 사용 (벤치마크 1위 PDF 파서)
+Uses the opendataloader-pdf library (top-ranked PDF parser in benchmarks)
   pip install -U opendataloader-pdf
 
 Usage:
-  python pdf_import.py <pdf_path_or_dir> <output_dir> [--title <제목>]
+  python pdf_import.py <pdf_path_or_dir> <output_dir> [--title <title>]
 
 Output:
-  - <output_dir>/<title>.md  (단일 PDF)
-  - <output_dir>/<각 파일명>.md  (폴더 입력)
+  - <output_dir>/<title>.md  (single PDF)
+  - <output_dir>/<each filename>.md  (folder input)
 """
 
 import argparse
@@ -44,7 +44,7 @@ def convert_pdf(input_path: str, output_dir: str, title: str | None = None) -> l
     try:
         import opendataloader_pdf  # type: ignore
     except ImportError:
-        print("ERROR: opendataloader-pdf 미설치\n  pip install -U opendataloader-pdf", file=sys.stderr)
+        print("ERROR: opendataloader-pdf not installed\n  pip install -U opendataloader-pdf", file=sys.stderr)
         sys.exit(1)
 
     os.makedirs(output_dir, exist_ok=True)
@@ -60,13 +60,13 @@ def convert_pdf(input_path: str, output_dir: str, title: str | None = None) -> l
 
         md_files = list(Path(tmp).rglob('*.md'))
         if not md_files:
-            print(f"ERROR: {input_path} — Markdown 출력 없음", file=sys.stderr)
+            print(f"ERROR: {input_path} — no Markdown output", file=sys.stderr)
             sys.exit(2)
 
         for md_file in md_files:
             raw = md_file.read_text(encoding='utf-8', errors='replace')
 
-            # 제목 결정: 명시 > 첫 번째 H1 > PDF 파일명
+            # Determine the title: explicit > first H1 > PDF filename
             doc_title = title
             if not doc_title:
                 m = re.search(r'^#\s+(.+)', raw, re.MULTILINE)
@@ -77,27 +77,27 @@ def convert_pdf(input_path: str, output_dir: str, title: str | None = None) -> l
 
             content = make_frontmatter(doc_title, input_path, today) + raw
             dest.write_text(content, encoding='utf-8')
-            results.append(f'✓ {filename} ({len(raw):,}자)')
+            results.append(f'✓ {filename} ({len(raw):,} chars)')
 
     return results
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description='PDF → Markdown 변환')
-    parser.add_argument('input',  help='PDF 파일 또는 폴더 경로')
-    parser.add_argument('output', help='저장할 볼트 폴더 경로')
-    parser.add_argument('--title', default='', help='문서 제목 (단일 PDF일 때)')
+    parser = argparse.ArgumentParser(description='PDF → Markdown conversion')
+    parser.add_argument('input',  help='PDF file or folder path')
+    parser.add_argument('output', help='Vault folder path to save into')
+    parser.add_argument('--title', default='', help='Document title (for a single PDF)')
     args = parser.parse_args()
 
     input_path = args.input
     if not os.path.exists(input_path):
-        print(f'ERROR: 파일 없음: {input_path}', file=sys.stderr)
+        print(f'ERROR: file not found: {input_path}', file=sys.stderr)
         sys.exit(1)
 
     title = args.title.strip() or None
     results = convert_pdf(input_path, args.output, title)
 
-    print(f'PDF 변환 Complete ({len(results)}개)')
+    print(f'PDF conversion Complete ({len(results)} files)')
     for r in results:
         print(r)
 

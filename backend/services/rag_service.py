@@ -54,9 +54,9 @@ def prepare_chunks(documents: list) -> list[dict]:
 
         doc_id = d.get("doc_id", "")
 
-        # 문서 내 섹션 등장 순번 — section_id 가 없는 섹션의 고유 키 재료.
-        # (doc_id 로 폴백하면 같은 문서의 모든 섹션이 동일 키가 되고,
-        #  idx 는 섹션마다 0부터 다시 시작하므로 청크 ID가 충돌해 upsert 가 덮어쓴다.)
+        # Ordinal of the section within the document — material for a unique key when section_id is missing.
+        # (Falling back to doc_id gives every section of the same document the same key,
+        #  and idx restarts from 0 per section, so chunk IDs collide and upsert overwrites.)
         section_ordinal = doc_section_ordinal.get(doc_id, 0)
         doc_section_ordinal[doc_id] = section_ordinal + 1
 
@@ -65,7 +65,7 @@ def prepare_chunks(documents: list) -> list[dict]:
             continue
 
         raw_section_id = d.get("section_id")
-        # 메타데이터는 기존 폴백(doc_id)을 유지하되, ID 생성에는 고유 키를 사용
+        # Metadata keeps the existing fallback (doc_id), but ID generation uses the unique key
         section_id = raw_section_id or doc_id
         section_key = raw_section_id or f"{doc_id}#{section_ordinal}"
 
@@ -74,7 +74,7 @@ def prepare_chunks(documents: list) -> list[dict]:
         for idx, text in enumerate(sub_chunks):
             chunk_id = _chunk_id(doc_id, section_key, idx)
             if chunk_id in seen_ids:
-                # 동일 입력이 중복 전달된 경우 — upsert 대상은 1건뿐이므로 집계에서 제외
+                # Same input passed more than once — only one upsert target, so exclude from the count
                 continue
             seen_ids.add(chunk_id)
             output.append(

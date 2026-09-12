@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-10_fix_links.py — vault 위키링크 수정
+10_fix_links.py — fix vault wikilinks
 
-1) 중첩 깨진 링크 복구:  [[PRE [[INNER|ANC]] SUF|OUT]]  →  [[<ID로 찾은 실제 문서>|OUT]]
-2) 문서 내 중복 링크 제거: 같은 대상은 첫 등장만 링크, 이후는 평문 앵커
+1) Repair broken nested links:  [[PRE [[INNER|ANC]] SUF|OUT]]  →  [[<actual document found by ID>|OUT]]
+2) Remove duplicate links within a document: only the first occurrence of a target stays a link, later ones become plain anchor text
 
-- 이미지 임베드 ![[...]] 는 건드리지 않음
-- frontmatter 는 건드리지 않음
-사용: python 10_fix_links.py [--apply]
+- Image embeds ![[...]] are left untouched
+- frontmatter is left untouched
+Usage: python 10_fix_links.py [--apply]
 """
 import re, sys, json
 from pathlib import Path
@@ -17,7 +17,7 @@ VAULT = Path(r"C:\dev2\refined_vault")
 DIRS = ["active", "active260323", ".archive", "jira", "_reference"]
 APPLY = "--apply" in sys.argv
 
-# ---------- 문서 인덱스 ----------
+# ---------- Document index ----------
 def build_index():
     by_id, names = {}, set()
     for d in DIRS:
@@ -31,13 +31,13 @@ def build_index():
                 by_id.setdefault(m.group(1), []).append(f.stem)
     return by_id, names
 
-# ---------- 링크 스팬 파싱 ----------
+# ---------- Link span parsing ----------
 def find_spans(text):
-    """[[ ... ]] 스팬을 중첩 고려하여 (start, end, content, nested) 로 반환"""
+    """Return [[ ... ]] spans as (start, end, content, nested), accounting for nesting"""
     spans, i, n = [], 0, len(text)
     while i < n - 1:
         if text[i] == "[" and text[i + 1] == "[":
-            if i > 0 and text[i - 1] == "!":       # 이미지 임베드 제외
+            if i > 0 and text[i - 1] == "!":       # exclude image embeds
                 i += 2
                 continue
             depth, j, nested = 1, i + 2, False
@@ -64,7 +64,7 @@ INNER_P = re.compile(r"\[\[([^\[\]\|]+)\|([^\[\]]+)\]\]")
 INNER_B = re.compile(r"\[\[([^\[\]]+)\]\]")
 
 def flatten(content):
-    """스팬 내부의 중첩 링크를 앵커 텍스트로 축약"""
+    """Collapse nested links inside a span to their anchor text"""
     for _ in range(10):
         new = INNER_P.sub(lambda m: m.group(2), content)
         new = INNER_B.sub(lambda m: m.group(1), new)
@@ -79,10 +79,10 @@ def split_link(content):
         return tgt.strip(), anc.strip()
     return content.strip(), content.strip()
 
-# ---------- 메인 ----------
+# ---------- Main ----------
 def main():
     by_id, names = build_index()
-    print(f"문서 인덱스: {len(names):,}개 (숫자 ID {len(by_id):,}개)")
+    print(f"Document index: {len(names):,} docs ({len(by_id):,} numeric IDs)")
 
     stat = Counter()
     unresolved = Counter()
@@ -117,11 +117,11 @@ def main():
                     else:
                         unresolved[tgt[:60]] += 1
                         stat["nested_plain"] += 1
-                        out.append(anc)          # 해결 불가 → 평문
+                        out.append(anc)          # unresolvable → plain text
                         continue
 
                 key = tgt
-                if key in seen:                   # 중복 → 평문
+                if key in seen:                   # duplicate → plain text
                     stat["dedup"] += 1
                     out.append(anc)
                 else:
@@ -137,15 +137,15 @@ def main():
                     f.write_text(new, encoding="utf-8")
 
     print()
-    print(f"{'적용' if APPLY else '试 DRY-RUN (미적용)'}")
-    print(f"  링크 유지(그래프 간선)   : {stat['kept']:,}")
-    print(f"  중복 제거 → 평문         : {stat['dedup']:,}")
-    print(f"  중첩 발견                : {stat['nested']:,}")
-    print(f"    └ ID로 복구            : {stat['nested_fixed']:,}")
-    print(f"    └ 해결 불가 → 평문     : {stat['nested_plain']:,}")
-    print(f"  변경 파일                : {changed_files:,}")
+    print(f"{'APPLIED' if APPLY else 'DRY-RUN (not applied)'}")
+    print(f"  Links kept (graph edges)   : {stat['kept']:,}")
+    print(f"  Duplicates → plain text    : {stat['dedup']:,}")
+    print(f"  Nested found               : {stat['nested']:,}")
+    print(f"    └ repaired by ID         : {stat['nested_fixed']:,}")
+    print(f"    └ unresolvable → plain   : {stat['nested_plain']:,}")
+    print(f"  Changed files              : {changed_files:,}")
     if unresolved:
-        print("\n  해결 못한 대상 상위:")
+        print("\n  Top unresolved targets:")
         for k, v in unresolved.most_common(8):
             print(f"    {v:4}  {k}")
 
