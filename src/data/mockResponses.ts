@@ -1,4 +1,4 @@
-import type { DirectorId } from '@/types'
+import type { DirectorId, SpeakerId } from '@/types'
 
 /**
  * Mock AI responses per director persona.
@@ -7,58 +7,58 @@ import type { DirectorId } from '@/types'
  */
 export const MOCK_RESPONSES: Record<DirectorId, string[]> = {
   chief_director: [
-    'From a holistic perspective, aligning goals across teams is currently the most important task. Confirm first that every department is pointing toward the same vision.',
-    'Viewing this issue through the core value of Project ECHO — "a balance between immersive exploration and combat" — the priority is consistency of the player experience.',
-    'This decision may slow development speed in the short term, but unifying team direction is far more important in the long run. I recommend revisiting it against milestone M4.',
-    'Synthesizing feedback from the art team and the planning team, the points of conflict are clear. My view is that it is realistic for the art team to maximize expression within the functional constraints set by the planning team.',
-    'The most frequently cited keyword in the Q1 retrospective was "lack of consistency." Without resolving this issue first, achieving Q2 goals will be difficult.',
-    'This matter requires cross-departmental collaboration. I will add it to the agenda for the next cross-team meeting. I recommend each team prepare their position in advance.',
-    'Risk analysis: proceeding in this direction has a 30% chance of schedule delay, but leaving it unaddressed carries a 60% chance of rework due to quality issues. Choosing the former is the rational call.',
-    'Lesson from a similar situation in the past: making the right decision mattered more than making a fast one. Allow sufficient review time, but do not delay more than one week.',
+    '전체적인 방향성에서 보면, 현재 팀 간 목표 정렬이 가장 중요한 과제입니다. 각 부서가 같은 비전을 바라보고 있는지 먼저 확인하세요.',
+    'Project ECHO의 핵심 가치인 "몰입형 탐험과 전투의 균형"에서 이 이슈를 바라봤을 때, 우선순위는 플레이어 경험 일관성입니다.',
+    '이 결정은 단기적으로는 개발 속도를 늦출 수 있지만, 장기적으로 팀 방향성 통일이 훨씬 더 중요합니다. 마일스톤 M4를 기준으로 재검토를 권장합니다.',
+    '아트팀과 기획팀의 피드백을 종합하면, 두 방향이 충돌하는 지점이 명확합니다. 제 의견으로는 기획팀의 기능 제약 내에서 아트팀이 최대한 표현을 살리는 방향이 현실적입니다.',
+    'Q1 회고에서 가장 빈번하게 나온 키워드는 "일관성 부재"입니다. 이 이슈를 먼저 해결하지 않으면 Q2 목표 달성이 어렵습니다.',
+    '부서 간 협력이 필요한 사안입니다. 다음 크로스팀 회의에서 이 안건을 다루도록 하겠습니다. 각 팀이 사전에 입장을 정리해오길 권장합니다.',
+    '리스크 분석: 이 방향으로 진행 시 일정 지연 가능성 30%, 하지만 미처리 시 품질 이슈로 재작업 가능성이 60%입니다. 전자를 선택하는 것이 합리적입니다.',
+    '이전 비슷한 상황에서의 교훈: 빠른 결정보다 올바른 결정이 더 중요했습니다. 충분한 검토 시간을 갖되, 1주일 이상 미루지 마세요.',
   ],
 
   art_director: [
-    'From a visual standpoint, the current color palette conflicts with the core T&M guide principle of "dark and mysterious atmosphere." I recommend reducing overall saturation by 20–30%.',
-    'The silhouette on this asset is excellent, but the color placement is at odds with the world-building. Please revisit the palettes of the dark fantasy references we set.',
-    'From an environmental art perspective, the lighting direction is not guiding the player\'s eye toward the objective. Readjusting the position and intensity of the light source should resolve this.',
-    'This is a UI visual consistency issue. Having three different icon styles coexisting in the current state will confuse users. I recommend unifying everything to line icons.',
-    'From a cutscene direction standpoint, the camera movement is too fast. For emotional impact, try lingering an extra 0.5–1 second on key scenes.',
-    'Concept art quality has improved overall. For the next review, please increase silhouette variety — there is a current problem where the characters look too similar.',
-    'The noise pattern on this texture includes high-saturation areas prohibited by the T&M guide. Fix that portion alone and the asset will be a good overall result.',
-    'From an art direction standpoint, this issue is fundamentally a reference-setting problem. It is important to re-verify that the whole team is looking at the same references.',
+    '비주얼 관점에서 보면, 현재 색상 팔레트가 T&M 가이드의 핵심인 "어둡고 신비로운 분위기"와 충돌합니다. 전체 채도를 20-30% 낮추는 것을 권장합니다.',
+    '이 에셋의 실루엣은 훌륭합니다만, 색상 배치가 세계관과 어긋납니다. 레퍼런스로 설정한 다크 판타지 작품들의 팔레트를 다시 참조해주세요.',
+    '환경 아트 관점에서 조명 방향이 플레이어 시선을 목표 지점으로 유도하지 못하고 있습니다. 광원의 위치와 강도를 재조정하면 해결될 것 같습니다.',
+    'UI 비주얼 일관성 문제입니다. 아이콘 스타일 3가지가 혼재하는 현재 상태는 사용자에게 혼란을 줍니다. 라인 아이콘으로 전체 통일을 권장합니다.',
+    '컷씬 연출 측면에서는 카메라 무빙이 너무 빠릅니다. 감정적 임팩트를 위해 주요 장면에서 0.5-1초 정도 더 머무는 연출을 넣어보세요.',
+    '컨셉 아트 퀄리티는 전반적으로 향상되었습니다. 다음 배치에서는 실루엣 다양성을 더 높여주세요. 현재 캐릭터들이 비슷해 보이는 문제가 있습니다.',
+    '이 텍스처의 노이즈 패턴이 T&M 가이드에서 금지한 고채도 영역을 포함합니다. 해당 부분만 수정하면 전체적으로 좋은 결과물이 될 것입니다.',
+    '아트 방향성 측면에서 이 이슈는 근본적으로 레퍼런스 설정 문제입니다. 팀 전체가 같은 레퍼런스를 보고 있는지 다시 확인하는 게 중요합니다.',
   ],
 
   plan_director: [
-    'Analyzing from a player-experience perspective, the reward feedback in the current core loop is too weak. The action → immediate response link needs to be strengthened.',
-    'In the feature priority list, this item is rated Should. Committing resources before the current Must items are completed is not recommended.',
-    'Looking at balance data, the drop-off rate spikes sharply in the level 5–8 range. Smoothing out the difficulty curve in that range is urgent.',
-    'By UX flow standards, the access path for this feature is too deep. The more frequently a feature is used, the more strictly we need to uphold the 2-tap access principle.',
-    'From a systems perspective, these two features have a dependency relationship. Developing the downstream feature without completing the upstream one will generate more than three times the refactoring cost.',
-    'Aggregating playtest results, the most common player complaint is the absence of feedback. Adding one sound cue and one visual feedback each should resolve it.',
-    'Including this feature in the Q2 scope is expected to push the schedule 2 weeks over. Consider downgrading it to Could or reducing the scope by 50%.',
-    'As a game design principle, players must be able to immediately understand why they failed. The current feedback system does not satisfy this principle.',
+    '플레이어 경험 관점에서 분석하면, 현재 코어 루프의 보상 피드백이 너무 약합니다. 행동 → 즉각 반응의 연결고리를 강화해야 합니다.',
+    '기능 우선순위에서 이 항목은 Should 등급입니다. 현재 Must 항목들이 완료되기 전에 리소스를 투입하는 것은 권장하지 않습니다.',
+    '밸런스 데이터를 보면 5-8레벨 구간에서 이탈률이 급증합니다. 이 구간의 난이도 곡선을 완만하게 조정하는 것이 시급합니다.',
+    'UX 플로우 기준에서 이 기능의 접근 경로가 너무 깊습니다. 사용 빈도가 높은 기능일수록 최대 2탭 이내 접근 원칙을 지켜야 합니다.',
+    '시스템 관점에서 이 두 기능은 의존 관계가 있습니다. 선행 기능을 완성하지 않고 후속 기능을 개발하면 리팩토링 비용이 3배 이상 발생합니다.',
+    '플레이 테스트 결과를 종합하면, 플레이어들이 가장 불만족하는 부분은 피드백 부재입니다. 사운드와 비주얼 피드백을 각각 1개씩 추가하는 것으로 해결 가능합니다.',
+    'Q2 스코프에서 이 기능을 포함하면 일정이 2주 초과될 것으로 예상됩니다. Could 등급으로 내리거나 기능 범위를 50% 축소하는 것을 검토하세요.',
+    '게임 설계 원칙상 플레이어가 실패했을 때 원인을 즉각 이해할 수 있어야 합니다. 현재 피드백 시스템은 이 원칙을 충족하지 못하고 있습니다.',
   ],
 
   level_director: [
-    'From a level-flow perspective, this zone is structured in a way that makes it easy for players to get lost. Placing 3 or more visual landmarks along the main path will solve it.',
-    'By sight-guidance principles, this corridor appears dead-ended, making it highly likely players will give up progressing. A window or light source must be added to motivate forward movement.',
-    'In terms of spatial design, the combat zone is too narrow. Comfortable combat requires securing a minimum space (15×15m) where players can move in at least 3 directions.',
-    'In gimmick design, placing a Level 2 gimmick without introducing a Level 1 gimmick first will confuse players. Please follow the principle of sequential gimmick introduction.',
-    'The enemy placement in this level caused problems during playtesting. When more than 3 enemies enter the player\'s field of view simultaneously, the pressure becomes excessive.',
-    'The checkpoint interval is too long. Maintaining the principle of one checkpoint per three combat zones can significantly reduce player drop-off.',
-    'In the fork design, there are insufficient visual cues to distinguish the main path from the side path. I recommend using a ceiling height difference to naturally differentiate them.',
-    'Calculating total travel time across the level, it exceeds the target (90 seconds per zone). Shorten unnecessary sections by 30% or add movement-speed buff zones.',
+    '레벨 플로우 관점에서 이 구역은 플레이어가 길을 잃기 쉬운 구조입니다. 주요 동선에 시각적 랜드마크를 3개 이상 배치하면 해결됩니다.',
+    '시야 유도 원칙에 따르면 이 복도는 끝이 막혀 보여서 플레이어가 진행을 포기할 가능성이 높습니다. 창문이나 광원으로 전진 의지를 유발해야 합니다.',
+    '공간 설계상 전투 구역이 너무 협소합니다. 플레이어가 3방향 이상으로 이동할 수 있는 최소 공간(15×15m)이 확보되어야 쾌적한 전투가 가능합니다.',
+    '기믹 설계에서 레벨1 기믹도 없이 레벨2 기믹을 배치하면 플레이어가 혼란스러워합니다. 순차적 기믹 소개 원칙을 지켜주세요.',
+    '이 레벨의 적 배치가 플레이 테스트에서 문제가 됐습니다. 플레이어 시야에 적이 동시에 3개 이상 들어오면 압박감이 과도해집니다.',
+    '체크포인트 간격이 너무 깁니다. 전투 구역 3개마다 체크포인트 1개 원칙을 지키면 플레이어 이탈을 크게 줄일 수 있습니다.',
+    '갈림길 설계에서 메인 경로와 사이드 경로를 구분하는 시각적 단서가 부족합니다. 천장 높이 차이로 자연스럽게 구분하는 것을 권장합니다.',
+    '레벨 전체 이동 시간을 계산하면 목표(90초/구역)를 초과합니다. 불필요한 구간을 30% 단축하거나 이동 속도 버프 존을 추가하세요.',
   ],
 
   prog_director: [
-    'Performance analysis results: the current GPU bottleneck is draw calls running at 2.3x the per-frame target (500). Applying GPU instancing can achieve over 70% improvement.',
-    'From a tech architecture standpoint, this implementation approach may cause problems when scaling later. Applying the ECS pattern takes 2 extra days now but cuts long-term maintenance cost in half.',
-    'Memory profiling results show this module is generating 10KB of GC pressure per frame. Applying object pooling will resolve it immediately.',
-    'On the network latency front, the current packet size is excessive. Sending only necessary data via delta sync will reduce traffic by 60% and also improve latency.',
-    'The implementation complexity of this feature is higher than expected. Implementing it within the current architecture may accumulate tech debt, so I recommend one more review at the design stage.',
-    'In rendering pipeline optimization, activating TAA + SSAO simultaneously exceeds the budget. Either halve the SSAO sample count or reduce the TAA jitter intensity.',
-    'Server load test results: with the current structure, response time increases sharply beyond 5,000 concurrent users. Adjusting load balancer configuration can resolve this.',
-    'From a tech debt perspective, fixing this legacy code now takes 2 days, but leaving it will require more than a week of refactoring next quarter. I recommend handling it now.',
+    '퍼포먼스 분석 결과, 현재 GPU 병목은 드로우콜 수가 프레임당 목표치(500개)의 2.3배 수준입니다. GPU 인스턴싱 적용으로 70% 이상 개선 가능합니다.',
+    '기술 아키텍처 관점에서 이 구현 방식은 나중에 확장할 때 문제가 될 수 있습니다. ECS 패턴을 적용하면 지금은 2일 더 걸리지만 장기적으로 유지보수 비용을 절반으로 줄입니다.',
+    '메모리 프로파일링 결과 이 모듈에서 프레임당 10KB의 GC 압박이 발생하고 있습니다. 오브젝트 풀링을 적용하면 즉시 해결됩니다.',
+    '네트워크 레이턴시 측면에서 현재 패킷 크기가 과도합니다. 필요한 데이터만 델타 동기화로 전송하면 트래픽을 60% 절감하고 레이턴시도 개선됩니다.',
+    '이 기능의 구현 복잡도는 예상보다 높습니다. 현재 아키텍처에서 구현 시 기술 부채가 누적될 수 있으니 설계 단계에서 한 번 더 검토를 권장합니다.',
+    '렌더링 파이프라인 최적화에서 TAA + SSAO를 동시에 활성화하면 예산 초과됩니다. SSAO의 샘플 수를 반으로 줄이거나 TAA의 지터링 강도를 낮추세요.',
+    '서버 부하 테스트 결과: 현재 구조로는 동시접속 5,000명 이후 응답 시간이 급격히 증가합니다. 로드 밸런서 설정 조정으로 해결 가능합니다.',
+    '기술 부채 관점에서 이 레거시 코드를 지금 수정하면 2일이지만, 방치하면 다음 분기에 1주일 이상의 리팩토링이 필요합니다. 지금 처리를 권장합니다.',
   ],
 }
 
@@ -66,8 +66,10 @@ export const MOCK_RESPONSES: Record<DirectorId, string[]> = {
  * Select a mock response pseudo-randomly based on message content.
  * Returns consistent responses for the same input.
  */
-export function selectMockResponse(personaId: DirectorId, message: string): string {
-  const responses = MOCK_RESPONSES[personaId] ?? []
+export function selectMockResponse(personaId: SpeakerId, message: string): string {
+  // 'unknown' is not a DirectorId — fall back to chief_director responses
+  const directorId: DirectorId = personaId === 'unknown' ? 'chief_director' : personaId
+  const responses = MOCK_RESPONSES[directorId] ?? []
   // Simple hash from message text
   let hash = 0
   for (let i = 0; i < message.length; i++) {

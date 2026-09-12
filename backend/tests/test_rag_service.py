@@ -116,3 +116,44 @@ def test_prepare_chunks_all_ids_unique():
     chunks = prepare_chunks(docs)
     ids = [c["id"] for c in chunks]
     assert len(ids) == len(set(ids)), "Chunk IDs must be unique"
+
+
+def test_prepare_chunks_ids_unique_without_section_id():
+    """section_id 가 없는 같은 문서의 여러 섹션도 고유 ID 를 가져야 한다.
+
+    doc_id 로 폴백하면 섹션마다 idx 가 0부터 다시 시작해 ID 가 충돌하고,
+    upsert 가 앞 섹션을 조용히 덮어쓴다.
+    """
+    docs = [
+        {
+            "doc_id": "same_doc",
+            "filename": "same.md",
+            "section_id": None,
+            "heading": f"섹션 {i}",
+            "speaker": "chief_director",
+            "content": f"섹션 {i} 내용: " + "테스트 " * 200,
+            "tags": [],
+        }
+        for i in range(4)
+    ]
+    chunks = prepare_chunks(docs)
+    ids = [c["id"] for c in chunks]
+    assert len(chunks) > 4  # 각 섹션이 여러 서브청크로 분할됨
+    assert len(ids) == len(set(ids)), "section_id 없는 섹션들의 ID 가 충돌한다"
+
+
+def test_prepare_chunks_ids_are_stable_across_runs():
+    """같은 입력은 항상 같은 ID 집합을 만들어야 한다 (재인덱싱 멱등)."""
+    docs = [
+        {
+            "doc_id": "d1", "filename": "a.md", "section_id": None,
+            "heading": "", "speaker": "s", "content": "내용 " * 50, "tags": [],
+        },
+        {
+            "doc_id": "d1", "filename": "a.md", "section_id": None,
+            "heading": "", "speaker": "s", "content": "다른 내용 " * 50, "tags": [],
+        },
+    ]
+    first = [c["id"] for c in prepare_chunks(docs)]
+    second = [c["id"] for c in prepare_chunks(docs)]
+    assert first == second

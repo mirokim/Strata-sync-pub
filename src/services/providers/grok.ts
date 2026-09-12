@@ -6,6 +6,7 @@
  */
 
 import { parseSSEStream } from '@/services/sseParser'
+import { toUserFriendlyError } from '@/lib/errorMessages'
 
 const API_URL = 'https://api.x.ai/v1/chat/completions'
 
@@ -45,8 +46,8 @@ export async function streamCompletion(
   })
 
   if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`Grok API error ${response.status}: ${errorText}`)
+    await response.text()
+    throw new Error(toUserFriendlyError(response.status, 'Grok'))
   }
 
   // Same delta format as OpenAI; usage in final chunk when stream_options.include_usage=true
@@ -65,7 +66,7 @@ export async function streamCompletion(
     return parsed.choices?.[0]?.delta?.content ?? null
   }
 
-  for await (const chunk of parseSSEStream(response, extractChunk)) {
+  for await (const chunk of parseSSEStream(response, extractChunk, signal)) {
     onChunk(chunk)
   }
 

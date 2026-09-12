@@ -6,7 +6,7 @@ interface BotStore {
   running: boolean
   setRunning: (v: boolean) => void
   startBot: () => Promise<{ ok: boolean; error?: string }>
-  stopBot: () => Promise<void>
+  stopBot: () => Promise<{ ok: boolean } | undefined>
 }
 
 export const useBotStore = create<BotStore>((set) => ({
@@ -23,6 +23,7 @@ export const useBotStore = create<BotStore>((set) => ({
       slack_bot_token: slackBotConfig.botToken,
       slack_app_token: slackBotConfig.appToken,
       slack_model:     slackBotConfig.model,
+      sendImages:      slackBotConfig.sendImages ?? true,
       interval_hours:  1,
       auto_run:        false,
       slack_rag_top_n: 5,
@@ -31,11 +32,12 @@ export const useBotStore = create<BotStore>((set) => ({
       set({ running: true })
       return { ok: true }
     }
-    return { ok: false, error: result?.error ?? 'Unknown error' }
+    return { ok: false, error: result?.error ?? '알 수 없는 오류' }
   },
 
   stopBot: async () => {
-    await window.botAPI?.stop()
+    const result = await window.botAPI?.stop()
     set({ running: false })
+    return result
   },
 }))

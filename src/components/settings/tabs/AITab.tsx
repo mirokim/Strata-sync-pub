@@ -17,8 +17,8 @@ function EnvHint({ provider }: { provider: string }) {
   return (
     <span
       className="text-[10px] ml-1 shrink-0"
-      style={{ color: hasKey ? '#4caf50' : 'var(--color-text-muted)' }}
-      title={hasKey ? 'API key configured' : 'API key not set'}
+      style={{ color: hasKey ? 'var(--color-success)' : 'var(--color-text-muted)' }}
+      title={hasKey ? 'API 키 설정됨' : 'API 키 미설정'}
     >
       {hasKey ? '●' : '○'}
     </span>
@@ -39,10 +39,10 @@ export default function AITab() {
 
       {/* API Keys */}
       <section>
-        <h3 className="text-[13px] font-semibold mb-1" style={{ color: 'var(--color-text-secondary)' }}>API Keys</h3>
+        <h3 className="text-[13px] font-semibold mb-1" style={{ color: 'var(--color-text-secondary)' }}>API 키</h3>
         <p className="text-xs mb-3" style={{ color: 'var(--color-text-muted)' }}>
-          Enter API keys for each AI provider.{' '}
-          <span style={{ color: '#f59e0b' }}>⚠ Keys are stored in plain text in this device's local storage. Delete keys after use on shared computers.</span>
+          각 AI 제공자의 API 키를 입력하세요.{' '}
+          <span style={{ color: 'var(--color-warning)' }}>⚠ 키는 이 기기의 로컬 스토리지에 평문 저장됩니다. 공용 컴퓨터에서는 사용 후 키를 삭제하세요.</span>
         </p>
         <div className="flex flex-col gap-2.5">
           {API_KEY_PROVIDERS.map(({ id, label, placeholder }) => {
@@ -58,7 +58,7 @@ export default function AITab() {
                   {label}
                   <span
                     className="text-[10px] ml-1.5"
-                    style={{ color: hasKey ? '#4caf50' : 'var(--color-text-muted)' }}
+                    style={{ color: hasKey ? 'var(--color-success)' : 'var(--color-text-muted)' }}
                   >{hasKey ? '●' : '○'}</span>
                 </div>
                 <div className="flex-1 relative">
@@ -66,7 +66,7 @@ export default function AITab() {
                     type={visibleKeys[id] ? 'text' : 'password'}
                     value={storeValue}
                     onChange={e => setApiKey(id, e.target.value.trim())}
-                    placeholder={hasEnv ? '(using env variable)' : placeholder}
+                    placeholder={hasEnv ? '(환경변수 사용 중)' : placeholder}
                     className="w-full text-[13px] rounded px-2 py-1.5 pr-7 font-mono"
                     style={{
                       background: 'var(--color-bg-surface)',
@@ -84,7 +84,7 @@ export default function AITab() {
                     style={{ color: 'var(--color-text-muted)' }}
                     tabIndex={-1}
                   >
-                    {visibleKeys[id] ? 'Hide' : 'Show'}
+                    {visibleKeys[id] ? '숨김' : '보기'}
                   </button>
                 </div>
               </div>
@@ -97,9 +97,9 @@ export default function AITab() {
 
       {/* Persona → model mapping */}
       <section>
-        <h3 className="text-[13px] font-semibold mb-1" style={{ color: 'var(--color-text-secondary)' }}>Persona Models</h3>
+        <h3 className="text-[13px] font-semibold mb-1" style={{ color: 'var(--color-text-secondary)' }}>페르소나 모델</h3>
         <p className="text-xs mb-3" style={{ color: 'var(--color-text-muted)' }}>
-          Select the AI model for each director persona. Mock responses are used when no API key is set.
+          각 디렉터 페르소나에 사용할 AI 모델을 선택하세요. API 키 미설정 시 Mock 응답을 사용합니다.
         </p>
         <div className="flex flex-col gap-2.5">
           {SPEAKER_IDS.map(persona => {
@@ -161,9 +161,9 @@ export default function AITab() {
 
       {/* Report model */}
       <section>
-        <h3 className="text-[13px] font-semibold mb-1" style={{ color: 'var(--color-text-secondary)' }}>Report AI Model</h3>
+        <h3 className="text-[13px] font-semibold mb-1" style={{ color: 'var(--color-text-secondary)' }}>보고서 AI 모델</h3>
         <p className="text-xs mb-3" style={{ color: 'var(--color-text-muted)' }}>
-          Select the model used when AI summarizes and writes conversation reports. Selecting "Disabled" outputs the conversation as-is in markdown.
+          대화 보고서를 AI가 요약·작성할 때 사용할 모델을 선택하세요. "사용 안 함" 선택 시 대화를 그대로 마크다운으로 출력합니다.
         </p>
         <div className="relative">
           <select
@@ -177,7 +177,7 @@ export default function AITab() {
               outline: 'none',
             }}
           >
-            <option value="">Disabled (default format output)</option>
+            <option value="">사용 안 함 (기본 형식 출력)</option>
             {Object.entries(GROUPED_OPTIONS).map(([provider, models]) => (
               <optgroup key={provider} label={PROVIDER_LABELS[provider as keyof typeof PROVIDER_LABELS] ?? provider}>
                 {models.map(m => (
@@ -199,7 +199,7 @@ export default function AITab() {
       <section>
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-[13px] font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
-            RAG Document Reference Instructions
+            RAG 문서 참조 지침
           </h3>
           <button
             onClick={() => setRagInstruction(DEFAULT_RAG_INSTRUCTION)}
@@ -210,13 +210,13 @@ export default function AITab() {
               color: 'var(--color-text-muted)',
               cursor: 'pointer',
             }}
-            title="Restore defaults"
+            title="기본값으로 복원"
           >
-            Restore Defaults
+            기본값 복원
           </button>
         </div>
         <p className="text-xs mb-2" style={{ color: 'var(--color-text-muted)' }}>
-          Reference principles applied when passing vault documents to AI. Configure priority for recent data, factual accuracy, and insight generation.
+          볼트 문서를 AI에게 전달할 때 적용되는 참조 원칙입니다. 최신 데이터 우선순위·사실 정확성·인사이트 도출 방식을 설정합니다.
         </p>
         <textarea
           value={ragInstruction ?? ''}
@@ -230,13 +230,13 @@ export default function AITab() {
             borderRadius: 2,
             padding: '7px 9px',
             fontSize: 13,
-            fontFamily: 'ui-monospace, monospace',
+            fontFamily: 'var(--ea-font-mono)',
             color: 'var(--color-text-primary)',
             resize: 'vertical',
             lineHeight: 1.6,
             outline: 'none',
           }}
-          placeholder="e.g.: - Always prioritize the most recent documents."
+          placeholder="예: - 항상 최신 문서를 우선 참조하세요."
         />
       </section>
 
@@ -246,7 +246,7 @@ export default function AITab() {
       <section>
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-[13px] font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
-            AI Response Instructions
+            AI 응답 지침
           </h3>
           <button
             onClick={() => setResponseInstructions(DEFAULT_RESPONSE_INSTRUCTIONS)}
@@ -257,13 +257,13 @@ export default function AITab() {
               color: 'var(--color-text-muted)',
               cursor: 'pointer',
             }}
-            title="Restore default response principles"
+            title="기본 응답 원칙으로 복원"
           >
-            Restore Defaults
+            기본값 복원
           </button>
         </div>
         <p className="text-xs mb-2" style={{ color: 'var(--color-text-muted)' }}>
-          Response format and tone instructions applied to all personas. Modify or add items as needed.
+          모든 페르소나에 공통 적용되는 응답 형식·태도 지침입니다. 수정하거나 항목을 추가하세요.
         </p>
       {/* Multi-agent RAG toggle */}
       <div className="flex items-center justify-between py-2">
@@ -272,7 +272,7 @@ export default function AITab() {
             Multi-agent RAG
           </p>
           <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-            Summarizes related documents in parallel using a cheaper Worker model, then passes to Chief. Improves response quality with slight latency increase.
+            연관 문서를 저렴한 Worker 모델로 병렬 요약 후 Chief에게 전달. 응답 품질 향상, 레이턴시 소폭 증가.
           </p>
         </div>
         <button
@@ -297,10 +297,10 @@ export default function AITab() {
       <div className="flex items-start justify-between py-2">
         <div>
           <p className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-            Citation Mode (Hallucination Suppression)
+            인용 모드 (할루시네이션 억제)
           </p>
           <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-            ON: Worker extracts citations from source documents, Chief marks <strong>(inference)</strong> during reasoning. OFF: Standard summarization.
+            ON: Worker가 문서 원문을 인용 추출, Chief가 추론 시 <strong>(추론)</strong> 표시. OFF: 기존 요약 방식.
           </p>
         </div>
         <button
@@ -325,10 +325,10 @@ export default function AITab() {
       <div className="flex items-start justify-between py-2">
         <div>
           <p className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-            2-pass Self Review
+            2-pass 자기 검토
           </p>
           <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-            OFF: generates response once only (saves 1 LLM call). ON: reviews quality then refines.
+            OFF 시 답변 1회 생성만 수행 (LLM 호출 1회 절감). ON 시 품질 검토 후 보완.
           </p>
         </div>
         <button
@@ -353,10 +353,10 @@ export default function AITab() {
       <div className="flex items-center justify-between py-2">
         <div>
           <p className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-            Sub-agent Count: {nAgents}
+            서브 에이전트 수: {nAgents}
           </p>
           <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-            Number of documents to analyze in parallel in Multi-agent RAG. Lower values reduce cost and increase speed (default 6).
+            Multi-agent RAG에서 병렬 분석할 문서 수. 낮을수록 비용↓·속도↑ (기본값 6).
           </p>
         </div>
         <input
@@ -374,10 +374,10 @@ export default function AITab() {
       <div className="flex items-start justify-between py-2" style={{ borderBottom: '1px solid var(--color-border)' }}>
         <div>
           <p className="text-xs font-medium" style={{ color: 'var(--color-text-primary)' }}>
-            Web Search (DuckDuckGo)
+            웹 검색 (DuckDuckGo)
           </p>
           <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-            Worker autonomously determines if information outside the vault is needed, then augments context via DuckDuckGo search.
+            Worker가 볼트 외 최신 정보 필요 여부를 자율 판단해 DuckDuckGo 검색 후 컨텍스트 보강.
           </p>
         </div>
         <button
@@ -410,13 +410,13 @@ export default function AITab() {
             borderRadius: 2,
             padding: '7px 9px',
             fontSize: 13,
-            fontFamily: 'ui-monospace, monospace',
+            fontFamily: 'var(--ea-font-mono)',
             color: 'var(--color-text-primary)',
             resize: 'vertical',
             lineHeight: 1.6,
             outline: 'none',
           }}
-          placeholder="e.g.: - Always summarize responses in 3 lines or less."
+          placeholder="예: - 답변은 항상 3줄 이내로 요약해주세요."
         />
       </section>
 
@@ -426,10 +426,10 @@ export default function AITab() {
       <section className="flex flex-col gap-2">
         <div>
           <h3 style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 4 }}>
-            Sensitive Keywords
+            민감 키워드
           </h3>
           <p style={{ fontSize: 11, color: 'var(--color-text-muted)', lineHeight: 1.6 }}>
-            When a question contains these keywords, AI will prioritize and respond in detail on that topic. Separate with commas or line breaks.
+            질문에 아래 키워드가 포함되면 AI가 해당 주제를 최우선으로 상세하게 답변합니다. 쉼표 또는 줄바꿈으로 구분.
           </p>
         </div>
         <textarea
@@ -444,13 +444,13 @@ export default function AITab() {
             borderRadius: 2,
             padding: '7px 9px',
             fontSize: 13,
-            fontFamily: 'ui-monospace, monospace',
+            fontFamily: 'var(--ea-font-mono)',
             color: 'var(--color-text-primary)',
             resize: 'vertical',
             lineHeight: 1.6,
             outline: 'none',
           }}
-          placeholder={'e.g.: CharacterC, ProjectA\nCharacter appearance\nSkill system'}
+          placeholder={'예: 월영, 렘브란트\n캐릭터 외형\n스킬 시스템'}
         />
       </section>
     </div>

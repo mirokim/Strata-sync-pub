@@ -1,4 +1,5 @@
 import { parseSSEStream } from '@/services/sseParser'
+import { toUserFriendlyError } from '@/lib/errorMessages'
 import type { Attachment } from '@/types'
 
 const API_URL = 'https://api.openai.com/v1/chat/completions'
@@ -68,8 +69,8 @@ export async function streamCompletion(
   })
 
   if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`OpenAI API error ${response.status}: ${errorText}`)
+    await response.text()
+    throw new Error(toUserFriendlyError(response.status, 'OpenAI'))
   }
 
   /**
@@ -93,7 +94,7 @@ export async function streamCompletion(
     return parsed.choices?.[0]?.delta?.content ?? null
   }
 
-  for await (const chunk of parseSSEStream(response, extractChunk)) {
+  for await (const chunk of parseSSEStream(response, extractChunk, signal)) {
     onChunk(chunk)
   }
 

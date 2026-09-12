@@ -98,7 +98,7 @@ export default function GraphMinimap() {
     ctx.globalAlpha = 1
   }, [simPositions, selectedNodeId, nodes, colorMap])
 
-  // Click to select + focus node
+  // Click → select + focus node
   const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -148,7 +148,7 @@ export default function GraphMinimap() {
         height={H}
         onClick={handleClick}
         style={{ display: 'block', cursor: 'crosshair', width: W, height: H }}
-        title="Minimap — click to focus node"
+        title="미니맵 — 클릭하여 노드 포커스"
       />
     </div>
   )

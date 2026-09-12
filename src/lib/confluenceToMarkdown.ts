@@ -1,15 +1,15 @@
 /**
- * Confluence Storage Format → Obsidian Markdown converter
+ * Confluence Storage Format → Obsidian Markdown 변환기
  *
- * Converts body.storage.value (HTML+XHTML mix) returned by the Confluence REST API
- * into vault markdown format.
+ * Confluence REST API가 반환하는 body.storage.value (HTML+XHTML 혼합)를
+ * 볼트 마크다운 형식으로 변환한다.
  *
- * Handles:
- *  - Standard HTML tags (h1-h6, p, ul/ol/li, strong/em, code, pre, table, a, br, hr)
- *  - Confluence macros (ac:structured-macro[code], ac:link → [[wikilink]])
- *  - Auto-generated vault frontmatter (title, date, type, status, tags, confluence_id)
- *  - Quality items based on refinement manual v3.0 applied automatically:
- *      HTML residue removal, consecutive blank line reduction, required frontmatter fields
+ * 처리 항목:
+ *  - 표준 HTML 태그 (h1-h6, p, ul/ol/li, strong/em, code, pre, table, a, br, hr)
+ *  - Confluence 매크로 (ac:structured-macro[code], ac:link → [[wikilink]])
+ *  - 볼트 frontmatter 자동 생성 (title, date, type, status, tags, confluence_id)
+ *  - 정제 매뉴얼 v3.21 기준 품질 항목 자동 적용:
+ *      HTML 잔재 제거, 연속 빈줄 축소, Frontmatter 필수 필드 보장
  */
 
 // ── Raw page object shape returned by Confluence REST API ─────────────────────
@@ -132,8 +132,11 @@ function nodeToMarkdown(node: Node, depth: number, titleStemMap?: Map<string, st
       const href = el.getAttribute('href') ?? ''
       const text = children().trim()
       if (!href) return text
-      if (!text || text === href) return href
-      return `[${text}](${href})`
+      // javascript: / data: URL은 마크다운 링크로 변환하지 않고 텍스트만 반환
+      const safeHref = /^(https?:|#|\/)/i.test(href) ? href : ''
+      if (!safeHref) return text || href
+      if (!text || text === href) return safeHref
+      return `[${text}](${safeHref})`
     }
 
     // ── Images
@@ -158,13 +161,12 @@ function nodeToMarkdown(node: Node, depth: number, titleStemMap?: Map<string, st
       return `\n${lines}\n`
     }
 
-    // ── Confluence attachment image: ac:image → skip (file not in vault)
-    // Renders as a note comment instead of broken ![[]] link
+    // ── Confluence attachment image: ac:image → ![[filename]] (§4.1)
+    // Attachments are downloaded in step 3 of ConfluenceTab pipeline, so ![[]] links are valid
     case 'ac:image': {
       const ri = el.querySelector('ri\\:attachment')
       const filename = ri?.getAttribute('ri:filename') ?? ''
-      // Do NOT render as ![[...]] — image file won't be in vault, would create broken link
-      return filename ? `\n> 📎 Attached image: ${filename}\n` : ''
+      return filename ? `\n![[${filename}]]\n` : ''
     }
 
     // ── Confluence-specific: ac:structured-macro ───────────────────────────────
@@ -301,20 +303,21 @@ export interface VaultPage {
 
 export function pageToVaultMarkdown(page: ConfluencePage, titleStemMap?: Map<string, string>): VaultPage {
   const labels = page.metadata?.labels?.results?.map(l => l.name) ?? []
+  // 매뉴얼 §4.0: "파일 수정일 우선" — version.when(최종 수정일) > history.createdDate(생성일)
   const dateStr =
-    page.history?.createdDate?.slice(0, 10) ??
     page.version?.when?.slice(0, 10) ??
+    page.history?.createdDate?.slice(0, 10) ??
     new Date().toISOString().slice(0, 10)
   const docType = inferType(page.title, labels)
-  // Append ID suffix to prevent title collision (manual v3.0 filename convention)
+  // Append ID suffix to prevent title collision (매뉴얼 v3.0 파일명 규칙)
   const stem = toStem(page.title, page.id)
 
-  // Source URL (manual 6.1 — source field)
+  // Source URL (매뉴얼 6.1 — source 필드)
   const sourceUrl = page._baseUrl
-    ? `${page._baseUrl.replace(/\/+$/, '')}/wiki/spaces/display/pages/${page.id}`
+    ? `${page._baseUrl.replace(/\/+$/, '')}/wiki/pages/viewpage.action?pageId=${page.id}`
     : ''
 
-  // Frontmatter (manual 6.1 required fields: date/type/status/tags + source/origin)
+  // Frontmatter (매뉴얼 6.1 필수 필드: date/type/status/tags + source/origin)
   const tagYaml = labels.length ? `[${labels.map(l => `"${l}"`).join(', ')}]` : '[]'
   const frontmatterLines = [
     '---',
@@ -325,8 +328,9 @@ export function pageToVaultMarkdown(page: ConfluencePage, titleStemMap?: Map<str
     `tags: ${tagYaml}`,
     `origin: confluence`,
     `confluence_id: "${page.id}"`,
+    `graph_weight: normal`,
   ]
-  if (sourceUrl) frontmatterLines.push(`source: "${sourceUrl}"`)
+  frontmatterLines.push(sourceUrl ? `source: "${sourceUrl}"` : 'source: "generated"')
   frontmatterLines.push('---', '')
   const frontmatter = frontmatterLines.join('\n')
 
@@ -334,12 +338,12 @@ export function pageToVaultMarkdown(page: ConfluencePage, titleStemMap?: Map<str
   const rawHtml = page.body?.storage?.value ?? ''
   let body = confluenceHtmlToMarkdown(rawHtml, titleStemMap)
 
-  // Post-processing (based on refinement manual v3.0)
-  // ① Collapse 3+ consecutive blank lines → 2 (audit_and_fix \n{4,} rule)
+  // Post-processing (정제 매뉴얼 v3.0 기준)
+  // ① 연속 빈줄 3개 이상 → 2개로 축소 (audit_and_fix \n{4,} 기준)
   body = body.replace(/\n{4,}/g, '\n\n')
-  // ② Fix triple brackets: [[[...]] → [[...]] (audit_and_fix FIX-2)
-  body = body.replace(/\[{3,}([^\[\]]+?)\]{2}/g, '[[$1]]')
-  // ③ Strip trailing whitespace
+  // ② 삼중 이상 대괄호 수정: [[[...]] 또는 [[[...]]] → [[...]] (audit_and_fix FIX-2)
+  body = body.replace(/\[{3,}([^\[\]]+?)\]{2,}/g, '[[$1]]')
+  // ③ 줄 끝 공백 제거
   body = body.split('\n').map(l => l.trimEnd()).join('\n')
 
   return {

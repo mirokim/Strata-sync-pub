@@ -3,7 +3,7 @@ import { logger } from '@/lib/logger'
 
 interface Props {
   children: ReactNode
-  /** Custom fallback to display when an error occurs (default: built-in UI) */
+  /** 에러 발생 시 표시할 커스텀 fallback (기본: 내장 UI) */
   fallback?: ReactNode
 }
 
@@ -13,12 +13,12 @@ interface State {
 }
 
 /**
- * ErrorBoundary — React component tree error blocker
+ * ErrorBoundary — React 컴포넌트 트리 에러 차단기
  *
- * Catches exceptions thrown by child components to prevent full app crashes.
- * Displays a fallback UI and provides a retry button on error.
+ * 하위 컴포넌트에서 발생하는 예외를 포착하여 앱 전체 크래시를 방지합니다.
+ * 에러 발생 시 fallback UI를 표시하고 재시도 버튼을 제공합니다.
  *
- * Usage:
+ * 사용법:
  *   <ErrorBoundary>
  *     <SomeCriticalComponent />
  *   </ErrorBoundary>
@@ -31,7 +31,7 @@ export default class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    logger.error('[ErrorBoundary] Component error:', error, info.componentStack)
+    logger.error('[ErrorBoundary] 컴포넌트 에러:', error, info.componentStack)
   }
 
   handleReset = () => {
@@ -59,7 +59,7 @@ export default class ErrorBoundary extends Component<Props, State> {
         >
           <div style={{ fontSize: '2rem' }}>⚠️</div>
           <div style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>
-            A rendering error occurred
+            렌더링 오류가 발생했습니다
           </div>
           {this.state.error && (
             <div
@@ -67,7 +67,7 @@ export default class ErrorBoundary extends Component<Props, State> {
                 fontFamily: 'monospace',
                 fontSize: '0.75rem',
                 padding: '0.5rem 0.75rem',
-                borderRadius: 6,
+                borderRadius: 2,
                 background: 'var(--color-bg-surface)',
                 border: '1px solid var(--color-border)',
                 maxWidth: 400,
@@ -81,7 +81,7 @@ export default class ErrorBoundary extends Component<Props, State> {
             onClick={this.handleReset}
             style={{
               padding: '0.4rem 1rem',
-              borderRadius: 6,
+              borderRadius: 2,
               border: '1px solid var(--color-border)',
               background: 'var(--color-bg-surface)',
               color: 'var(--color-text-primary)',
@@ -89,7 +89,7 @@ export default class ErrorBoundary extends Component<Props, State> {
               fontSize: '0.75rem',
             }}
           >
-            Retry
+            다시 시도
           </button>
         </div>
       )

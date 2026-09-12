@@ -1,0 +1,19 @@
+[00:58:08] [쿼리정제] '다이잔 진행상황 알려줘' → '다이잔 진행상황'
+[00:58:08] [Slack] PM: 다이잔 진행상황 알려줘
+[00:58:43] [RAG] Electron /ask 성공 (BFS+LLM)
+[00:58:43] [Image] 자동 이미지 3개
+[00:58:45] [Image] 업로드 실패 (416014685_06_ 캐릭터 _ 다이잔_1.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAc2RAiNRBa5DCgACGKHHLSkGG8AMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUVBRR0pIVEoACgAEAAAAAAADzcMACwACAAAAFGhaG3qH-qlPBBx284t-3etB0zZqAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[00:58:45] [Image] 업로드 실패 (416014685_06_ 캐릭터 _ 다이잔_2.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAXogDWRHEtGbCgACGKHHLVR0hEAMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUEUzNTZSNFAACgAEAAAAAAAFc48ACwACAAAAFP6SuHnr3_0K3ZwF-vHcIuXB7rIVAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[00:58:46] [Image] 업로드 실패 (416014685_06_ 캐릭터 _ 다이잔_3.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAARybZX05WlkwCgACGKHHLXxkdGAMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUEUzNTIzRE0ACgAEAAAAAAADzcMACwACAAAAFNR83HXgiwF6BWqUDIk4rDVSC1jzAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[01:09:01] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[01:09:01] [READY] Slack bot started
+[01:11:29] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[01:11:29] [READY] Slack bot started
+[02:13:36] [Slack] PM: 우리게임과 마블 라이벌즈의 차이점은?
+[02:14:33] [RAG] Electron /ask 성공 (BFS+LLM)
+[02:14:33] [Image] 자동 이미지 3개
+[02:14:35] [Image] 업로드 실패 (517682954_마블 라이벌즈 -애니메이션 구성-_1.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAXXg4rSY4zarCgACGKHLUH-uC8gMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUFpFSkYxOEMACgAEAAAAAAAMXGoACwACAAAAFBezexVHhNNsSUs7i6lO53aW4lbjAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[02:14:35] [Image] 파일 없음 (경로 확인 필요): 534783002_캐릭터 연출 제안서 (_마블 라이벌즈)_1.gif
+[02:14:35] [Image] 파일 없음 (경로 확인 필요): 534783002_캐릭터 연출 제안서 (_마블 라이벌즈)_2.gif
+[02:24:50] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[02:24:50] [READY] Slack bot started

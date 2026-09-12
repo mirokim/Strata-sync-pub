@@ -1,0 +1,5 @@
+{"id":"578ed7fc-f436-4a9e-b64a-fcf929c7a73d","timestamp":"2026-04-23T03:04:22.829Z","jobId":"daily-run","level":"info","message":"cron 등록: \"0 4 * * *\" (Asia/Seoul)","runId":null,"event":"info"}
+{"id":"eea036b1-7df0-405d-ace5-58733be6bedf","timestamp":"2026-04-23T03:04:22.830Z","jobId":"system","level":"info","message":"크론 스케줄러 초기화 완료","runId":null,"event":"info"}
+{"id":"8397d43a-01dc-404a-ade5-dce3fc96cf3f","timestamp":"2026-04-23T06:47:21.022Z","jobId":"system","level":"info","message":"크론 스케줄러 종료","runId":null,"event":"info"}
+{"id":"0ac42469-dad6-4529-b604-be6fe99f07bb","timestamp":"2026-04-23T06:47:56.177Z","jobId":"daily-run","level":"info","message":"cron 등록: \"0 4 * * *\" (Asia/Seoul)","runId":null,"event":"info"}
+{"id":"388356ce-b696-488e-8511-30e1c6558d99","timestamp":"2026-04-23T06:47:56.177Z","jobId":"system","level":"info","message":"크론 스케줄러 초기화 완료","runId":null,"event":"info"}

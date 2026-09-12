@@ -22,13 +22,19 @@ class ChromaService:
     # ── Lazy initialisation ────────────────────────────────────────────────────
 
     def _ensure_ready(self) -> None:
-        """Initialise ChromaDB client and collection on first use."""
-        if self._client is not None:
+        """Initialise ChromaDB client and collection on first use.
+
+        Checks the collection too, not just the client: clear() drops the
+        collection while keeping the client, so a client-only guard would leave
+        _collection as None forever and every later request would fail.
+        """
+        if self._client is not None and self._collection is not None:
             return
 
-        self._client = chromadb.PersistentClient(
-            path=settings.chroma_persist_path
-        )
+        if self._client is None:
+            self._client = chromadb.PersistentClient(
+                path=settings.chroma_persist_path
+            )
 
         ef = embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name="all-MiniLM-L6-v2"
@@ -42,23 +48,33 @@ class ChromaService:
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
-    def add_chunks(self, chunks: list[dict]) -> None:
+    def add_chunks(self, chunks: list[dict]) -> int:
         """
         Upsert chunks into ChromaDB (idempotent).
 
         Args:
             chunks: list of dicts with keys: id, content, + metadata fields
+
+        Returns:
+            Number of distinct chunks actually stored. Duplicate IDs collapse
+            into a single upsert, so this can be lower than len(chunks) — the
+            caller must report this, not the input length.
         """
         if not chunks:
-            return
+            return 0
         self._ensure_ready()
         assert self._collection is not None
 
-        ids = [c["id"] for c in chunks]
-        documents = [c["content"] for c in chunks]
+        # 동일 ID 는 upsert 로 덮어써지므로 실제 저장 건수는 고유 ID 수
+        deduped: dict[str, dict] = {}
+        for c in chunks:
+            deduped[c["id"]] = c
+
+        ids = list(deduped)
+        documents = [deduped[i]["content"] for i in ids]
         metadatas = [
-            {k: v for k, v in c.items() if k not in ("id", "content")}
-            for c in chunks
+            {k: v for k, v in deduped[i].items() if k not in ("id", "content")}
+            for i in ids
         ]
 
         self._collection.upsert(
@@ -72,6 +88,7 @@ class ChromaService:
                 doc_id = m.get("doc_id", "")
                 if doc_id:
                     self._doc_id_set.add(doc_id)
+        return len(ids)
 
     def search(self, query: str, n_results: int = 3) -> list[dict]:
         """
@@ -103,9 +120,11 @@ class ChromaService:
             res["metadatas"][0],  # type: ignore[index]
             res["distances"][0],  # type: ignore[index]
         ):
-            # ChromaDB cosine distance: 0 = identical, 2 = opposite
-            # Convert to similarity: 1 - (distance / 2) → [0, 1]
-            score = 1.0 - (dist / 2.0)
+            # ChromaDB cosine distance: 0 = identical, 1 = orthogonal, 2 = opposite.
+            # 1 - dist/2 maps orthogonal (unrelated) chunks to 0.5, which sails
+            # past the frontend's score > 0.3 gate. Use the raw cosine similarity
+            # (1 - dist) clamped to [0, 1] so unrelated chunks land at 0.
+            score = max(0.0, min(1.0, 1.0 - dist))
             results.append({"content": doc, "score": score, **meta})
 
         return results

@@ -1,0 +1,239 @@
+[04:48:15] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[04:48:15] [READY] Slack bot started
+[04:50:23] [Slack] PM: 안뇽
+[04:50:41] [RAG] Electron /ask 성공 (BFS+LLM)
+[04:50:41] [Image] 자동 이미지 3개
+[04:50:42] [Image] 업로드 실패 (681187012_점령전 테스트_2026_03_12_1.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\681187012_점령전 테스트_2026_03_12_1.png'
+[04:50:42] [Image] 업로드 실패 (681184425_점령전 테스트_2026_03_11_1.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\681184425_점령전 테스트_2026_03_11_1.png'
+[04:50:42] [Image] 업로드 실패 (681184425_점령전 테스트_2026_03_11_7.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\681184425_점령전 테스트_2026_03_11_7.png'
+[04:51:30] [Slack] PM: 최신 디렉터 보고 결과 알려줄래?
+[04:51:30] [Slack] 히스토리 1턴 복원
+[04:51:47] [RAG] Electron /ask 성공 (BFS+LLM)
+[04:51:47] [Image] 자동 이미지 3개
+[04:51:48] [Image] 업로드 실패 (210129_프로젝트A_정례보고_M8플레이시나리오_v2_p10_1.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAX162uPdV3bBCgACGKCZkqG8pGgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUDdONEZBRzIACgAEAAAAAAAZ0cYACwACAAAAFCPsokiQNgpyJScE0ePyIRnsQDAPAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[04:51:49] [Image] 업로드 실패 (210129_프로젝트A_정례보고_M8플레이시나리오_v2_p10_2.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAARqMCRZc-PbcCgACGKCZktmBSLgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUTIwUUczRFcACgAEAAAAAAAADeUACwACAAAAFBjA-GMzXgyBfU5zAXKr7Bt5qTi_AA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[04:51:50] [Image] 업로드 실패 (210129_프로젝트A_정례보고_M8플레이시나리오_v2_p10_3.jpg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAYVST1oJfKcgCgACGKCZkwMwXZgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUDdONTRNOVEACgAEAAAAAAAAqA8ACwACAAAAFGiYopsgZHdzhjQTRhIcWIR8E-kyAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[04:56:43] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[04:56:43] [READY] Slack bot started
+[05:16:03] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[05:16:03] [READY] Slack bot started
+[05:16:38] [Slack] PM: 3월 27일 디렉터 보고 내용 정리해줄래?
+[05:17:26] [RAG] Electron /ask 성공 (BFS+LLM)
+[05:17:26] [Image] 자동 이미지 3개
+[05:17:27] [Image] 업로드 실패 (210129_프로젝트A_정례보고_M8플레이시나리오_v2_p10_1.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAU5vVYcrp1xyCgACGKCa-OFD_oAMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUTIzV1U3SDYACgAEAAAAAAAZ0cYACwACAAAAFIIUsSsuc48TeD5nnOctleeYmk0AAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[05:17:29] [Image] 업로드 실패 (210129_프로젝트A_정례보고_M8플레이시나리오_v2_p10_2.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAUA54tP0QU49CgACGKCa-Sj7VrAMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUTIzWDdHMlUACgAEAAAAAAAADeUACwACAAAAFG01nqSifATwsaZePuORt-UIfa-QAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[05:17:30] [Image] 업로드 실패 (210129_프로젝트A_정례보고_M8플레이시나리오_v2_p10_3.jpg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAcLhP3veS9d8CgACGKCa-XQt5zgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUEJEMFVFMEwACgAEAAAAAAAAqA8ACwACAAAAFF4VuR2lZvdeFNK44rCOdI04Qj_pAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[05:19:57] [쿼리정제] '미니626 진행상황 알려줘' → '미니626 진행상황'
+[05:19:58] [Slack] PM: 미니626 진행상황 알려줘
+[05:19:58] [Slack] 히스토리 1턴 복원
+[05:20:16] [RAG] Electron /ask 성공 (BFS+LLM)
+[05:20:16] [Image] 자동 이미지 3개
+[05:20:17] [Image] 업로드 실패 (프로젝트A_미니626_기초설정_키워드_p2_1.jpg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAfR-EH90yEaxCgACGKCbIHFXBvgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBTlNDRk42REQACgAEAAAAAAABLwMACwACAAAAFFgb13T_ROlyzE_6J6c5HaWTPZC4AA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[05:20:18] [Image] 업로드 실패 (프로젝트A_미니626_기초설정_키워드_p2_2.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAe7-SBA4DlSZCgACGKCbILkFx_AMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUEJESlNGREoACgAEAAAAAAAFlJkACwACAAAAFFcWYy9Yia1gNmANJkPVuIVqR7iDAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[05:20:19] [Image] 업로드 실패 (프로젝트A_미니626_기초설정_키워드_p2_3.jpg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAZBvIchX8fh0CgACGKCbIP0kbOgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBTlNDRlBHTkIACgAEAAAAAAAApFsACwACAAAAFMY9b8HqB24E7e4O9Iv3Sm8SmvLmAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[05:20:45] [쿼리정제] '월영 제작 현황에 대해 알려줘' → '월영 제작 현황에 대해'
+[05:20:46] [Slack] PM: 월영 제작 현황에 대해 알려줘
+[05:20:46] [Slack] 히스토리 2턴 복원
+[05:21:51] [RAG] Electron 미실행 → 서브 에이전트 RAG
+[05:21:55] [모델] claude-sonnet-4-6
+[05:21:57] [쿼리리라이팅] '월영 제작 현황에 대해' → '**"월영 제작 현황"** 에 대해 질문해 주셨는데,
+[05:21:57] 
+[05:21:57] 저는 **실시간 '
+[05:22:02] [RAG] Electron TF-IDF (10건)
+[05:22:02] [핫스코어] 재랭킹 완료 (top: [bot-test] 월영 전투 컨셉 최신 현황 및 Sa)
+[05:22:02] [서브에이전트] 6개 병렬 분석 시작...
+[05:22:11] [서브에이전트] 완료. 최고 점수: 9.0/10 — [bot-test] 월영 전투 컨셉 최신 현황 및 Sandbox Map 의견
+[05:22:11] [메인에이전트] 최고 점수 문서 재검토 중...
+[05:22:31] [웹검색] 메인 에이전트 판단: 볼트 정보 충분 → 스킵
+[05:23:16] [2-pass] 자기 검토 적용
+[05:23:45] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[05:23:45] [READY] Slack bot started
+[05:23:54] [쿼리정제] '월영 제작 현황에 대해 알려줘' → '월영 제작 현황에 대해'
+[05:23:54] [Slack] PM: 월영 제작 현황에 대해 알려줘
+[05:24:28] [RAG] Electron /ask 성공 (BFS+LLM)
+[05:24:28] [Image] 자동 이미지 3개
+[05:24:29] [Image] 업로드 실패 (681184425_점령전 테스트_2026_03_11_1.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\681184425_점령전 테스트_2026_03_11_1.png'
+[05:24:29] [Image] 업로드 실패 (681184425_점령전 테스트_2026_03_11_7.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\681184425_점령전 테스트_2026_03_11_7.png'
+[05:24:29] [Image] 업로드 실패 (681187012_점령전 테스트_2026_03_12_1.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\681187012_점령전 테스트_2026_03_12_1.png'
+[05:25:01] [쿼리정제] '다이잔 제작 현황에 대해 알려줘' → '다이잔 제작 현황에 대해'
+[05:25:02] [Slack] PM: 다이잔 제작 현황에 대해 알려줘
+[05:25:02] [Slack] 히스토리 1턴 복원
+[05:25:34] [RAG] Electron /ask 성공 (BFS+LLM)
+[05:25:34] [Image] 자동 이미지 3개
+[05:25:35] [Image] 업로드 실패 (681184425_점령전 테스트_2026_03_11_1.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\681184425_점령전 테스트_2026_03_11_1.png'
+[05:25:35] [Image] 업로드 실패 (681184425_점령전 테스트_2026_03_11_7.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\681184425_점령전 테스트_2026_03_11_7.png'
+[05:25:36] [Image] 업로드 실패 (ProjectA_옆블록제작_p3_1.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAa08S_SWnq1NCgACGKCbaquzu6gMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUDRFMUtONUIACgAEAAAAAAABUWoACwACAAAAFGh-JEIfVwgKfK4a-LzeLpz6loH0AA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[05:26:24] [Slack] PM: 다이잔에 대해 어떻게 생각해?
+[05:26:24] [Slack] 히스토리 2턴 복원
+[05:26:55] [RAG] Electron /ask 성공 (BFS+LLM)
+[05:26:55] [Image] 자동 이미지 2개
+[05:26:55] [Image] 업로드 실패 (681184425_점령전 테스트_2026_03_11_1.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\681184425_점령전 테스트_2026_03_11_1.png'
+[05:26:55] [Image] 업로드 실패 (681184425_점령전 테스트_2026_03_11_7.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\681184425_점령전 테스트_2026_03_11_7.png'
+[05:27:45] [Slack] PM: 월영에 대해 어떻게 생각해?
+[05:27:45] [Slack] 히스토리 3턴 복원
+[05:28:17] [ERR] on_error invoked (session id: c20b9d99-be5d-4326-9e3a-dfe3d6967935, error: SSLWantReadError, message: The operation did not complete (read) (_ssl.c:2580))
+[05:28:19] [STATUS] stopped
+[05:28:20] [STOP] 봇이 예기치 않게 종료됨
+[05:28:23] [ERR] Failed to process a message: cannot schedule new futures after shutdown
+[05:28:23] [ERR] Traceback (most recent call last):
+[05:28:23] [ERR]   File "C:\Users\jhoonn\AppData\Local\Programs\Python\Python312\Lib\site-packages\slack_sdk\socket_mode\client.py", line 155, in process_messages
+[05:28:23] [ERR]     self.process_message()
+[05:28:23] [ERR]   File "C:\Users\jhoonn\AppData\Local\Programs\Python\Python312\Lib\site-packages\slack_sdk\socket_mode\client.py", line 118, in process_message
+[05:28:23] [ERR]     self.message_workers.submit(_run_message_listeners)
+[05:28:23] [ERR]   File "C:\Users\jhoonn\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\thread.py", line 171, in submit
+[05:28:23] [ERR]     raise RuntimeError('cannot schedule new futures after shutdown')
+[05:28:23] [ERR] RuntimeError: cannot schedule new futures after shutdown
+[05:28:24] [ERR] Failed to process a message: cannot schedule new futures after shutdown
+[05:28:24] [ERR] Traceback (most recent call last):
+[05:28:24] [ERR]   File "C:\Users\jhoonn\AppData\Local\Programs\Python\Python312\Lib\site-packages\slack_sdk\socket_mode\client.py", line 155, in process_messages
+[05:28:24] [ERR]     self.process_message()
+[05:28:24] [ERR]   File "C:\Users\jhoonn\AppData\Local\Programs\Python\Python312\Lib\site-packages\slack_sdk\socket_mode\client.py", line 118, in process_message
+[05:28:24] [ERR]     self.message_workers.submit(_run_message_listeners)
+[05:28:24] [ERR]   File "C:\Users\jhoonn\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\thread.py", line 171, in submit
+[05:28:24] [ERR]     raise RuntimeError('cannot schedule new futures after shutdown')
+[05:28:24] [ERR] RuntimeError: cannot schedule new futures after shutdown
+[05:28:26] [ERR] Failed to process a message: cannot schedule new futures after shutdown
+[05:28:26] [ERR] Traceback (most recent call last):
+[05:28:26] [ERR]   File "C:\Users\jhoonn\AppData\Local\Programs\Python\Python312\Lib\site-packages\slack_sdk\socket_mode\client.py", line 155, in process_messages
+[05:28:26] [ERR]     self.process_message()
+[05:28:26] [ERR]   File "C:\Users\jhoonn\AppData\Local\Programs\Python\Python312\Lib\site-packages\slack_sdk\socket_mode\client.py", line 118, in process_message
+[05:28:26] [ERR]     self.message_workers.submit(_run_message_listeners)
+[05:28:26] [ERR]   File "C:\Users\jhoonn\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\thread.py", line 171, in submit
+[05:28:26] [ERR]     raise RuntimeError('cannot schedule new futures after shutdown')
+[05:28:26] [ERR] RuntimeError: cannot schedule new futures after shutdown
+[05:28:28] [ERR] Failed to process a message: cannot schedule new futures after shutdown
+[05:28:28] [ERR] Traceback (most recent call last):
+[05:28:28] [ERR]   File "C:\Users\jhoonn\AppData\Local\Programs\Python\Python312\Lib\site-packages\slack_sdk\socket_mode\client.py", line 155, in process_messages
+[05:28:28] [ERR]     self.process_message()
+[05:28:28] [ERR]   File "C:\Users\jhoonn\AppData\Local\Programs\Python\Python312\Lib\site-packages\slack_sdk\socket_mode\client.py", line 118, in process_message
+[05:28:28] [ERR]     self.message_workers.submit(_run_message_listeners)
+[05:28:28] [ERR]   File "C:\Users\jhoonn\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\thread.py", line 171, in submit
+[05:28:28] [ERR]     raise RuntimeError('cannot schedule new futures after shutdown')
+[05:28:28] [ERR] RuntimeError: cannot schedule new futures after shutdown
+[05:28:29] [ERR] Failed to process a message: cannot schedule new futures after shutdown
+[05:28:29] [ERR] Traceback (most recent call last):
+[05:28:29] [ERR]   File "C:\Users\jhoonn\AppData\Local\Programs\Python\Python312\Lib\site-packages\slack_sdk\socket_mode\client.py", line 155, in process_messages
+[05:28:29] [ERR]     self.process_message()
+[05:28:29] [ERR]   File "C:\Users\jhoonn\AppData\Local\Programs\Python\Python312\Lib\site-packages\slack_sdk\socket_mode\client.py", line 118, in process_message
+[05:28:29] [ERR]     self.message_workers.submit(_run_message_listeners)
+[05:28:29] [ERR]   File "C:\Users\jhoonn\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\thread.py", line 171, in submit
+[05:28:29] [ERR]     raise RuntimeError('cannot schedule new futures after shutdown')
+[05:28:29] [ERR] RuntimeError: cannot schedule new futures after shutdown
+[05:28:30] [ERR] Failed to process a message: cannot schedule new futures after shutdown
+[05:28:30] [ERR] Traceback (most recent call last):
+[05:28:30] [ERR]   File "C:\Users\jhoonn\AppData\Local\Programs\Python\Python312\Lib\site-packages\slack_sdk\socket_mode\client.py", line 155, in process_messages
+[05:28:30] [ERR]     self.process_message()
+[05:28:30] [ERR]   File "C:\Users\jhoonn\AppData\Local\Programs\Python\Python312\Lib\site-packages\slack_sdk\socket_mode\client.py", line 118, in process_message
+[05:28:30] [ERR]     self.message_workers.submit(_run_message_listeners)
+[05:28:30] [ERR]   File "C:\Users\jhoonn\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\thread.py", line 171, in submit
+[05:28:30] [ERR]     raise RuntimeError('cannot schedule new futures after shutdown')
+[05:28:30] [ERR] RuntimeError: cannot schedule new futures after shutdown
+[05:28:31] [RAG] Electron /ask 성공 (BFS+LLM)
+[05:28:31] [Image] 자동 이미지 2개
+[05:28:32] [Image] 업로드 실패 (681184425_점령전 테스트_2026_03_11_1.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\681184425_점령전 테스트_2026_03_11_1.png'
+[05:28:32] [Image] 업로드 실패 (681184425_점령전 테스트_2026_03_11_7.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\681184425_점령전 테스트_2026_03_11_7.png'
+[05:30:18] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[05:30:18] [READY] Slack bot started
+[05:31:26] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[05:31:26] [READY] Slack bot started
+[05:31:44] [Slack] PM: 월영에 대해 어떻게 생각해?
+[05:32:23] [RAG] Electron /ask 성공 (BFS+LLM)
+[05:32:23] [Image] 자동 이미지 2개
+[05:32:23] [Image] 업로드 실패 (681184425_점령전 테스트_2026_03_11_1.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\681184425_점령전 테스트_2026_03_11_1.png'
+[05:32:23] [Image] 업로드 실패 (681184425_점령전 테스트_2026_03_11_7.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\681184425_점령전 테스트_2026_03_11_7.png'
+[05:39:32] [Slack] PM: 디렉터의 성향은?
+[05:39:32] [Slack] 히스토리 1턴 복원
+[05:40:13] [RAG] Electron /ask 성공 (BFS+LLM)
+[05:42:11] [Slack] PM: 지금 레벨 디자인에 대해 어떻게 생각해?
+[05:42:11] [Slack] 히스토리 2턴 복원
+[05:42:46] [RAG] Electron /ask 성공 (BFS+LLM)
+[05:42:46] [Image] 자동 이미지 3개
+[05:42:47] [Image] 업로드 실패 (681184425_점령전 테스트_2026_03_11_1.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\681184425_점령전 테스트_2026_03_11_1.png'
+[05:42:47] [Image] 업로드 실패 (681184425_점령전 테스트_2026_03_11_7.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\681184425_점령전 테스트_2026_03_11_7.png'
+[05:42:48] [Image] 업로드 실패 (프로젝트 A_ M12_레이드보스_우로보_레벨 구조_p2_1.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAYcNh9lLxvROCgACGKCcWvEVWCgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBTlNGN0hDMTUACgAEAAAAAAAADeUACwACAAAAFCXiuTf-OQtp2nCQ5aUnKALSpAX3AA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[05:46:15] [Slack] PM: 지금 맵 디자인에 대해 어떻게 생각해?
+[05:46:15] [Slack] 히스토리 3턴 복원
+[05:46:50] [RAG] Electron /ask 성공 (BFS+LLM)
+[05:46:50] [Image] 자동 이미지 2개
+[05:46:51] [Image] 업로드 실패 (681184425_점령전 테스트_2026_03_11_1.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\681184425_점령전 테스트_2026_03_11_1.png'
+[05:46:51] [Image] 업로드 실패 (681184425_점령전 테스트_2026_03_11_7.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\681184425_점령전 테스트_2026_03_11_7.png'
+[05:48:23] [Slack] PM: 디렉터의 MBTI 는?
+[05:48:23] [Slack] 히스토리 4턴 복원
+[05:48:47] [RAG] Electron /ask 성공 (BFS+LLM)
+[06:29:52] [쿼리정제] '가장 최근에 보고한 이사장님 피드백 정리해줘' → '가장 최근에 보고한 이사장님 피드백'
+[06:29:53] [Slack] PM: 가장 최근에 보고한 이사장님 피드백 정리해줘
+[06:30:28] [RAG] Electron /ask 성공 (BFS+LLM)
+[06:30:28] [Image] 자동 이미지 3개
+[06:30:28] [Image] 업로드 실패 (179570538_[2022_05_09] 프로젝트A 이사장님 피드백_1.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\179570538_[2022_05_09] 프로젝트A 이사장님 피드백_1.png'
+[06:30:28] [Image] 업로드 실패 (267161056_[2023_02_28] 프로젝트A 이사장님 피드백_1.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\267161056_[2023_02_28] 프로젝트A 이사장님 피드백_1.png'
+[06:30:28] [Image] 업로드 실패 (269946623_[2023_03_07] 프로젝트A 이사장님 피드백_1.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\269946623_[2023_03_07] 프로젝트A 이사장님 피드백_1.png'
+[07:00:51] [쿼리정제] '지금까지 제작된 점령전 맵에서 디렉터 보고가 필요한 내용이 어떤 것인지 ' → '지금까지 제작된 점령전 맵에서 디렉터 보고가 필요한 내용이 어떤 것인지'
+[07:00:51] [Slack] PM: 지금까지 제작된 점령전 맵에서 디렉터 보고가 필요한 내용이 어떤 것인지 정리해줘
+[07:00:51] [Slack] 히스토리 1턴 복원
+[07:01:23] [RAG] Electron /ask 성공 (BFS+LLM)
+[07:01:23] [Image] 자동 이미지 3개
+[07:01:24] [Image] 업로드 실패 (393732667_PvP 미니맵 - 점령전_데스매치_1.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAQ2G7G0R1qFbCgACGKCgpRJoVbgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUDY3RjBHMUwACgAEAAAAAAACcvQACwACAAAAFHOutIg0-f-WbelDjdrtZ-9cY9mtAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[07:01:26] [Image] 업로드 실패 (393732667_PvP 미니맵 - 점령전_데스매치_10.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAYPiulkJrY09CgACGKCgpVhey9gMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBTlNSUTZLUVgACgAEAAAAAAAAF-gACwACAAAAFLFtGPS_SaVP9c6PqYcfwNo186ZIAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[07:01:27] [Image] 업로드 실패 (393732667_PvP 미니맵 - 점령전_데스매치_11.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAQoZtX9VesONCgACGKCgpZ-ni4gMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUEJTVE1NUEUACgAEAAAAAAAD3_kACwACAAAAFBjXIjWBEtGpw5wOFfOd5X0at2JUAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[09:06:30] [Slack] PM: 야호
+[09:06:30] [Slack] 히스토리 5턴 복원
+[09:06:40] [RAG] Electron /ask 성공 (BFS+LLM)
+[09:06:40] [Image] 자동 이미지 3개
+[09:06:40] [Image] 업로드 실패 (681187012_점령전 테스트_2026_03_12_1.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\681187012_점령전 테스트_2026_03_12_1.png'
+[09:06:40] [Image] 업로드 실패 (681184425_점령전 테스트_2026_03_11_1.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\681184425_점령전 테스트_2026_03_11_1.png'
+[09:06:40] [Image] 업로드 실패 (681184425_점령전 테스트_2026_03_11_7.png): [Errno 22] Invalid argument: '\\\\?\\C:\\dev2\\refined_vault\\attachments\\681184425_점령전 테스트_2026_03_11_7.png'
+[09:49:10] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[09:49:10] [READY] Slack bot started
+[09:49:44] [쿼리정제] '월영 자료 정리해서 알려줘' → '월영 자료 정리해서'
+[09:49:44] [Slack] PM: 월영 자료 정리해서 알려줘
+[09:50:42] [RAG] Electron /ask 성공 (BFS+LLM)
+[09:50:42] [Image] 자동 이미지 3개
+[09:50:42] [Image] 업로드 실패 (614481664_01_ 캐릭터 _ 월영 _ FX 리스트_1.png): [Errno 22] Invalid argument: 'C:\\dev2\\refined_vault\\attachments\\614481664_01_ 캐릭터 _ 월영 _ FX 리스트_1.png'
+[09:50:42] [Image] 업로드 실패 (617717572_13_ 캐릭터 _ 보르후 _ 스킬 컨셉 자료 정리_1.png): [Errno 22] Invalid argument: 'C:\\dev2\\refined_vault\\attachments\\617717572_13_ 캐릭터 _ 보르후 _ 스킬 컨셉 자료 정리_1.png'
+[09:50:43] [Image] 업로드 실패 (2차_월영_20250528_p2_1.jpeg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAZhsReN5WRIcCgACGKCp4mK-PKgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUTNHSjVLRUMACgAEAAAAAAAAzZMACwACAAAAFHffIz5o1xSyl5p3O5uQHZ0RY8_CAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[09:54:10] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[09:54:10] [READY] Slack bot started
+[09:54:37] [Slack] PM: 다이잔에 대해 어떻게 생각해?
+[09:55:13] [RAG] Electron /ask 성공 (BFS+LLM)
+[09:55:33] [쿼리정제] '다이잔 이미지 한장 보여줘' → '다이잔 이미지 한장 보여'
+[09:55:33] [Slack] PM: 다이잔 이미지 한장 보여줘
+[09:55:33] [Image] 명시적 검색 '다이잔': 5개
+[09:55:33] [Slack] 히스토리 1턴 복원
+[09:55:47] [RAG] Electron /ask 성공 (BFS+LLM)
+[09:55:47] [Image] 자동 이미지 3개
+[09:55:48] [Image] 업로드 실패 (462594261_다이잔 - 폭풍 손아귀_1.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAQaUP23dT-_tCgACGKCqKXpKHVAMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUDc3Q0hSSlMACgAEAAAAAAAANeEACwACAAAAFB9MqmDieBwUjSL6-Mu8AMk_T2VgAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[09:55:49] [Image] 업로드 실패 (502415689_다이잔 - 폭풍 손아귀 폴리싱_1.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAX8zP2knb_lPCgACGKCqKa2E1IAMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBTlRSUFI2QUsACgAEAAAAAAABIY8ACwACAAAAFCU83ZdXqGcnpzTH1Hu60OH-xnP0AA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[09:55:50] [Image] 업로드 실패 (Project A_다이잔_3차_모델링_20250918_p3_1.jpeg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAewYHVv20HO2CgACGKCqKd1k8ugMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUDc3Q1BNTjIACgAEAAAAAAABm_YACwACAAAAFLPcuIZIAt3lgbeqs2bDaErc0Bc2AA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[09:57:28] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[09:57:28] [READY] Slack bot started
+[10:04:39] [쿼리정제] '다이잔 이미지 한장 보여줘' → '다이잔 이미지 한장 보여'
+[10:04:39] [Slack] PM: 다이잔 이미지 한장 보여줘
+[10:04:39] [Image] 명시적 검색 '다이잔': 5개
+[10:05:02] [RAG] Electron /ask 성공 (BFS+LLM)
+[10:05:02] [Image] 자동 이미지 3개
+[10:05:04] [Image] 업로드 완료: 462594261_다이잔 - 폭풍 손아귀_1.png
+[10:05:05] [Image] 업로드 완료: 502415689_다이잔 - 폭풍 손아귀 폴리싱_1.png
+[10:05:07] [Image] 업로드 완료: Project A_다이잔_3차_모델링_20250918_p3_1.jpeg
+[10:08:04] [쿼리정제] '월영 개발 현황 알려줘' → '월영 개발 현황'
+[10:08:04] [Slack] PM: 월영 개발 현황 알려줘
+[10:08:36] [쿼리정제] '월영 개발 현황 알려줘' → '월영 개발 현황'
+[10:08:37] [Slack] PM: 월영 개발 현황 알려줘
+[10:08:37] [Slack] 히스토리 1턴 복원
+[10:08:40] [RAG] Electron /ask 성공 (BFS+LLM)
+[10:08:40] [Image] 자동 이미지 3개
+[10:08:41] [Image] 업로드 완료: 2차_월영_20250528_p2_1.jpeg
+[10:08:43] [Image] 업로드 완료: 2차_월영_20250528_p3_1.jpeg
+[10:08:45] [Image] 업로드 완료: 2차_월영_20250528_p3_2.jpeg
+[10:09:07] [RAG] Electron /ask 성공 (BFS+LLM)
+[10:09:07] [Image] 자동 이미지 3개
+[10:09:09] [Image] 업로드 완료: 2차_월영_20250528_p2_1.jpeg
+[10:09:11] [Image] 업로드 완료: 2차_월영_20250528_p3_1.jpeg
+[10:09:12] [Image] 업로드 완료: 2차_월영_20250528_p3_2.jpeg
+[16:18:35] [ERR] Failed to check the state of sock (session id: 0681bfec-b569-4337-b65d-a08f6fe8017c, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[16:18:45] [ERR] Failed to check the state of sock (session id: 0681bfec-b569-4337-b65d-a08f6fe8017c, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[16:18:55] [ERR] Failed to check the state of sock (session id: 0681bfec-b569-4337-b65d-a08f6fe8017c, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[16:19:05] [ERR] Failed to check the state of sock (session id: 0681bfec-b569-4337-b65d-a08f6fe8017c, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[16:19:15] [ERR] Failed to check the state of sock (session id: 0681bfec-b569-4337-b65d-a08f6fe8017c, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[16:19:15] ⚠️ Slack 연결 끊김 — 재연결 대기 중...
+[16:19:15] 🔄 5초 후 재연결 시도... (#1)
+[16:19:21] 🟢 Slack 재연결 성공

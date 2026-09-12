@@ -1,5 +1,5 @@
 """
-claude_client.py — Claude Haiku API calls (for keyword discovery)
+claude_client.py — Claude Haiku API 호출 (keyword 발견용)
 """
 import json
 import urllib.request
@@ -54,7 +54,7 @@ class ClaudeClient:
 
     def discover_keywords(self, doc_samples: list[dict]) -> list[dict]:
         """
-        Extract core keywords + hub documents from document samples.
+        문서 샘플에서 핵심 키워드 + 허브 문서 추출
         doc_samples: [{"stem": "...", "title": "...", "body_snippet": "..."}]
         returns: [{"keyword": "...", "hub_stem": "...", "display": "..."}]
         """
@@ -63,18 +63,18 @@ class ClaudeClient:
             for d in doc_samples[:20]
         )
         system = (
-            "You are a knowledge graph expert. "
-            "Find core domain keywords that appear repeatedly across multiple documents in the list below, "
-            "and designate a 'hub document' (the document that explains it most) for each keyword.\n"
-            "Response format: Output only a JSON array. No other text.\n"
-            'Example: [{"keyword":"CharacterA","hub_stem":"07. Character _ CharacterA_123","display":"CharacterA"}]'
+            "당신은 지식 그래프 전문가입니다. "
+            "아래 문서 목록에서 여러 문서에서 반복 등장하는 핵심 도메인 키워드를 찾고, "
+            "각 키워드의 '허브 문서'(가장 많이 설명하는 문서)를 지정하세요.\n"
+            "응답 형식: JSON 배열만 출력. 다른 텍스트 금지.\n"
+            '예시: [{"keyword":"스칼렛","hub_stem":"07. 캐릭터 _ 스칼렛_123","display":"스칼렛"}]'
         )
-        user = f"Document list:\n\n{sample_text}\n\nOutput core keyword JSON array:"
+        user = f"문서 목록:\n\n{sample_text}\n\n핵심 키워드 JSON 배열 출력:"
         raw = self.complete(system, user, max_tokens=1500)
 
-        # JSON parsing
+        # JSON 파싱
         try:
-            # Remove markdown code blocks
+            # 마크다운 코드블록 제거
             if "```" in raw:
                 parts = raw.split("```")
                 if len(parts) > 1:
@@ -84,12 +84,12 @@ class ClaudeClient:
             return []
 
     def suggest_hub_for_keyword(self, keyword: str, candidates: list[str]) -> str:
-        """Select a hub document from candidates for a specific keyword."""
+        """특정 키워드에 대해 후보 문서 중 허브 문서 선택"""
         cand_text = "\n".join(f"- {s}" for s in candidates[:10])
-        system = "Output only one hub (representative) document stem for the keyword from the document list below. No other text."
-        user = f"Keyword: {keyword}\n\nCandidate documents:\n{cand_text}\n\nHub stem:"
+        system = "아래 문서 목록 중 키워드의 허브(대표) 문서 stem을 하나만 출력하세요. 다른 텍스트 금지."
+        user = f"키워드: {keyword}\n\n후보 문서:\n{cand_text}\n\n허브 stem:"
         result = self.complete(system, user, max_tokens=100)
-        # Verify it's one of the candidates
+        # 후보 중 하나인지 확인
         for cand in candidates:
             if cand.strip() in result or result.strip() in cand:
                 return cand.strip()

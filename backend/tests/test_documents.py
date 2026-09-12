@@ -22,6 +22,24 @@ async def test_index_returns_indexed_count(client, sample_chunks):
 
 
 @pytest.mark.asyncio
+async def test_index_count_reflects_stored_chunks(client):
+    """indexed 는 실제 저장된 청크 수여야 한다 (중복 ID 는 1건으로 집계)."""
+    doc = {
+        "doc_id": "dup_001",
+        "filename": "dup.md",
+        "section_id": "dup_001_s1",
+        "heading": "중복",
+        "speaker": "chief_director",
+        "content": "동일한 내용입니다.",
+        "tags": [],
+    }
+    response = await client.post("/docs/index", json={"documents": [doc, dict(doc)]})
+    assert response.status_code == 200
+    stats = await client.get("/docs/stats")
+    assert response.json()["indexed"] == stats.json()["chunk_count"]
+
+
+@pytest.mark.asyncio
 async def test_index_empty_request(client):
     """POST /docs/index with empty documents list returns indexed=0."""
     response = await client.post("/docs/index", json={"documents": []})
@@ -59,6 +77,28 @@ async def test_clear_empty_collection(client):
     response = await client.delete("/docs/clear")
     assert response.status_code == 200
     assert response.json()["cleared"] is True
+
+
+@pytest.mark.asyncio
+async def test_requests_still_work_after_clear(client, sample_chunks):
+    """clear() 후에도 stats/index/search 가 동작해야 한다.
+
+    _ensure_ready 가 _client 만 보고 조기 반환하면 _collection 이 None 인 채로
+    남아 이후 모든 요청이 500 이 되고 재시작 전까지 복구되지 않는다.
+    """
+    await client.post("/docs/index", json={"documents": sample_chunks})
+    assert (await client.delete("/docs/clear")).status_code == 200
+
+    stats = await client.get("/docs/stats")
+    assert stats.status_code == 200
+    assert stats.json()["chunk_count"] == 0
+
+    reindex = await client.post("/docs/index", json={"documents": sample_chunks})
+    assert reindex.status_code == 200
+    assert reindex.json()["indexed"] >= len(sample_chunks)
+
+    search = await client.post("/docs/search", json={"query": "아트", "top_k": 3})
+    assert search.status_code == 200
 
 
 # ── /docs/search ───────────────────────────────────────────────────────────────

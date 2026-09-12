@@ -1,12 +1,12 @@
 /**
- * MirofishTab — Settings > MiroFish Simulator tab
+ * MirofishTab — Settings > MiroFish 시뮬레이터 탭
  *
- * Layout:
- *   Simulation settings (topic, rounds, model, etc.)
- *   Execution controls (start/stop, progress)
- *   Persona list (manual editing)
- *   Feed (real-time reactions)
- *   Report (after completion)
+ * 레이아웃:
+ *   시뮬레이션 설정 (주제, 라운드, 모델 등)
+ *   실행 제어 (시작/정지, 진행 상황)
+ *   페르소나 목록 (수동 편집)
+ *   피드 (실시간 반응)
+ *   보고서 (완료 후)
  */
 
 import { useRef, useEffect, useState } from 'react'
@@ -15,7 +15,7 @@ import { useMiroStore } from '@/stores/miroStore'
 import { MODEL_OPTIONS } from '@/lib/modelConfig'
 import type { MirofishPersona, MirofishScheduledTopic, MirofishHistoryEntry } from '@/services/mirofish/types'
 
-// Color mapping
+// ── 색상 매핑 ─────────────────────────────────────────────────────────────────
 
 const STANCE_COLOR: Record<MirofishPersona['stance'], string> = {
   supportive: 'var(--color-accent)',
@@ -25,13 +25,13 @@ const STANCE_COLOR: Record<MirofishPersona['stance'], string> = {
 }
 
 const STANCE_LABEL: Record<MirofishPersona['stance'], string> = {
-  supportive: 'Supportive',
-  opposing:   'Opposing',
-  neutral:    'Neutral',
-  observer:   'Observer',
+  supportive: '지지',
+  opposing:   '반대',
+  neutral:    '중립',
+  observer:   '관찰',
 }
 
-// Sub-components
+// ── 하위 컴포넌트 ─────────────────────────────────────────────────────────────
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -57,7 +57,7 @@ function Card({ children, style }: { children: React.ReactNode; style?: React.CS
   )
 }
 
-// Main Component
+// ── Main Component ────────────────────────────────────────────────────────────
 
 export default function MirofishTab() {
   const {
@@ -77,7 +77,7 @@ export default function MirofishTab() {
 
   const feedEndRef = useRef<HTMLDivElement>(null)
 
-  // Auto-scroll feed
+  // 피드 자동 스크롤
   useEffect(() => {
     feedEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [simState.feed, simState.streamingPost])
@@ -87,21 +87,21 @@ export default function MirofishTab() {
   const canStart   = config.topic.trim().length > 0 && config.personas.length > 0
 
   const statusText: Record<typeof simState.status, string> = {
-    idle:                'Idle',
-    'generating-personas': 'Generating personas...',
-    running:             `Round ${simState.currentRound} / ${simState.totalRounds} in progress...`,
-    'generating-report': 'Generating report...',
-    done:                'Complete',
-    error:               `Error: ${simState.errorMessage ?? ''}`,
+    idle:                '대기 중',
+    'generating-personas': '페르소나 생성 중...',
+    running:             `라운드 ${simState.currentRound} / ${simState.totalRounds} 진행 중...`,
+    'generating-report': '보고서 작성 중...',
+    done:                '완료',
+    error:               `오류: ${simState.errorMessage ?? ''}`,
   }
 
-  // Save to vault
+  // 볼트에 저장
   const saveToVault = async () => {
     if (!simState.report) return
     const date = new Date().toISOString().split('T')[0]
-    const slug = config.topic.slice(0, 30).replace(/\s+/g, '_').replace(/[^\w_-]/g, '')
+    const slug = config.topic.slice(0, 30).replace(/\s+/g, '_').replace(/[^\w가-힣_-]/g, '')
     const filename = `MiroFish_${slug}_${date}.md`
-    const content = `---\ndate: ${date}\ntags: [mirofish, simulation]\n---\n\n# MiroFish Simulation: ${config.topic}\n\n${simState.report}`
+    const content = `---\ndate: ${date}\ntags: [mirofish, simulation]\n---\n\n# MiroFish 시뮬레이션: ${config.topic}\n\n${simState.report}`
     try {
       const result = await window.vaultAPI?.saveFile?.(filename, content)
       if (result?.success) {
@@ -121,21 +121,21 @@ export default function MirofishTab() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-      {/* Simulation settings */}
+      {/* ── 시뮬레이션 설정 ─────────────────────────────────────────────── */}
       <div>
-        <SectionLabel>Simulation Settings</SectionLabel>
+        <SectionLabel>시뮬레이션 설정</SectionLabel>
         <Card>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-            {/* Topic */}
+            {/* 주제 */}
             <div>
               <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', display: 'block', marginBottom: 5 }}>
-                Topic / Scenario
+                주제 / 시나리오
               </label>
               <input
                 value={config.topic}
                 onChange={e => setConfig({ topic: e.target.value })}
-                placeholder="e.g. New character launch, price increase announcement, new feature promo..."
+                placeholder="예: 새 캐릭터 출시, 가격 인상 발표, 신규 기능 홍보..."
                 disabled={isRunning}
                 style={{
                   width: '100%', fontSize: 13, padding: '7px 10px', borderRadius: 2,
@@ -145,11 +145,11 @@ export default function MirofishTab() {
               />
             </div>
 
-            {/* Number settings row */}
+            {/* 숫자 설정 행 */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', display: 'block', marginBottom: 5 }}>
-                  Persona Count (3-50)
+                  페르소나 수 (3–50)
                 </label>
                 <input
                   type="number" min={3} max={50} value={config.numPersonas}
@@ -164,7 +164,7 @@ export default function MirofishTab() {
               </div>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', display: 'block', marginBottom: 5 }}>
-                  Round Count (2-10)
+                  라운드 수 (2–10)
                 </label>
                 <input
                   type="number" min={2} max={10} value={config.numRounds}
@@ -179,10 +179,10 @@ export default function MirofishTab() {
               </div>
             </div>
 
-            {/* Model selection */}
+            {/* 모델 선택 */}
             <div>
               <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', display: 'block', marginBottom: 5 }}>
-                Model
+                모델
               </label>
               <select
                 value={config.modelId}
@@ -200,7 +200,7 @@ export default function MirofishTab() {
               </select>
             </div>
 
-            {/* Auto-generate toggle */}
+            {/* 자동 생성 토글 */}
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: isRunning ? 'not-allowed' : 'pointer' }}>
               <input
                 type="checkbox"
@@ -209,21 +209,21 @@ export default function MirofishTab() {
                 disabled={isRunning}
               />
               <span style={{ fontSize: 13, color: 'var(--color-text-primary)' }}>
-                Auto-generate personas based on topic
+                페르소나 주제에 맞게 자동 생성
               </span>
               <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-                (LLM analyzes topic and creates personas)
+                (LLM이 주제 분석 후 페르소나 생성)
               </span>
             </label>
 
-            {/* Image direct pass toggle */}
+            {/* 이미지 직접 전달 토글 */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
                 <span style={{ fontSize: 13, color: 'var(--color-text-primary)' }}>
-                  Direct Image Pass
+                  이미지 직접 전달
                 </span>
                 <span style={{ fontSize: 11, color: 'var(--color-text-muted)', marginLeft: 6 }}>
-                  {config.imageDirectPass ? 'Each persona sees images directly (more tokens)' : 'Images converted to text descriptions (fewer tokens)'}
+                  {config.imageDirectPass ? '각 페르소나가 이미지 직접 인식 (토큰 多)' : '이미지를 텍스트 설명으로 변환 후 공유 (토큰 少)'}
                 </span>
               </div>
               <button
@@ -250,9 +250,9 @@ export default function MirofishTab() {
         </Card>
       </div>
 
-      {/* Execution controls */}
+      {/* ── 실행 제어 ───────────────────────────────────────────────────── */}
       <div>
-        <SectionLabel>Execution Controls</SectionLabel>
+        <SectionLabel>실행 제어</SectionLabel>
         <div style={{
           display: 'flex', alignItems: 'center', gap: 12,
           padding: '12px 14px', borderRadius: 2,
@@ -262,7 +262,7 @@ export default function MirofishTab() {
           border: `1px solid ${isRunning ? 'color-mix(in srgb, var(--color-accent) 35%, transparent)' : isDone ? 'color-mix(in srgb, var(--color-success) 25%, transparent)' : 'var(--color-border)'}`,
           transition: 'border-color 0.2s, background 0.2s',
         }}>
-          {/* Status dot */}
+          {/* 상태 dot */}
           <div style={{ position: 'relative', width: 9, height: 9, flexShrink: 0 }}>
             <div style={{
               width: 9, height: 9, borderRadius: '50%',
@@ -291,7 +291,7 @@ export default function MirofishTab() {
                 color: 'var(--color-text-muted)', cursor: 'pointer',
               }}
             >
-              <RotateCcw size={10} /> Reset
+              <RotateCcw size={10} /> 초기화
             </button>
           )}
 
@@ -301,25 +301,25 @@ export default function MirofishTab() {
             style={{
               display: 'flex', alignItems: 'center', gap: 5,
               padding: '6px 14px', borderRadius: 2, fontSize: 12, fontWeight: 500,
-              border: isRunning ? '1px solid #ef444450' : 'none',
+              border: isRunning ? '1px solid var(--color-error-border)' : 'none',
               cursor: (!isRunning && !canStart) ? 'not-allowed' : 'pointer',
-              background: isRunning ? '#ef444415' : 'var(--color-accent)',
-              color: isRunning ? '#ef4444' : '#fff',
+              background: isRunning ? 'var(--color-error-bg)' : 'var(--color-accent)',
+              color: isRunning ? 'var(--color-error)' : '#fff',
               opacity: (!isRunning && !canStart) ? 0.4 : 1,
               flexShrink: 0, whiteSpace: 'nowrap',
             }}
           >
-            {isRunning ? <><Square size={11} /> Stop</> : <><Play size={11} /> Start</>}
+            {isRunning ? <><Square size={11} /> 정지</> : <><Play size={11} /> 시작</>}
           </button>
         </div>
         <style>{`@keyframes miroPing { 0% { transform: scale(1); opacity: 0.25; } 100% { transform: scale(3); opacity: 0; } }`}</style>
       </div>
 
-      {/* Persona editing */}
+      {/* ── 페르소나 편집 ───────────────────────────────────────────────── */}
       {!config.autoGeneratePersonas && (
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <SectionLabel>Persona List</SectionLabel>
+            <SectionLabel>페르소나 목록</SectionLabel>
             <button
               onClick={addPersona}
               disabled={isRunning || config.personas.length >= 50}
@@ -329,7 +329,7 @@ export default function MirofishTab() {
                 background: 'none', color: 'var(--color-text-muted)', cursor: 'pointer',
               }}
             >
-              <Plus size={10} /> Add
+              <Plus size={10} /> 추가
             </button>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -346,17 +346,17 @@ export default function MirofishTab() {
         </div>
       )}
 
-      {/* Persona presets */}
+      {/* ── 페르소나 프리셋 ─────────────────────────────────────────────── */}
       <div>
-        <SectionLabel>Persona Presets</SectionLabel>
+        <SectionLabel>페르소나 프리셋</SectionLabel>
         <Card>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {/* Save current personas */}
+            {/* 현재 페르소나 저장 */}
             <div style={{ display: 'flex', gap: 6 }}>
               <input
                 value={presetName}
                 onChange={e => setPresetName(e.target.value)}
-                placeholder="Preset name..."
+                placeholder="프리셋 이름..."
                 style={{
                   flex: 1, fontSize: 12, padding: '5px 8px', borderRadius: 2,
                   background: 'var(--color-bg-base)', border: '1px solid var(--color-border)',
@@ -374,13 +374,13 @@ export default function MirofishTab() {
                   opacity: presetName.trim() && config.personas.length > 0 ? 1 : 0.4,
                 }}
               >
-                <Save size={10} /> Save
+                <Save size={10} /> 저장
               </button>
             </div>
-            {/* Saved presets list */}
+            {/* 저장된 프리셋 목록 */}
             {presets.length === 0 ? (
               <div style={{ fontSize: 12, color: 'var(--color-text-muted)', textAlign: 'center', padding: '6px 0' }}>
-                No saved presets
+                저장된 프리셋 없음
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -394,13 +394,13 @@ export default function MirofishTab() {
                       {preset.name}
                     </span>
                     <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>
-                      {preset.personas.length} personas
+                      {preset.personas.length}명
                     </span>
                     <button
                       onClick={() => loadPreset(preset.id)}
                       style={{ ...btnStyle, fontSize: 10, padding: '3px 8px' }}
                     >
-                      Load
+                      불러오기
                     </button>
                     <button
                       onClick={() => deletePreset(preset.id)}
@@ -416,18 +416,18 @@ export default function MirofishTab() {
         </Card>
       </div>
 
-      {/* Scheduled execution */}
+      {/* ── 자동 실행 스케줄 ─────────────────────────────────────────────── */}
       <div>
-        <SectionLabel>Scheduled Execution</SectionLabel>
+        <SectionLabel>자동 실행 스케줄</SectionLabel>
         <Card>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {/* Add new schedule */}
+            {/* 새 스케줄 추가 */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ display: 'flex', gap: 6 }}>
                 <input
                   value={newSched.topic}
                   onChange={e => setNewSched(s => ({ ...s, topic: e.target.value }))}
-                  placeholder="Topic..."
+                  placeholder="주제..."
                   style={{
                     flex: 1, fontSize: 12, padding: '5px 8px', borderRadius: 2,
                     background: 'var(--color-bg-base)', border: '1px solid var(--color-border)',
@@ -446,7 +446,7 @@ export default function MirofishTab() {
                 />
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>Personas</span>
+                <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>페르소나</span>
                 <input
                   type="number" min={3} max={50} value={newSched.numPersonas}
                   onChange={e => setNewSched(s => ({ ...s, numPersonas: Math.max(3, Math.min(50, +e.target.value)) }))}
@@ -456,7 +456,7 @@ export default function MirofishTab() {
                     color: 'var(--color-text-primary)', outline: 'none',
                   }}
                 />
-                <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>Rounds</span>
+                <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>명  라운드</span>
                 <input
                   type="number" min={2} max={10} value={newSched.numRounds}
                   onChange={e => setNewSched(s => ({ ...s, numRounds: Math.max(2, Math.min(10, +e.target.value)) }))}
@@ -477,14 +477,14 @@ export default function MirofishTab() {
                     opacity: newSched.topic.trim() ? 1 : 0.4,
                   }}
                 >
-                  <Clock size={10} /> Add
+                  <Clock size={10} /> 추가
                 </button>
               </div>
             </div>
-            {/* Schedule list */}
+            {/* 스케줄 목록 */}
             {scheduledTopics.length === 0 ? (
               <div style={{ fontSize: 12, color: 'var(--color-text-muted)', textAlign: 'center', padding: '4px 0' }}>
-                No scheduled topics
+                등록된 스케줄 없음
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -502,7 +502,7 @@ export default function MirofishTab() {
                       {sched.topic}
                     </span>
                     <span style={{ fontSize: 10, color: 'var(--color-text-muted)', flexShrink: 0 }}>
-                      {sched.numPersonas} personas, {sched.numRounds} rounds
+                      {sched.numPersonas}명 {sched.numRounds}라운드
                     </span>
                     <button
                       onClick={() => updateScheduledTopic(sched.id, { enabled: !sched.enabled })}
@@ -530,10 +530,10 @@ export default function MirofishTab() {
         </Card>
       </div>
 
-      {/* Feed */}
+      {/* ── 피드 ────────────────────────────────────────────────────────── */}
       {(simState.feed.length > 0 || simState.streamingPost) && (
         <div>
-          <SectionLabel>Reaction Feed</SectionLabel>
+          <SectionLabel>반응 피드</SectionLabel>
           <div style={{
             height: 240, overflowY: 'auto',
             background: 'var(--color-bg-base)', border: '1px solid var(--color-border)',
@@ -552,7 +552,7 @@ export default function MirofishTab() {
               </div>
             ))}
 
-            {/* Streaming post */}
+            {/* 스트리밍 포스트 */}
             {simState.streamingPost && (
               <div style={{ lineHeight: 1.6, marginBottom: 6, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
                 <span style={{ color: 'var(--color-text-muted)' }}>[R{simState.currentRound + 1}] </span>
@@ -560,7 +560,7 @@ export default function MirofishTab() {
                   {config.personas.find(p => p.id === simState.streamingPost!.personaId)?.name ?? '...'}
                 </span>
                 <span style={{ color: 'var(--color-text-primary)' }}>: {simState.streamingPost.content}</span>
-                <span style={{ animation: 'blink 1s step-end infinite', color: 'var(--color-accent)' }}>|</span>
+                <span style={{ animation: 'blink 1s step-end infinite', color: 'var(--color-accent)' }}>▌</span>
               </div>
             )}
             <div ref={feedEndRef} />
@@ -569,15 +569,15 @@ export default function MirofishTab() {
         </div>
       )}
 
-      {/* Report */}
+      {/* ── 보고서 ──────────────────────────────────────────────────────── */}
       {isDone && simState.report && (
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <SectionLabel>Analysis Report</SectionLabel>
+            <SectionLabel>분석 보고서</SectionLabel>
             <div style={{ display: 'flex', gap: 6 }}>
-              <button onClick={copyReport} style={btnStyle}>Copy</button>
+              <button onClick={copyReport} style={btnStyle}>복사</button>
               <button onClick={saveToVault} style={btnStyle}>
-                {vaultToast === 'saved' ? 'Saved' : vaultToast === 'copied' ? 'Copied to clipboard' : vaultToast === 'error' ? 'Save failed' : 'Save to Vault'}
+                {vaultToast === 'saved' ? '✓ 저장됨' : vaultToast === 'copied' ? '클립보드 복사' : vaultToast === 'error' ? '저장 실패' : '볼트에 저장'}
               </button>
             </div>
           </div>
@@ -593,16 +593,16 @@ export default function MirofishTab() {
         </div>
       )}
 
-      {/* Simulation history */}
+      {/* ── 시뮬레이션 히스토리 ──────────────────────────────────────────── */}
       {simulationHistory.length > 0 && (
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <SectionLabel>Simulation History ({simulationHistory.length})</SectionLabel>
+            <SectionLabel>시뮬레이션 이력 ({simulationHistory.length})</SectionLabel>
             <button
               onClick={clearHistory}
               style={{ fontSize: 11, padding: '2px 8px', borderRadius: 2, border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text-muted)', cursor: 'pointer' }}
             >
-              Clear All
+              전체 삭제
             </button>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -625,11 +625,11 @@ export default function MirofishTab() {
   )
 }
 
-// History card
+// ── 히스토리 카드 ─────────────────────────────────────────────────────────────
 
 function HistoryCard({ entry, onDelete, onRerun }: { entry: MirofishHistoryEntry; onDelete: () => void; onRerun: () => void }) {
   const [expanded, setExpanded] = useState(false)
-  const date = new Date(entry.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const date = new Date(entry.createdAt).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
   const stanceCounts = entry.feed.reduce<Record<string, number>>((acc, p) => {
     acc[p.stance] = (acc[p.stance] ?? 0) + 1; return acc
   }, {})
@@ -646,19 +646,19 @@ function HistoryCard({ entry, onDelete, onRerun }: { entry: MirofishHistoryEntry
             {entry.topic}
           </div>
           <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
-            {date} - {entry.numPersonas} personas - {entry.numRounds} rounds - {entry.feed.length} reactions
+            {date} · {entry.numPersonas}명 · {entry.numRounds}라운드 · 반응 {entry.feed.length}개
             {Object.entries(stanceCounts).map(([s, n]) => (
               <span key={s} style={{ marginLeft: 6, color: s === 'supportive' ? 'var(--color-accent)' : s === 'opposing' ? 'var(--color-error)' : 'var(--color-text-muted)' }}>
-                {s === 'supportive' ? 'Support' : s === 'opposing' ? 'Oppose' : s === 'neutral' ? 'Neutral' : 'Observe'} {n}
+                {s === 'supportive' ? '지지' : s === 'opposing' ? '반대' : s === 'neutral' ? '중립' : '관찰'} {n}
               </span>
             ))}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 4 }} onClick={e => e.stopPropagation()}>
-          <button onClick={onRerun} title="Rerun with this topic" style={{ fontSize: 11, padding: '2px 6px', borderRadius: 2, border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
-            Rerun
+          <button onClick={onRerun} title="이 주제로 재실행" style={{ fontSize: 11, padding: '2px 6px', borderRadius: 2, border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
+            재실행
           </button>
-          <button onClick={onDelete} title="Delete" style={{ padding: '2px 4px', borderRadius: 2, border: 'none', background: 'transparent', color: 'var(--color-text-muted)', cursor: 'pointer' }}>
+          <button onClick={onDelete} title="삭제" style={{ padding: '2px 4px', borderRadius: 2, border: 'none', background: 'transparent', color: 'var(--color-text-muted)', cursor: 'pointer' }}>
             <Trash2 size={12} />
           </button>
         </div>
@@ -674,7 +674,7 @@ function HistoryCard({ entry, onDelete, onRerun }: { entry: MirofishHistoryEntry
   )
 }
 
-// Persona card
+// ── 페르소나 카드 ─────────────────────────────────────────────────────────────
 
 function PersonaCard({
   persona, disabled, onUpdate, onRemove,
@@ -699,29 +699,29 @@ function PersonaCard({
       display: 'flex', flexDirection: 'column', gap: 8,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        {/* Name */}
+        {/* 이름 */}
         <input
           value={persona.name}
           onChange={e => onUpdate({ name: e.target.value })}
           disabled={disabled}
-          placeholder="Name"
+          placeholder="이름"
           style={inp({ flex: 1 })}
         />
-        {/* Stance */}
+        {/* 입장 */}
         <select
           value={persona.stance}
           onChange={e => onUpdate({ stance: e.target.value as MirofishPersona['stance'] })}
           disabled={disabled}
           style={inp({ color: STANCE_COLOR[persona.stance] })}
         >
-          <option value="supportive">Supportive</option>
-          <option value="opposing">Opposing</option>
-          <option value="neutral">Neutral</option>
-          <option value="observer">Observer</option>
+          <option value="supportive">지지</option>
+          <option value="opposing">반대</option>
+          <option value="neutral">중립</option>
+          <option value="observer">관찰</option>
         </select>
-        {/* Activity level */}
+        {/* 활성도 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ fontSize: 10, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>Activity</span>
+          <span style={{ fontSize: 10, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>활성도</span>
           <input
             type="number" min={0.1} max={1} step={0.1}
             value={persona.activityLevel}
@@ -738,13 +738,13 @@ function PersonaCard({
           <Trash2 size={12} />
         </button>
       </div>
-      {/* System prompt */}
+      {/* 시스템 프롬프트 */}
       <textarea
         value={persona.systemPrompt}
         onChange={e => onUpdate({ systemPrompt: e.target.value })}
         disabled={disabled}
         rows={2}
-        placeholder="Describe this persona's perspective and voice..."
+        placeholder="이 페르소나의 관점과 말투를 설명하세요..."
         style={{
           ...inp({ width: '100%', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5, boxSizing: 'border-box' }),
         }}

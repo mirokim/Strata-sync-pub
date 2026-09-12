@@ -1,9 +1,10 @@
 /**
  * Direct filesystem vault access — replaces window.vaultAPI for MCP server.
  */
-import { readFileSync, writeFileSync, unlinkSync, renameSync, mkdirSync, existsSync, readdirSync, statSync, copyFileSync } from 'fs'
+import { readFileSync, writeFileSync, unlinkSync, renameSync, mkdirSync, existsSync, readdirSync, statSync, copyFileSync, promises as fsp } from 'fs'
 import { join, relative, basename, dirname, extname } from 'path'
 import { getConfig } from './config.js'
+import type { LoadedDocument } from './parser.js'
 
 export interface VaultFileInfo {
   relativePath: string
@@ -21,21 +22,22 @@ export function listFiles(vaultPath?: string, folder?: string): { files: VaultFi
   const folders: string[] = []
 
   function walk(dir: string) {
-    let entries: string[]
-    try { entries = readdirSync(dir) } catch { return }
-    for (const name of entries) {
-      if (name.startsWith('.') || name === 'node_modules') continue
-      const abs = join(dir, name)
-      let stat
-      try { stat = statSync(abs) } catch { continue }
-      if (stat.isDirectory()) {
+    let entries: ReturnType<typeof readdirSync>
+    // withFileTypes 로 디렉터리 판정 — 항목마다 statSync 를 부르지 않는다
+    try { entries = readdirSync(dir, { withFileTypes: true }) as unknown as ReturnType<typeof readdirSync> } catch { return }
+    for (const e of entries as unknown as { name: string; isDirectory(): boolean }[]) {
+      if (e.name.startsWith('.') || e.name === 'node_modules') continue
+      const abs = join(dir, e.name)
+      if (e.isDirectory()) {
         folders.push(relative(root, abs).replace(/\\/g, '/'))
         walk(abs)
       } else {
+        let mtime = 0
+        try { mtime = statSync(abs).mtimeMs } catch { continue }
         files.push({
           relativePath: relative(root, abs).replace(/\\/g, '/'),
           absolutePath: abs,
-          mtime: stat.mtimeMs,
+          mtime,
         })
       }
     }
@@ -43,6 +45,34 @@ export function listFiles(vaultPath?: string, folder?: string): { files: VaultFi
 
   walk(target)
   return { files, folders }
+}
+
+/** 비동기 재귀 탐색 — 디렉터리를 병렬로 읽고 stat 은 하지 않는다 (mtime 은 읽을 때 함께 얻음) */
+async function walkAsync(
+  root: string, dir: string,
+  files: { relativePath: string; absolutePath: string }[],
+  folders: string[],
+  depth = 0,
+): Promise<void> {
+  let entries: { name: string; isDirectory(): boolean }[]
+  try { entries = await fsp.readdir(dir, { withFileTypes: true }) } catch { return }
+
+  const subdirs: string[] = []
+  for (const e of entries) {
+    if (e.name.startsWith('.') || e.name === 'node_modules') continue
+    const abs = join(dir, e.name)
+    if (e.isDirectory()) {
+      folders.push(relative(root, abs).replace(/\\/g, '/'))
+      subdirs.push(abs)
+    } else {
+      files.push({ relativePath: relative(root, abs).replace(/\\/g, '/'), absolutePath: abs })
+    }
+  }
+
+  const DIR_CONCURRENCY = 8
+  for (let i = 0; i < subdirs.length; i += DIR_CONCURRENCY) {
+    await Promise.all(subdirs.slice(i, i + DIR_CONCURRENCY).map(d => walkAsync(root, d, files, folders, depth + 1)))
+  }
 }
 
 export function readFile(filePath: string): string | null {
@@ -88,26 +118,64 @@ export function moveFile(absPath: string, destFolder: string): { success: boolea
   } catch { return { success: false, newPath: '' } }
 }
 
-/** Load and parse all .md files into LoadedDocument[] */
-export async function loadVaultDocuments(vaultPath?: string) {
+/**
+ * Load and parse all .md files into LoadedDocument[].
+ * 배치 병렬 비동기 I/O + 파일별 try/catch — frontmatter 가 깨진 문서 하나가
+ * 볼트 전체 로드를 실패시키지 않는다 (gray-matter 는 `title: "a"b"` 에서 throw 한다).
+ */
+export async function loadVaultDocuments(vaultPath?: string): Promise<LoadedDocument[]> {
   const root = vaultPath ?? getConfig().vaultPath
-  const { files } = listFiles(root)
-  const mdFiles = files.filter(f => extname(f.relativePath).toLowerCase() === '.md')
+  if (!root || !existsSync(root)) return []
 
-  // Dynamic import to use the app's parser
+  const files: { relativePath: string; absolutePath: string }[] = []
+  const folders: string[] = []
+  await walkAsync(root, root, files, folders)
+
+  // 병렬 탐색이라 순서가 비결정적 — 정렬해서 문서 순서(=지문)를 안정화한다
+  const mdFiles = files
+    .filter(f => extname(f.relativePath).toLowerCase() === '.md')
+    .sort((a, b) => (a.relativePath < b.relativePath ? -1 : a.relativePath > b.relativePath ? 1 : 0))
+
   const { parseVaultFile } = await import('./parser.js')
 
-  const docs = []
-  for (const f of mdFiles) {
-    const content = readFile(f.absolutePath)
-    if (!content) continue
-    const doc = parseVaultFile({
-      relativePath: f.relativePath,
-      absolutePath: f.absolutePath,
-      content,
-      mtime: f.mtime,
-    })
-    if (doc) docs.push(doc)
+  const docs: LoadedDocument[] = []
+  let readFailed = 0
+  const parseFailed: string[] = []
+  const BATCH = 64
+
+  for (let i = 0; i < mdFiles.length; i += BATCH) {
+    const batch = mdFiles.slice(i, i + BATCH)
+    const loaded = await Promise.all(batch.map(async f => {
+      try {
+        const [content, st] = await Promise.all([
+          fsp.readFile(f.absolutePath, 'utf-8'),
+          fsp.stat(f.absolutePath),
+        ])
+        return { f, content, mtime: st.mtimeMs }
+      } catch {
+        return null
+      }
+    }))
+
+    for (const item of loaded) {
+      if (!item) { readFailed++; continue }
+      try {
+        const doc = parseVaultFile({
+          relativePath: item.f.relativePath,
+          absolutePath: item.f.absolutePath,
+          content: item.content,
+          mtime: item.mtime,
+        })
+        if (doc) docs.push(doc)
+      } catch (e) {
+        parseFailed.push(item.f.relativePath)
+        console.error(`[vault] 파싱 실패 (건너뜀): ${item.f.relativePath} — ${e instanceof Error ? e.message : e}`)
+      }
+    }
+  }
+
+  if (readFailed > 0 || parseFailed.length > 0) {
+    console.error(`[vault] ${mdFiles.length}개 중 ${readFailed}개 읽기 실패, ${parseFailed.length}개 파싱 실패 — 나머지는 정상 로드됨`)
   }
   return docs
 }

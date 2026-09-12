@@ -1,0 +1,18 @@
+[01:01:05] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[01:01:05] [READY] Slack bot started
+[08:40:45] [Slack] PM: 다이잔에 대해 어떻게 생각해
+[08:40:45] [0.4s] [RAG] Electron /ask 호출 중...
+[08:41:40] [ERR] on_error invoked (session id: 96c1b208-b36c-4a41-9482-49558b465b82, error: SSLWantReadError, message: The operation did not complete (read) (_ssl.c:2580))
+[08:41:40] ⚠️ Slack 연결 끊김 — 재연결 대기 중...
+[08:41:40] 🔄 5초 후 재연결 시도... (#1)
+[08:41:46] 🟢 Slack 재연결 성공
+[08:41:50] [64.6s] [RAG] Electron /ask 성공 (1536자)
+[08:41:50] [64.7s] [완료] 답변 1524자 전송
+[08:42:28] [쿼리정제] '다이잔에 대해 내용을 정리해줘' → '다이잔에 대해 내용을'
+[08:42:29] [Slack] PM: 다이잔에 대해 내용을 정리해줘
+[08:42:29] [Slack] 히스토리 1턴 복원
+[08:42:29] [0.4s] [RAG] Electron /ask 호출 중...
+[08:43:14] [44.9s] [RAG] Electron /ask 성공 (2303자)
+[08:43:14] [44.9s] [완료] 답변 2381자 전송
+[08:43:14] [chat_update] 실패 (The request to the Slack API failed. (url: https://slack.com/api/chat.update)
+[08:43:14] The server responded with: {'ok': False, 'error': 'msg_too_long'}), say 폴백

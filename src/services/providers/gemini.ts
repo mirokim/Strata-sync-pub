@@ -12,6 +12,7 @@
  */
 
 import { parseSSEStream } from '@/services/sseParser'
+import { toUserFriendlyError } from '@/lib/errorMessages'
 import type { Attachment } from '@/types'
 
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models'
@@ -94,8 +95,8 @@ export async function streamCompletion(
   })
 
   if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`Gemini API error ${response.status}: ${errorText}`)
+    await response.text()
+    throw new Error(toUserFriendlyError(response.status, 'Gemini'))
   }
 
   /**
@@ -119,7 +120,7 @@ export async function streamCompletion(
     return parsed.candidates?.[0]?.content?.parts?.[0]?.text ?? null
   }
 
-  for await (const chunk of parseSSEStream(response, extractChunk)) {
+  for await (const chunk of parseSSEStream(response, extractChunk, signal)) {
     onChunk(chunk)
   }
 

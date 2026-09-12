@@ -1,0 +1,30 @@
+[00:58:54] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[00:58:54] [READY] Slack bot started
+[06:03:56] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[06:03:56] [READY] Slack bot started
+[06:06:56] [쿼리정제] '25년도 디렉터 피드백을 기반으로 점령전 레벨 디자인에서 지켜야 하는 포' → '25년도 디렉터 피드백을 기반으로 점령전 레벨 디자인에서 지켜야 하는 포'
+[06:06:56] [Slack] PM: 25년도 디렉터 피드백을 기반으로 점령전 레벨 디자인에서 지켜야 하는 포인트들 정리해줘
+[06:06:56] [0.3s] [RAG] Electron /ask 호출 중...
+[06:07:49] [52.8s] [RAG] Electron /ask 성공 (2028자)
+[06:07:49] [52.8s] [Image] 자동 이미지 3개
+[06:07:49] [52.8s] [완료] 답변 2108자 전송
+[06:07:49] [chat_update] 실패 (The request to the Slack API failed. (url: https://slack.com/api/chat.update)
+[06:07:49] The server responded with: {'ok': False, 'error': 'msg_too_long'}), say 폴백
+[06:07:50] [Image] 업로드 실패 (프로젝트 A_ M12_레이드보스_우로보_레벨 구조_p2_1.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAY-ut_NeiT1GCgACGKYkKws4-GAMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBU0xKUkVKMloACgAEAAAAAAAADeUACwACAAAAFFy8mk7lIybTq45Vk2rmLsVT1-3JAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[06:07:51] [Image] 업로드 실패 (프로젝트 A_ M12_레이드보스_우로보_레벨 구조_p2_2.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAXVN4R5wc0nfCgACGKYkKzQ7afAMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBVEo5NzRBRDYACgAEAAAAAAAADeUACwACAAAAFBAjpsriZBHoWnb91aPZsaPwtRu1AA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[06:07:52] [Image] 업로드 실패 (프로젝트 A_ M12_레이드보스_우로보_레벨 구조_p2_3.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAUKMTd69GEyNCgACGKYkK12PpQAMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUzhIRVRONlQACgAEAAAAAAAAMFsACwACAAAAFECIc7-JqYAQDAmZNrGcTNk5ygGsAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[06:14:18] [쿼리정제] '25년도 디렉터 피드백을 기반으로 점령전 레벨 디자인에서 지켜야 하는 포' → '25년도 디렉터 피드백을 기반으로 점령전 레벨 디자인에서 지켜야 하는 포'
+[06:14:19] [Slack] PM: 25년도 디렉터 피드백을 기반으로 점령전 레벨 디자인에서 지켜야 하는 포인트들 정리해줘
+[06:14:19] [0.4s] [RAG] Electron /ask 호출 중...
+[06:15:08] [49.6s] [RAG] Electron /ask 성공 (2354자)
+[06:15:08] [49.6s] [Image] 자동 이미지 3개
+[06:15:08] [49.6s] [완료] 답변 2416자 전송
+[06:15:09] [chat_update] 실패 (The request to the Slack API failed. (url: https://slack.com/api/chat.update)
+[06:15:09] The server responded with: {'ok': False, 'error': 'msg_too_long'}), say 폴백
+[06:15:11] [Image] 업로드 실패 (프로젝트 A_ M12_레이드보스_우로보_레벨 구조_p2_1.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAZQq20is38hxCgACGKYkkXhKgbAMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBU1RLVzhaTEwACgAEAAAAAAAADeUACwACAAAAFD9_6bsFvqgn0v7FXGakzLKM0vbEAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[06:15:12] [Image] 업로드 실패 (프로젝트 A_ M12_레이드보스_우로보_레벨 구조_p2_2.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAQkGZvnx-78MCgACGKYkkcJrtcAMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBU1RLVzRNNkcACgAEAAAAAAAADeUACwACAAAAFC6i1b_W47Z3yx1g0shb8nbsgR0XAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[06:15:13] [Image] 업로드 실패 (프로젝트 A_ M12_레이드보스_우로보_레벨 구조_p2_3.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAQFYBlygNVykCgACGKYkkgx2LYAMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBVDJVVzc0MDEACgAEAAAAAAAAMFsACwACAAAAFHvl8roc3_6hixvlEAKoNdrrPl2iAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[06:50:49] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[06:50:49] [READY] Slack bot started
+[07:15:50] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[07:15:50] [READY] Slack bot started

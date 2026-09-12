@@ -1,0 +1,175 @@
+[04:43:25] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[04:43:25] [READY] Slack bot started
+[07:28:26] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[07:28:26] [READY] Slack bot started
+[08:36:34] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[08:36:34] [READY] Slack bot started
+[08:37:23] [쿼리정제] '월영 이제 어떻게 진행하지? 종합적으로 분석해줘' → '월영 이제 어떻게 진행하지? 종합적으로'
+[08:37:23] [Slack] PM: 월영 이제 어떻게 진행하지? 종합적으로 분석해줘
+[08:38:29] [RAG] Electron 미실행 → 서브 에이전트 RAG
+[08:38:29] [모델] claude-sonnet-4-6
+[08:38:32] [쿼리리라이팅] '월영 이제 어떻게 진행하지? 종합적으로' → '죄송합니다, "월영"에 대한 이전 대화 내용이 없어서 맥락을 파악하기'
+[08:38:34] [RAG] Electron TF-IDF (10건)
+[08:38:38] [핫스코어] 재랭킹 완료 (top: [2023.02.07] 프로젝트A 이사장님 피드백)
+[08:38:38] [서브에이전트] 6개 병렬 분석 시작...
+[08:38:48] [서브에이전트] 완료. 최고 점수: 8.0/10 — [2023.12.27] 프로젝트A 이사장님 피드백
+[08:38:48] [메인에이전트] 최고 점수 문서 재검토 중...
+[08:39:12] [웹검색] 메인 에이전트 판단: 볼트 정보 충분 → 스킵
+[08:40:02] [2-pass] 자기 검토 적용
+[09:05:42] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[09:05:42] [READY] Slack bot started
+[09:06:05] [쿼리정제] '월영 이제 어떻게 진행하지? 종합적으로 분석해줘' → '월영 이제 어떻게 진행하지? 종합적으로'
+[09:06:05] [Slack] PM: 월영 이제 어떻게 진행하지? 종합적으로 분석해줘
+[09:07:11] [RAG] Electron 미실행 → 서브 에이전트 RAG
+[09:07:11] [모델] claude-sonnet-4-6
+[09:07:14] [쿼리리라이팅] '월영 이제 어떻게 진행하지? 종합적으로' → '**"월영"** 관련해서 더 구체적인 맥락이 필요해요.
+[09:07:14] 
+[09:07:14] 어떤 **월영*'
+[09:07:19] [RAG] Electron TF-IDF (10건)
+[09:07:22] [멀티쿼리] 분해: ['질문에 "월영"이 무엇을 가리키는지 맥락이 없어서 정확한 분석이 어렵습니다.', '**월영**이 다음 중 어']
+[09:07:25] [멀티쿼리] 병합 후 20건
+[09:07:25] [핫스코어] 재랭킹 완료 (top: [2024.01.19] 프로젝트A 이사장님 피드백)
+[09:07:25] [서브에이전트] 6개 병렬 분석 시작...
+[09:07:34] [서브에이전트] 완료. 최고 점수: 6.0/10 — [2024.01.19] 프로젝트A 이사장님 피드백
+[09:07:34] [메인에이전트] 최고 점수 문서 재검토 중...
+[09:07:56] [웹검색] 메인 에이전트 판단: 볼트 정보 충분 → 스킵
+[09:08:45] [2-pass] 자기 검토 적용
+[09:12:44] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[09:12:44] [READY] Slack bot started
+[09:12:58] [쿼리정제] '월영 이제 어떻게 진행하지? 종합적으로 분석해줘' → '월영 이제 어떻게 진행하지? 종합적으로'
+[09:12:59] [Slack] PM: 월영 이제 어떻게 진행하지? 종합적으로 분석해줘
+[09:13:03] [RAG] Electron HTTP 미응답 (오프라인/재시동) → 폴백
+[09:13:03] [RAG] Electron 미실행 → 서브 에이전트 RAG
+[09:13:03] [모델] claude-sonnet-4-6
+[09:13:07] [쿼리리라이팅] '월영 이제 어떻게 진행하지? 종합적으로' → '**"월영"** 관련해서 맥락을 더 알아야 정확히 도움드릴 수 있어요.'
+[09:13:10] [RAG] Electron TF-IDF (10건)
+[09:13:13] [멀티쿼리] 분해: ['질문에서 "월영"이 무엇을 의미하는지 맥락이 부족합니다.', '**월영**이 다음 중 어떤 것인지 알려주시겠']
+[09:13:18] [멀티쿼리] 병합 후 19건
+[09:13:18] [핫스코어] 재랭킹 완료 (top: [2024.01.19] 프로젝트A 이사장님 피드백)
+[09:13:18] [서브에이전트] 6개 병렬 분석 시작...
+[09:13:27] [서브에이전트] 완료. 최고 점수: 7.0/10 — [2023.12.27] 프로젝트A 이사장님 피드백
+[09:13:27] [메인에이전트] 최고 점수 문서 재검토 중...
+[09:13:54] [웹검색] 메인 에이전트 판단: 볼트 정보 충분 → 스킵
+[09:14:49] [2-pass] 자기 검토 적용
+[09:15:05] [쿼리정제] '월영 이제 어떻게 진행하지? 종합적으로 분석해줘' → '월영 이제 어떻게 진행하지? 종합적으로'
+[09:15:05] [Slack] PM: 월영 이제 어떻게 진행하지? 종합적으로 분석해줘
+[09:15:05] [Slack] 히스토리 1턴 복원
+[09:16:11] [RAG] Electron 미실행 → 서브 에이전트 RAG
+[09:16:11] [모델] claude-sonnet-4-6
+[09:16:14] [쿼리리라이팅] '월영 이제 어떻게 진행하지? 종합적으로' → '**"월영"** 에 대해 좀 더 맥락을 알려주시겠어요?
+[09:16:14] 
+[09:16:14] ---
+[09:16:14] 
+[09:16:14] **어'
+[09:16:18] [RAG] Electron TF-IDF (10건)
+[09:16:22] [멀티쿼리] 분해: ['죄송합니다, "월영"이 무엇을 가리키는지 맥락이 없어서 정확히 파악하기 어렵습니다. 😅', '---', '## 혹']
+[09:16:28] [멀티쿼리] 병합 후 20건
+[09:16:28] [핫스코어] 재랭킹 완료 (top: [2023.02.07] 프로젝트A 이사장님 피드백)
+[09:16:29] [서브에이전트] 6개 병렬 분석 시작...
+[09:16:39] [서브에이전트] 완료. 최고 점수: 9.0/10 — [2023.11.14] 프로젝트A 이사장님 피드백
+[09:16:39] [메인에이전트] 최고 점수 문서 재검토 중...
+[09:17:02] [웹검색] 메인 에이전트 판단: 볼트 정보 충분 → 스킵
+[09:17:32] [ERR] on_error invoked (session id: 2c323510-7e0a-4f16-8407-b323ffddfb1c, error: SSLWantReadError, message: The operation did not complete (read) (_ssl.c:2580))
+[09:17:33] ⚠️ Slack 연결 끊김 — 재연결 대기 중...
+[09:17:33] 🔄 5초 후 재연결 시도... (#1)
+[09:17:39] 🟢 Slack 재연결 성공
+[09:18:03] [2-pass] 자기 검토 적용
+[09:21:32] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[09:21:32] [READY] Slack bot started
+[09:21:47] [쿼리정제] '월영 이제 어떻게 진행하지? 종합적으로 분석해줘' → '월영 이제 어떻게 진행하지? 종합적으로'
+[09:21:47] [Slack] PM: 월영 이제 어떻게 진행하지? 종합적으로 분석해줘
+[09:22:48] [RAG] Electron /ask 성공 (BFS+LLM)
+[09:22:48] [Image] 자동 이미지 3개
+[09:22:51] [Image] 업로드 실패 (3차_월영_20250612_p2_1.jpeg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAR5LPXzKA1NcCgACGKIxQ8Nl7uAMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUTVBU1NVSzAACgAEAAAAAAAAzZMACwACAAAAFK44kr5lswCQQV6pgJNN-JKvgdmeAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[09:22:52] [Image] 업로드 실패 (3차_월영_20250612_p3_1.jpeg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAYUp1wSUCpsICgACGKIxRAEjx8AMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUTExRUQ5NVoACgAEAAAAAAAAuZwACwACAAAAFGuTqEc335gsdrs9EHSTcGMBOLnkAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[09:22:53] [Image] 업로드 실패 (3차_월영_20250612_p3_2.jpeg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAVDp1RIW31vqCgACGKIxREnw3YAMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUjFMU01COU4ACgAEAAAAAAAAgRMACwACAAAAFDox0gbPHda072UTRbMdOahzo6phAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[09:23:35] [쿼리정제] '월영 진행 상황 알려줘' → '월영 진행 상황'
+[09:23:35] [Slack] PM: 월영 진행 상황 알려줘
+[09:23:35] [Slack] 히스토리 1턴 복원
+[09:24:41] [RAG] Electron 미실행 → 서브 에이전트 RAG
+[09:24:41] [모델] claude-sonnet-4-6
+[09:24:44] [쿼리리라이팅] '월영 진행 상황' → '**"월영"** 관련 최신 진행 상황을 검색해 드릴게요.
+[09:24:44] 
+[09:24:44] 혹시 어떤 *'
+[09:24:46] [RAG] Electron TF-IDF (10건)
+[09:24:46] [핫스코어] 재랭킹 완료 (top: 최신 히어로 슈터 전투 요소 비교 및 분석)
+[09:24:47] [서브에이전트] 6개 병렬 분석 시작...
+[09:24:59] [서브에이전트] 완료. 최고 점수: 2.0/10 — [2025.01.07] 프로젝트A 이사장님 피드백
+[09:24:59] [메인에이전트] 최고 점수 문서 재검토 중...
+[09:25:21] [웹검색] 메인 에이전트 판단: 볼트 정보 충분 → 스킵
+[09:25:37] [2-pass] 자기 검토 적용
+[09:27:03] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[09:27:03] [READY] Slack bot started
+[09:27:23] [쿼리정제] '월영 진행 상황 알려줘' → '월영 진행 상황'
+[09:27:23] [Slack] PM: 월영 진행 상황 알려줘
+[09:27:38] [ERR] on_error invoked (session id: a7f2d95e-e511-40c8-8c16-009d3a79f998, error: SSLWantReadError, message: The operation did not complete (read) (_ssl.c:2580))
+[09:27:39] ⚠️ Slack 연결 끊김 — 재연결 대기 중...
+[09:27:39] 🔄 5초 후 재연결 시도... (#1)
+[09:27:45] 🟢 Slack 재연결 성공
+[09:28:07] [RAG] Electron /ask 성공 (BFS+LLM)
+[09:28:07] [Image] 자동 이미지 3개
+[09:28:09] [Image] 업로드 실패 (2차_월영_20250528_p2_1.jpeg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAdoHihQAubSoCgACGKIxjeHBT-gMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUTQxTUQyUjMACgAEAAAAAAAAzZMACwACAAAAFFI_tsAxYqQWv0LXwim54rVLlG1lAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[09:28:09] [Image] 업로드 실패 (2차_월영_20250528_p3_1.jpeg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAfMR9Ew7_WL-CgACGKIxjg8tsxgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUFMwRUxRR1AACgAEAAAAAAAAuZwACwACAAAAFCXOhU5Jsag6JUwXOC4fsTkCGP5XAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[09:28:10] [Image] 업로드 실패 (2차_월영_20250528_p3_2.jpeg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAZDcGjgccIZZCgACGKIxjjbFQjgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUTVCVDk2Q0UACgAEAAAAAAAAgRMACwACAAAAFIcFh4QwvYEf4OVMrjDejlv5U1usAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[09:31:48] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[09:31:48] [READY] Slack bot started
+[09:32:39] [쿼리정제] '월영 진행 상황 알려줘' → '월영 진행 상황'
+[09:32:39] [Slack] PM: 월영 진행 상황 알려줘
+[09:33:37] [RAG] Electron /ask 성공 (BFS+LLM)
+[09:33:37] [Image] 자동 이미지 3개
+[09:33:39] [Image] 업로드 실패 (2차_월영_20250528_p2_1.jpeg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAARXdYlJuFvFWCgACGKIx2q57M5AMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUTEzTUNQUzcACgAEAAAAAAAAzZMACwACAAAAFGhUPhjxKwpisMEwPdHr-Mgj9BxMAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[09:33:40] [Image] 업로드 실패 (2차_월영_20250528_p3_1.jpeg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAQWWFw4DWYCUCgACGKIx2u6OcggMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUFMxRTNLOVYACgAEAAAAAAAAuZwACwACAAAAFGiOXHrvIDgb9sEkCuada-ehmES6AA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[09:33:41] [Image] 업로드 실패 (2차_월영_20250528_p3_2.jpeg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAZQtWg_h1mlwCgACGKIx2zA8eKgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUUIzMEhCQ0wACgAEAAAAAAAAgRMACwACAAAAFLmbKTm1BlIuXcbvZUjmNJqpy450AA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[09:36:19] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[09:36:19] [READY] Slack bot started
+[09:36:29] [쿼리정제] '월영 진행 상황 알려줘' → '월영 진행 상황'
+[09:36:29] [Slack] PM: 월영 진행 상황 알려줘
+[09:36:33] [RAG] Electron HTTP 미응답 (오프라인/재시동) → 폴백
+[09:36:33] [RAG] Electron 미실행 → 서브 에이전트 RAG
+[09:36:33] [모델] claude-sonnet-4-6
+[09:36:36] [쿼리리라이팅] '월영 진행 상황' → '**"월영"** 관련 검색 키워드:
+[09:36:36] 
+[09:36:36] **월영 진행상황**
+[09:36:36] 
+[09:36:36] ---
+[09:36:36] 
+[09:36:36] 더'
+[09:36:53] [RAG] Electron TF-IDF (10건)
+[09:36:53] [핫스코어] 재랭킹 완료 (top: [2019.03.22] 프로젝트A 정례 보고 피드백)
+[09:36:53] [서브에이전트] 6개 병렬 분석 시작...
+[09:37:04] [서브에이전트] 완료. 최고 점수: 7.0/10 — [2023.12.27] 프로젝트A 이사장님 피드백
+[09:37:04] [메인에이전트] 최고 점수 문서 재검토 중...
+[09:37:28] [웹검색] 메인 에이전트 판단: 볼트 정보 충분 → 스킵
+[09:37:50] [2-pass] 자기 검토 적용
+[09:42:00] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[09:42:00] [READY] Slack bot started
+[09:42:05] [쿼리정제] '월영 진행 상황 알려줘' → '월영 진행 상황'
+[09:42:05] [Slack] PM: 월영 진행 상황 알려줘
+[09:42:08] [RAG] Electron HTTP 미응답 (오프라인/재시동) → 폴백
+[09:42:08] [RAG] Electron 미실행 → 서브 에이전트 RAG
+[09:42:08] [모델] claude-sonnet-4-6
+[09:42:11] [쿼리리라이팅] '월영 진행 상황' → '**"월영"** 관련 검색을 도와드리겠습니다.
+[09:42:11] 
+[09:42:11] ---
+[09:42:11] 
+[09:42:11] 좀 더 정확한 '
+[09:42:20] [RAG] Electron TF-IDF (10건)
+[09:42:20] [핫스코어] 재랭킹 완료 (top: 기획/ 로그 뷰어)
+[09:42:20] [서브에이전트] 6개 병렬 분석 시작...
+[09:42:27] [서브에이전트] 완료. 최고 점수: 2.0/10 — 기획팀을 위한 개인서버 세팅 매뉴얼_20251126
+[09:42:27] [메인에이전트] 최고 점수 문서 재검토 중...
+[09:42:31] [쿼리정제] '월영 진행 상황 알려줘' → '월영 진행 상황'
+[09:42:31] [Slack] PM: 월영 진행 상황 알려줘
+[09:42:44] [웹검색] 메인 에이전트 판단: 볼트 정보 충분 → 스킵
+[09:43:03] [2-pass] 자기 검토 적용
+[09:43:35] [RAG] Electron /ask 성공 (BFS+LLM)
+[09:43:35] [Image] 자동 이미지 3개
+[09:43:37] [Image] 업로드 실패 (2차_월영_20250528_p2_1.jpeg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAayNs24nrpu5CgACGKIyZfIk5ngMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUFMzRk1FS1oACgAEAAAAAAAAzZMACwACAAAAFJHYfbcE6qyCiHI3qK45xs5mjMcUAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[09:43:38] [Image] 업로드 실패 (2차_월영_20250528_p3_1.jpeg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAbzZkB0HvUJKCgACGKIyZjJs9HgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUTVFVlMyVVcACgAEAAAAAAAAuZwACwACAAAAFNGfHFErxGQINadZOYZjPcEQXcb6AA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[09:43:39] [Image] 업로드 실패 (2차_월영_20250528_p3_2.jpeg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAZT4nTBlT74nCgACGKIyZnZeR-AMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUTQ0UERXTEQACgAEAAAAAAAAgRMACwACAAAAFKrKtBdPDomJJ_qeTyW5f0dFiNqPAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[09:57:16] [Slack] PM: 월영에 대해 어떻게 생각해?
+[09:57:16] [Slack] 히스토리 1턴 복원
+[09:58:29] [RAG] Electron /ask 성공 (BFS+LLM)
+[23:03:21] ⚠️ Slack 연결 끊김 — 재연결 대기 중...
+[23:03:21] 🔄 5초 후 재연결 시도... (#1)
+[23:03:27] 🟢 Slack 재연결 성공

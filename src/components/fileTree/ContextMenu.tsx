@@ -75,39 +75,39 @@ export default function ContextMenu({
   const items: MenuItem[] = [
     {
       icon: <ExternalLink size={12} />,
-      label: 'Open in editor',
+      label: '에디터에서 열기',
       onClick: () => { onOpenInEditor(menu.docId); onClose() },
     },
     {
       icon: <Copy size={12} />,
-      label: 'Create copy',
+      label: '복사본 생성',
       onClick: () => { onCreateCopy(menu.absolutePath, menu.filename); onClose() },
     },
     {
       icon: <Bookmark size={12} />,
-      label: 'Bookmark',
+      label: '북마크',
       onClick: () => { onBookmark(menu.docId); onClose() },
     },
     {
       icon: <History size={12} />,
-      label: 'Version history',
+      label: '버전 내역',
       onClick: () => onClose(),
       disabled: true,
       divider: true,
     },
     {
       icon: <FolderInput size={12} />,
-      label: 'Move to folder',
+      label: '폴더로 이동',
       onClick: () => { onMove?.(menu.absolutePath, menu.filename, menu.x, menu.y); onClose() },
     },
     {
       icon: <Pencil size={12} />,
-      label: 'Rename',
+      label: '이름 변경',
       onClick: () => { onRename(menu.absolutePath, menu.filename); onClose() },
     },
     {
       icon: <Trash2 size={12} />,
-      label: 'Delete',
+      label: '삭제',
       onClick: () => { onDelete(menu.absolutePath, menu.filename); onClose() },
       danger: true,
     },
@@ -121,11 +121,9 @@ export default function ContextMenu({
         top: y,
         left: x,
         zIndex: 9999,
-        background: 'var(--color-bg-overlay)',
-        backdropFilter: 'blur(16px)',
-        WebkitBackdropFilter: 'blur(16px)',
+        background: 'var(--color-bg-secondary)',
         border: '1px solid rgba(255,255,255,0.1)',
-        borderRadius: 8,
+        borderRadius: 2,
         padding: '4px',
         minWidth: menuWidth,
         boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
@@ -137,7 +135,7 @@ export default function ContextMenu({
           padding: '5px 10px 6px',
           fontSize: 10,
           color: 'var(--color-text-muted)',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          borderBottom: '1px solid var(--color-bg-tertiary)',
           marginBottom: 4,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
@@ -154,7 +152,7 @@ export default function ContextMenu({
           {item.divider && (
             <div style={{
               height: 1,
-              background: 'rgba(255,255,255,0.06)',
+              background: 'var(--color-bg-tertiary)',
               margin: '4px 0',
             }} />
           )}
@@ -168,12 +166,12 @@ export default function ContextMenu({
               gap: 8,
               padding: '6px 10px',
               border: 'none',
-              borderRadius: 5,
+              borderRadius: 2,
               background: 'transparent',
               color: item.disabled
                 ? 'var(--color-text-muted)'
                 : item.danger
-                ? '#f87171'
+                ? 'var(--color-error)'
                 : 'var(--color-text-secondary)',
               fontSize: 12,
               cursor: item.disabled ? 'not-allowed' : 'pointer',
@@ -194,7 +192,7 @@ export default function ContextMenu({
             <span style={{ flexShrink: 0 }}>{item.icon}</span>
             {item.label}
             {item.disabled && (
-              <span style={{ marginLeft: 'auto', fontSize: 9, opacity: 0.5 }}>Coming soon</span>
+              <span style={{ marginLeft: 'auto', fontSize: 9, opacity: 0.5 }}>준비중</span>
             )}
           </button>
         </div>

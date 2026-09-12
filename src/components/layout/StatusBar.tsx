@@ -38,7 +38,7 @@ export default function StatusBar() {
           marginRight: 12,
         }}>
           <Zap size={10} />
-          Edit Agent Running
+          편집 에이전트 실행 중
         </span>
       )}
 
@@ -48,7 +48,7 @@ export default function StatusBar() {
       {/* Token + cost summary */}
       <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         {/* Input tokens */}
-        <span style={{ display: 'flex', alignItems: 'center', gap: 3 }} title="Input tokens">
+        <span style={{ display: 'flex', alignItems: 'center', gap: 3 }} title="입력 토큰">
           <span style={{ opacity: 0.45, fontSize: 10 }}>IN</span>
           <span style={{ color: totalInputTokens > 0 ? '#94a3b8' : 'rgba(148,163,184,0.35)' }}>
             {formatTokens(totalInputTokens)}
@@ -58,7 +58,7 @@ export default function StatusBar() {
         <span style={{ opacity: 0.2 }}>·</span>
 
         {/* Output tokens */}
-        <span style={{ display: 'flex', alignItems: 'center', gap: 3 }} title="Output tokens">
+        <span style={{ display: 'flex', alignItems: 'center', gap: 3 }} title="출력 토큰">
           <span style={{ opacity: 0.45, fontSize: 10 }}>OUT</span>
           <span style={{ color: totalOutputTokens > 0 ? '#94a3b8' : 'rgba(148,163,184,0.35)' }}>
             {formatTokens(totalOutputTokens)}
@@ -68,7 +68,7 @@ export default function StatusBar() {
         <span style={{ opacity: 0.2 }}>·</span>
 
         {/* Cost */}
-        <span style={{ display: 'flex', alignItems: 'center', gap: 3 }} title="Estimated cost (USD)">
+        <span style={{ display: 'flex', alignItems: 'center', gap: 3 }} title="예상 비용 (USD)">
           <Coins size={10} style={{ opacity: 0.45 }} />
           <span style={{
             color: totalCostUsd > 0 ? '#f59e0b' : 'rgba(245,158,11,0.35)',
@@ -82,7 +82,8 @@ export default function StatusBar() {
         {(totalInputTokens > 0 || totalOutputTokens > 0) && (
           <button
             onClick={resetSession}
-            title="Reset session tokens"
+            title="세션 토큰 초기화"
+            aria-label="세션 토큰 초기화"
             style={{
               display: 'flex', alignItems: 'center',
               padding: '1px 4px', borderRadius: 3, border: 'none',

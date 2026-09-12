@@ -1,0 +1,44 @@
+[02:52:03] [쿼리정제] '2월달에 디렉터 보고 된 내용들 정리해서 알려줘' → '2월달에 디렉터 보고 된 내용들 정리해서'
+[02:52:03] [Slack] PM: 2월달에 디렉터 보고 된 내용들 정리해서 알려줘
+[02:52:03] [0.4s] [RAG] Electron /ask 호출 중...
+[02:53:47] [104.0s] [RAG] Electron /ask 성공 (1473자)
+[02:53:47] [104.0s] [Image] 자동 이미지 3개
+[02:53:47] [104.1s] [완료] 답변 1509자 전송
+[02:53:49] [Image] 업로드 실패 (210129_프로젝트A_정례보고_M8플레이시나리오_v2_p10_1.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAaR5A95LJiM1CgACGKa2vagAM3gMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBVTMxSjcyTU4ACgAEAAAAAAAZ0cYACwACAAAAFCmiMWNBa7gMOdtKHIrrP_CXQdyRAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[02:53:50] [Image] 업로드 실패 (210129_프로젝트A_정례보고_M8플레이시나리오_v2_p10_2.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAd4icUg0V_hJCgACGKa2vewdB5gMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBVDZNNERRNUMACgAEAAAAAAAADeUACwACAAAAFNmgohgiRWRhCEUkfhyvDne_npScAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[02:53:51] [Image] 업로드 실패 (210129_프로젝트A_정례보고_M8플레이시나리오_v2_p10_3.jpg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAe2BPJW6ez2HCgACGKa2vi80CGAMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBU1Q5TlRZUFIACgAEAAAAAAAAqA8ACwACAAAAFHhqT1xsvKMt6EgkMzSx7bIZTt3eAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[12:29:20] [쿼리정제] '가장 최근 디렉터 보고 미팅 피드백에 따른 to do list 알려줘' → '가장 최근 디렉터 보고 미팅 피드백에 따른 to do list'
+[12:29:22] [Slack] PM: 가장 최근 디렉터 보고 미팅 피드백에 따른 to do list 알려줘
+[12:29:23] [0.6s] [RAG] Electron /ask 호출 중...
+[12:30:16] [53.9s] [RAG] Electron /ask 성공 (2197자)
+[12:30:16] [53.9s] [Image] 자동 이미지 3개
+[12:30:16] [54.0s] [완료] 답변 2209자 전송
+[12:30:17] [chat_update] 실패 (The request to the Slack API failed. (url: https://slack.com/api/chat.update)
+[12:30:17] The server responded with: {'ok': False, 'error': 'msg_too_long'}), say 폴백
+[12:30:19] [Image] 업로드 실패 (설정 회의_14. 에타큐브 조각 발견 및 최근 사건 v2_1.jpg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAQ8WoJKgFH1-CgACGKbWMyY9juAMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBVDhUMEhERTEACgAEAAAAAAABLb0ACwACAAAAFMN6eTzHfiZjT_jk4MMR2VrtjDqUAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[12:30:20] [Image] 업로드 실패 (설정 회의_14. 에타큐브 조각 발견 및 최근 사건 v2_2.jpg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAATKpodLHlYL4CgACGKbWM3wd6vgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBVEZUMlFKNEMACgAEAAAAAAACSYEACwACAAAAFF8xXM1IEtLK8XLxfJP-qHs_iN4YAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[12:30:21] [Image] 업로드 실패 (171712423_Maptool_ 가이드_1.jpg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAejknC_CmyUPCgACGKbWM8IhbPAMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBVDhUMERSOFYACgAEAAAAAAAAb1QACwACAAAAFJ_hyYGcysNYpmuII8_24fPuJHJ-AA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[12:51:40] [Slack] PM: 가장 최근 보고일이 3월 9일이 아닐텐데?
+[12:51:40] [Slack] 히스토리 1턴 복원
+[12:51:41] [0.4s] [RAG] Electron /ask 호출 중...
+[12:51:53] [13.2s] [RAG] Electron /ask 성공 (632자)
+[12:51:53] [13.2s] [Image] 자동 이미지 3개
+[12:51:53] [13.2s] [완료] 답변 612자 전송
+[12:51:55] [Image] 업로드 실패 (설정 회의_14. 에타큐브 조각 발견 및 최근 사건 v2_1.jpg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAW0GU-q7zCFbCgACGKbXYPk_DvgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBVTZORkZNS0oACgAEAAAAAAABLb0ACwACAAAAFNTR3MeaOdCL8EsydjIo6a3seAcIAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[12:51:56] [Image] 업로드 실패 (설정 회의_14. 에타큐브 조각 발견 및 최근 사건 v2_2.jpg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAQ0qJW-OC8CKCgACGKbXYT8CgoAMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBVFJCRTZOM1QACgAEAAAAAAACSYEACwACAAAAFKakw9vyz40QaF9p4N1wHc1qmo8MAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[12:51:56] [Image] 파일 없음 (경로 확인 필요): 676755619_3월__1.png
+[12:52:11] [쿼리정제] 'to do list만 알려줘' → 'to do list만'
+[12:52:11] [Slack] PM: to do list만 알려줘
+[12:52:11] [Slack] 히스토리 2턴 복원
+[12:52:11] [0.4s] [RAG] Electron /ask 호출 중...
+[12:52:21] [9.5s] [RAG] Electron /ask 성공 (365자)
+[12:52:21] [9.5s] [Image] 자동 이미지 3개
+[12:52:21] [9.5s] [완료] 답변 363자 전송
+[12:52:23] [Image] 업로드 실패 (171712423_Maptool_ 가이드_1.jpg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAWWTe012cf9OCgACGKbXZ2pSNJgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBVEFDU0FLS1EACgAEAAAAAAAAb1QACwACAAAAFKZzt8PFshJrhQisX1e8kAH2tss0AA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[12:52:24] [Image] 업로드 실패 (198441074_Project A Tutorial (신규 입사자용)_1.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAASyxuFRvGJmtCgACGKbXZ7JDZWAMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBVEcySEFXTEMACgAEAAAAAAAE4gcACwACAAAAFPIL6jZKL9y0I1SKXJ5yQv45m0PxAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[12:52:25] [Image] 업로드 실패 (198441074_Project A Tutorial (신규 입사자용)_2.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAaGg_j93lGATCgACGKbXZ_nR-_gMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBVFJCSzFISDcACgAEAAAAAAABZFEACwACAAAAFD2dOuxKuhUeuQghIzzD2-CUpHl0AA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[15:58:17] [ERR] Failed to check the state of sock (session id: 18aa881a-6746-4ec5-b47a-e21345ac69f7, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[15:58:27] [ERR] Failed to check the state of sock (session id: 18aa881a-6746-4ec5-b47a-e21345ac69f7, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[15:58:37] [ERR] Failed to check the state of sock (session id: 18aa881a-6746-4ec5-b47a-e21345ac69f7, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[15:58:47] [ERR] Failed to check the state of sock (session id: 18aa881a-6746-4ec5-b47a-e21345ac69f7, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[15:58:57] [ERR] Failed to check the state of sock (session id: 18aa881a-6746-4ec5-b47a-e21345ac69f7, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))

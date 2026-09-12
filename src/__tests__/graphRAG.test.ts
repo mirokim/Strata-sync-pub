@@ -1,18 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-
-// Mock pprWorkerClient to avoid Worker instantiation in test env.
-// Returns realistic PPR scores for the mock documents so buildDeepGraphContext
-// can proceed past the "sorted.length === 0" early return.
-vi.mock('@/lib/pprWorkerClient', () => ({
-  runPPRInWorker: vi.fn().mockResolvedValue(
-    new Map<string, number>([
-      ['design_doc', 0.45],
-      ['art_doc', 0.35],
-      ['plan_doc', 0.20],
-    ])
-  ),
-}))
-
+import { describe, it, expect, beforeEach } from 'vitest'
 import type { SearchResult, GraphLink, LoadedDocument } from '@/types'
 import { useGraphStore } from '@/stores/graphStore'
 import { useVaultStore } from '@/stores/vaultStore'
@@ -42,14 +28,14 @@ const MOCK_DOCS: LoadedDocument[] = [
     sections: [
       {
         id: 'design_doc_intro',
-        heading: 'Game Design',
-        body: 'This is the core design document.',
+        heading: '게임 디자인',
+        body: '게임의 핵심 디자인 문서입니다.',
         wikiLinks: ['art_doc_visual'],
       },
       {
         id: 'design_doc_combat',
-        heading: 'Combat System',
-        body: 'Uses a turn-based combat system with an elemental affinity framework.',
+        heading: '전투 시스템',
+        body: '턴제 전투 시스템을 사용합니다. 속성 상성 체계를 도입합니다.',
         wikiLinks: ['art_doc_effects'],
       },
     ],
@@ -66,14 +52,14 @@ const MOCK_DOCS: LoadedDocument[] = [
     sections: [
       {
         id: 'art_doc_visual',
-        heading: 'Visual Concept',
-        body: 'Based on a dark fantasy visual style.',
+        heading: '비주얼 컨셉',
+        body: '다크 판타지 스타일의 비주얼을 기반으로 합니다.',
         wikiLinks: ['design_doc_intro'],
       },
       {
         id: 'art_doc_effects',
-        heading: 'Effect Design',
-        body: 'Combat effects use the particle system.',
+        heading: '이펙트 디자인',
+        body: '전투 이펙트는 파티클 시스템을 활용합니다.',
         wikiLinks: ['design_doc_combat'],
       },
     ],
@@ -90,8 +76,8 @@ const MOCK_DOCS: LoadedDocument[] = [
     sections: [
       {
         id: 'plan_doc_schedule',
-        heading: 'Schedule Plan',
-        body: 'Milestone 1 is the completion of the prototype.',
+        heading: '일정 계획',
+        body: '마일스톤 1은 프로토타입 완성입니다.',
         wikiLinks: [],
       },
     ],
@@ -108,9 +94,9 @@ function makeSearchResult(overrides: Partial<SearchResult> = {}): SearchResult {
     doc_id: 'design_doc',
     filename: 'design.md',
     section_id: 'design_doc_intro',
-    heading: 'Game Design',
+    heading: '게임 디자인',
     speaker: 'chief_director',
-    content: 'This is the core design document.',
+    content: '게임의 핵심 디자인 문서입니다.',
     score: 0.85,
     tags: ['design'],
     ...overrides,
@@ -134,7 +120,7 @@ describe('expandWithGraphNeighbors', () => {
 
     expect(neighbors).toHaveLength(1)
     expect(neighbors[0].sectionId).toBe('art_doc_visual')
-    expect(neighbors[0].heading).toBe('Visual Concept')
+    expect(neighbors[0].heading).toBe('비주얼 컨셉')
     expect(neighbors[0].filename).toBe('art.md')
     expect(neighbors[0].linkedFrom).toBe('design_doc_intro')
   })
@@ -147,9 +133,9 @@ describe('expandWithGraphNeighbors', () => {
         doc_id: 'art_doc',
         filename: 'art.md',
         section_id: 'art_doc_visual',
-        heading: 'Visual Concept',
+        heading: '비주얼 컨셉',
         speaker: 'art_director',
-        content: 'Based on a dark fantasy visual style.',
+        content: '다크 판타지 스타일의 비주얼을 기반으로 합니다.',
       }),
     ]
     const neighbors = expandWithGraphNeighbors(results)
@@ -179,26 +165,17 @@ describe('expandWithGraphNeighbors', () => {
 
   it('truncates long neighbor content to 300 chars', () => {
     const longBody = 'A'.repeat(500)
-    const docs = MOCK_DOCS.map(d => ({
-      ...d,
-      sections: d.sections.map(s =>
-        s.id === 'art_doc_visual' ? { ...s, body: longBody } : s
-      ),
-    }))
-    // Add a dummy doc to change the array length, which invalidates the internal
-    // getCachedMaps cache (keyed by array length + first/mid/last IDs).
-    const dummyDoc: LoadedDocument = {
-      id: 'dummy_cache_buster',
-      filename: 'dummy.md',
-      folderPath: '',
-      speaker: 'unknown',
-      date: '',
-      tags: [],
-      links: [],
-      rawContent: '',
-      sections: [],
-    }
-    useVaultStore.setState({ loadedDocuments: [...docs, dummyDoc] })
+    const docs = [
+      ...MOCK_DOCS.map(d => ({
+        ...d,
+        sections: d.sections.map(s =>
+          s.id === 'art_doc_visual' ? { ...s, body: longBody } : s
+        ),
+      })),
+      // Extra doc to change the arrayKey and bust getCachedMaps cache
+      { id: 'dummy_cache_buster', filename: 'dummy.md', folderPath: '', speaker: 'unknown' as const, date: '', tags: [], links: [], rawContent: '', sections: [] },
+    ]
+    useVaultStore.setState({ loadedDocuments: docs })
 
     const results = [makeSearchResult()]
     const neighbors = expandWithGraphNeighbors(results)
@@ -212,40 +189,40 @@ describe('expandWithGraphNeighbors', () => {
 describe('rerankResults', () => {
   it('reranks by keyword overlap', () => {
     const results = [
-      makeSearchResult({ content: 'schedule management system', score: 0.7 }),
-      makeSearchResult({ content: 'combat system design', score: 0.6 }),
-      makeSearchResult({ content: 'combat system balance combat logic', score: 0.5 }),
+      makeSearchResult({ content: '일정 관리 시스템', score: 0.7 }),
+      makeSearchResult({ content: '전투 시스템 디자인', score: 0.6 }),
+      makeSearchResult({ content: '전투 시스템 밸런스 전투 로직', score: 0.5 }),
     ]
 
-    // Query matches "combat system" → results with those terms should rank higher
-    const reranked = rerankResults(results, 'combat system', 2)
+    // Query matches "전투 시스템" → results with those terms should rank higher
+    const reranked = rerankResults(results, '전투 시스템', 2)
     expect(reranked).toHaveLength(2)
     // The result with highest keyword overlap should be first
-    expect(reranked[0].content).toContain('combat')
+    expect(reranked[0].content).toContain('전투')
   })
 
   it('applies speaker affinity boost', () => {
     const results = [
       makeSearchResult({
-        content: 'identical content here',
+        content: '동일한 내용입니다',
         score: 0.7,
         speaker: 'art_director',
       }),
       makeSearchResult({
-        content: 'identical content here',
+        content: '동일한 내용입니다',
         score: 0.7,
         speaker: 'chief_director',
       }),
     ]
 
-    const reranked = rerankResults(results, 'query', 1, 'chief_director')
+    const reranked = rerankResults(results, '쿼리', 1, 'chief_director')
     // chief_director should be boosted
     expect(reranked[0].speaker).toBe('chief_director')
   })
 
   it('returns all results when count <= topN', () => {
     const results = [makeSearchResult(), makeSearchResult()]
-    const reranked = rerankResults(results, 'query', 5)
+    const reranked = rerankResults(results, '쿼리', 5)
     expect(reranked).toHaveLength(2)
   })
 })
@@ -257,18 +234,18 @@ describe('formatCompressedContext', () => {
     const results = [makeSearchResult()]
     const output = formatCompressedContext(results, [])
 
-    expect(output).toContain('## Related Documents')
-    expect(output).toContain('[Document] design.md > Game Design (chief_director)')
-    expect(output).toContain('This is the core design document.')
+    expect(output).toContain('## 관련 문서')
+    expect(output).toContain('[문서] design.md > 게임 디자인 (chief_director)')
+    expect(output).toContain('게임의 핵심 디자인 문서입니다.')
   })
 
-  it('includes neighbor sections under Connected Documents header', () => {
+  it('includes neighbor sections under 연결 문서 header', () => {
     const results = [makeSearchResult()]
     const neighbors = expandWithGraphNeighbors(results)
     const output = formatCompressedContext(results, neighbors)
 
-    expect(output).toContain('### Connected Documents')
-    expect(output).toContain('[Connected] art.md > Visual Concept')
+    expect(output).toContain('### 연결 문서')
+    expect(output).toContain('[연결] art.md > 비주얼 컨셉')
   })
 
   it('returns empty string when no results', () => {
@@ -358,8 +335,6 @@ describe('getGlobalContextDocIds', () => {
 
 // ── directVaultSearch ─────────────────────────────────────────────────────────
 
-// Note: this document intentionally uses Korean content to test the Korean
-// morphological stemmer (particle stripping) and date-based filename matching.
 const DATE_DOC: LoadedDocument = {
   id: 'feedback_jan28',
   filename: '[2026.01.28] 피드백 회의.md',
@@ -439,13 +414,13 @@ describe('getStrippedBody', () => {
   it('returns section bodies joined, without frontmatter YAML', () => {
     const doc: LoadedDocument = {
       ...MOCK_DOCS[0],
-      rawContent: '---\nspeaker: chief\n---\nactual content',
+      rawContent: '---\nspeaker: chief\n---\n실제 내용',
       sections: [
-        { id: 's1', heading: 'Title', body: 'Section content here.', wikiLinks: [] },
+        { id: 's1', heading: '제목', body: '섹션 내용입니다.', wikiLinks: [] },
       ],
     }
     const result = getStrippedBody(doc)
-    expect(result).toContain('Section content here.')
+    expect(result).toContain('섹션 내용입니다.')
     expect(result).not.toContain('speaker:')
     expect(result).not.toContain('---')
   })
@@ -454,32 +429,32 @@ describe('getStrippedBody', () => {
     const doc: LoadedDocument = {
       ...MOCK_DOCS[0],
       sections: [
-        { id: 's1', heading: 'Combat System', body: 'Combat content.', wikiLinks: [] },
+        { id: 's1', heading: '전투 시스템', body: '전투 내용.', wikiLinks: [] },
       ],
     }
-    expect(getStrippedBody(doc)).toContain('### Combat System')
+    expect(getStrippedBody(doc)).toContain('### 전투 시스템')
   })
 
   it('omits heading prefix for (intro) sections', () => {
     const doc: LoadedDocument = {
       ...MOCK_DOCS[0],
       sections: [
-        { id: 's1', heading: '(intro)', body: 'Intro content.', wikiLinks: [] },
+        { id: 's1', heading: '(intro)', body: '인트로 내용.', wikiLinks: [] },
       ],
     }
     const result = getStrippedBody(doc)
     expect(result).not.toContain('### (intro)')
-    expect(result).toContain('Intro content.')
+    expect(result).toContain('인트로 내용.')
   })
 
   it('falls back to rawContent minus frontmatter when all sections are empty', () => {
     const doc: LoadedDocument = {
       ...MOCK_DOCS[0],
-      rawContent: '---\nspeaker: chief\n---\n\n# Actual markdown content',
+      rawContent: '---\nspeaker: chief\n---\n\n# 실제 마크다운 내용',
       sections: [{ id: 's1', heading: '(intro)', body: '', wikiLinks: [] }],
     }
     const result = getStrippedBody(doc)
-    expect(result).toContain('# Actual markdown content')
+    expect(result).toContain('# 실제 마크다운 내용')
     expect(result).not.toContain('speaker:')
   })
 
@@ -497,36 +472,36 @@ describe('buildDeepGraphContext', () => {
     useVaultStore.setState({ loadedDocuments: MOCK_DOCS })
   })
 
-  it('returns empty string when no documents are loaded', async () => {
+  it('returns empty string when no documents are loaded', () => {
     useVaultStore.setState({ loadedDocuments: null })
-    expect(await buildDeepGraphContext([makeSearchResult()])).toBe('')
+    expect(buildDeepGraphContext([makeSearchResult()])).toBe('')
   })
 
-  it('uses direct-search fallback format when no graph links exist', async () => {
+  it('uses direct-search fallback format when no graph links exist', () => {
     useGraphStore.setState({ links: [] })
-    const result = await buildDeepGraphContext([makeSearchResult()])
-    expect(result).toContain('## Related Documents (Direct Search)')
-    expect(result).toContain('[Document] design')
+    const result = buildDeepGraphContext([makeSearchResult()])
+    expect(result).toContain('## 관련 문서 (직접 검색)')
+    expect(result).toContain('[문서] design')
   })
 
-  it('returns empty string when results are empty and links exist but no seeds', async () => {
+  it('returns empty string when results are empty and links exist but no seeds', () => {
     useGraphStore.setState({ links: [] })
-    const result = await buildDeepGraphContext([])
+    const result = buildDeepGraphContext([])
     expect(result).toBe('')
   })
 
-  it('returns graph-traversal format when links exist', async () => {
-    const result = await buildDeepGraphContext([makeSearchResult()])
-    expect(result).toContain('## Related Documents (PPR Traversal)')
+  it('returns graph-traversal format when links exist', () => {
+    const result = buildDeepGraphContext([makeSearchResult()])
+    expect(result).toContain('## 관련 문서 (PPR 탐색)')
   })
 
-  it('includes structure header with cluster info', async () => {
-    const result = await buildDeepGraphContext([makeSearchResult()])
-    expect(result).toContain('## Project Structure Overview')
+  it('includes structure header with cluster info', () => {
+    const result = buildDeepGraphContext([makeSearchResult()])
+    expect(result).toContain('## 프로젝트 구조 개요')
   })
 
-  it('total output stays within DEEP_CONTEXT_BUDGET (16000 chars)', async () => {
-    const result = await buildDeepGraphContext([makeSearchResult()], 3, 20)
+  it('total output stays within DEEP_CONTEXT_BUDGET (16000 chars)', () => {
+    const result = buildDeepGraphContext([makeSearchResult()], 3, 20)
     expect(result.length).toBeLessThanOrEqual(16_500)
   })
 })

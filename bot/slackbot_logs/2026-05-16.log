@@ -1,0 +1,16 @@
+[00:44:02] ⚠️ Slack 연결 끊김 — 재연결 대기 중...
+[00:44:02] 🔄 5초 후 재연결 시도... (#1)
+[00:44:08] 🟢 Slack 재연결 성공
+[17:55:23] [ERR] Failed to check the state of sock (session id: 12324dd9-20fc-4088-a139-fd9227426496, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[17:55:33] [ERR] Failed to check the state of sock (session id: 12324dd9-20fc-4088-a139-fd9227426496, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[17:55:43] [ERR] Failed to check the state of sock (session id: 12324dd9-20fc-4088-a139-fd9227426496, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[17:55:53] [ERR] Failed to check the state of sock (session id: 12324dd9-20fc-4088-a139-fd9227426496, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[17:56:03] [ERR] Failed to check the state of sock (session id: 12324dd9-20fc-4088-a139-fd9227426496, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[18:58:41] [ERR] Failed to check the state of sock (session id: c0b0165b-507c-4cb4-a5ec-cd540e01865c, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[18:58:51] [ERR] Failed to check the state of sock (session id: c0b0165b-507c-4cb4-a5ec-cd540e01865c, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[18:59:01] [ERR] Failed to check the state of sock (session id: c0b0165b-507c-4cb4-a5ec-cd540e01865c, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[18:59:11] [ERR] Failed to check the state of sock (session id: c0b0165b-507c-4cb4-a5ec-cd540e01865c, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[18:59:21] [ERR] Failed to check the state of sock (session id: c0b0165b-507c-4cb4-a5ec-cd540e01865c, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[18:59:21] ⚠️ Slack 연결 끊김 — 재연결 대기 중...
+[18:59:21] 🔄 5초 후 재연결 시도... (#1)
+[18:59:28] 🟢 Slack 재연결 성공

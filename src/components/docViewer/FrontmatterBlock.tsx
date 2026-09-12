@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import type { MockDocument } from '@/types'
+import type { LoadedDocument } from '@/types'
 import { SPEAKER_CONFIG } from '@/lib/speakerConfig'
 
 interface Props {
-  doc: MockDocument
+  doc: LoadedDocument
 }
 
 export default function FrontmatterBlock({ doc }: Props) {

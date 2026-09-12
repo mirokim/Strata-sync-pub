@@ -1,11 +1,11 @@
 """
-multi_agent_rag.py — Parallel sub-agent document analysis + main agent review
+multi_agent_rag.py — 병렬 서브 에이전트 기반 문서 분석 + 메인 에이전트 재검토
 
-Flow:
-  1. Top N search results → parallel sub-agent execution (each handles 1 document)
-  2. Each sub-agent: document relevance score (0-10) + key summary + key points
-  3. Main agent reviews the highest-scoring document with full content
-  4. All summaries + best document analysis → final RAG context string
+흐름:
+  1. 검색 결과 상위 N개 문서 → 서브 에이전트 병렬 실행 (각 1개 문서 담당)
+  2. 각 서브 에이전트: 문서 관련성 점수(0~10) + 핵심 요약 + 핵심 포인트 반환
+  3. 최고 점수 문서를 메인 에이전트가 전체 내용으로 재검토
+  4. 모든 요약 + 최고 문서 분석 → 최종 RAG 컨텍스트 문자열 반환
 """
 import hashlib
 import json
@@ -30,17 +30,33 @@ class SubAgentResult(TypedDict):
     summary: str
     key_points: list[str]
 
-# ── Sub-agent checkpoints (based on MiroFish realtime_output pattern) ─────────
-# Save analysis results to file in real-time → skip already-analyzed docs on restart.
+# ── 서브에이전트 체크포인트 (MiroFish realtime_output 패턴 기반) ─────────────
+# 분석 결과를 실시간으로 파일에 저장 → 중단 후 재시작 시 이미 분석한 문서는 스킵.
 
 _CHECKPOINT_DIR = RAG_CHECKPOINTS_DIR
-_CHECKPOINT_TTL_SECS = 86400  # 24-hour TTL (supports resuming long simulations)
-_CHECKPOINT_MAX_MB = 10        # LRU cleanup threshold
+_CHECKPOINT_TTL_SECS = 86400  # 24시간 TTL (장시간 시뮬레이션 재개 지원)
+_CHECKPOINT_MAX_MB = 10        # LRU 정리 임계값
+
+# 서브에이전트 전체 대기 상한 (스레드별이 아닌 총합 데드라인)
+_SUB_AGENT_TIMEOUT = 35.0
+
+# save / _clear_stale_checkpoints 동시 접근 방지 (tmp 파일 rename 중 LRU 삭제로 인한 레이스 방지)
+_CHECKPOINT_LOCK = threading.Lock()
 
 
 def _make_checkpoint_key(query: str, stems: list[str]) -> str:
     key = query + "|" + ",".join(sorted(stems))
     return hashlib.md5(key.encode()).hexdigest()[:12]
+
+
+def _doc_key(doc: RagResult) -> str:
+    """체크포인트 매칭용 문서 식별자.
+
+    체크포인트 키(_make_checkpoint_key)는 stems 를 정렬해 순서와 무관하지만,
+    payload 를 위치 인덱스로 매칭하면 hotness 재정렬 등으로 순서가 바뀔 때
+    캐시된 분석이 엉뚱한 문서에 붙는다. 문서 id(stem)를 쓴다.
+    """
+    return str(doc.get("stem") or doc.get("title") or "")
 
 
 def _load_checkpoint(key: str) -> list[dict]:
@@ -61,53 +77,61 @@ def _save_checkpoint(key: str, analyses: list[dict]) -> None:
     try:
         os.makedirs(_CHECKPOINT_DIR, exist_ok=True)
         path = os.path.join(_CHECKPOINT_DIR, f"{key}.json")
-        # Exclude doc body from save (size savings) — only save idx/score/summary/key_points
+        tmp_path = path + ".tmp"
+        # doc body는 저장 제외 (크기 절약) — 식별자/score/summary/key_points만 저장.
+        # doc_key(문서 id)로 저장해야 복원 시 순서가 바뀌어도 올바른 문서에 붙는다.
         slim = [
-            {"idx": a["idx"], "score": a["score"],
+            {"doc_key": _doc_key(a.get("doc") or {}), "idx": a["idx"], "score": a["score"],
              "summary": a["summary"], "key_points": a["key_points"]}
             for a in analyses
         ]
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(slim, f, ensure_ascii=False)
+        # write → rename 원자적 저장, LRU 정리와 Lock 공유
+        with _CHECKPOINT_LOCK:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(slim, f, ensure_ascii=False)
+            os.replace(tmp_path, path)
     except OSError as e:
-        logger.error("Checkpoint save failed (key=%s): %s", key, e)
+        logger.error("체크포인트 저장 실패 (key=%s): %s", key, e)
 
 
 def _clear_stale_checkpoints() -> None:
-    """Delete files exceeding TTL + LRU cleanup when directory exceeds size limit."""
+    """TTL 초과 파일 삭제 + 디렉토리 용량 초과 시 LRU 정리.
+
+    _save_checkpoint 과 동일한 Lock 으로 보호 — tmp 파일 rename 중간 상태 보호.
+    """
     try:
         if not os.path.isdir(_CHECKPOINT_DIR):
             return
-        files = sorted(
-            Path(_CHECKPOINT_DIR).glob("*.json"),
-            key=lambda f: f.stat().st_mtime,
-        )
-        now = time.time()
-        # 1) Delete TTL-expired files
-        surviving = []
-        for f in files:
-            if now - f.stat().st_mtime > _CHECKPOINT_TTL_SECS:
+        with _CHECKPOINT_LOCK:
+            files = sorted(
+                Path(_CHECKPOINT_DIR).glob("*.json"),
+                key=lambda f: f.stat().st_mtime,
+            )
+            now = time.time()
+            # 1) TTL 초과 삭제
+            surviving = []
+            for f in files:
+                if now - f.stat().st_mtime > _CHECKPOINT_TTL_SECS:
+                    f.unlink()
+                else:
+                    surviving.append(f)
+            # 2) 용량 초과 시 오래된 순 LRU 삭제
+            limit = _CHECKPOINT_MAX_MB * 1024 * 1024
+            total = sum(f.stat().st_size for f in surviving)
+            for f in surviving:
+                if total <= limit:
+                    break
+                total -= f.stat().st_size
                 f.unlink()
-            else:
-                surviving.append(f)
-        # 2) LRU delete oldest first when over size limit
-        limit = _CHECKPOINT_MAX_MB * 1024 * 1024
-        total = sum(f.stat().st_size for f in surviving)
-        for f in surviving:
-            if total <= limit:
-                break
-            total -= f.stat().st_size
-            f.unlink()
     except OSError as e:
-        logger.warning("Checkpoint cleanup failed: %s", e)
+        logger.warning("체크포인트 정리 실패: %s", e)
 
 
-_SUB_AGENT_SYSTEM = "Game development document relevance evaluation expert. Output JSON only."
+_SUB_AGENT_SYSTEM = "게임 개발 문서 관련성 평가 전문가. JSON만 출력."
 
 _MAIN_REVIEW_SYSTEM = (
-    "Game development knowledge analyst. Synthesize document analysis results to construct "
-    "key insights and context needed for the question. "
-    "Actively derive connections, patterns, and important facts across documents."
+    "게임 개발 지식 분석가. 문서 분석 결과를 종합해 질문에 필요한 핵심 인사이트와 컨텍스트를 구성합니다. "
+    "문서 간 연결고리·패턴·중요 사실을 적극 도출하세요."
 )
 
 
@@ -120,15 +144,15 @@ def _analyze_doc(
     lock: threading.Lock,
     log_fn: Callable[[str], None] | None = None,
 ) -> None:
-    """Sub-agent: analyze a single document against the query."""
+    """서브 에이전트: 단일 문서를 질문 기준으로 분석."""
     title = doc.get("title", "")
     body = doc.get("body", "")[:1400]
 
     user_prompt = (
         f"Q: {query}\n"
-        f"Title: {title} | Date: {doc.get('date', '')} | Tags: {', '.join(doc.get('tags') or [])}\n"
-        f"Content:\n{body}\n\n"
-        'JSON: {"score":0~10, "summary":"key summary 2-3 lines", "key_points":["","",""]}'
+        f"제목: {title} | 날짜: {doc.get('date', '')} | 태그: {', '.join(doc.get('tags') or [])}\n"
+        f"내용:\n{body}\n\n"
+        'JSON: {"score":0~10, "summary":"핵심 요약 2-3줄", "key_points":["","",""]}'
     )
 
     score = 0.0
@@ -139,12 +163,12 @@ def _analyze_doc(
     for attempt in range(_MAX_RETRIES + 1):
         try:
             raw = client.complete(_SUB_AGENT_SYSTEM, user_prompt, max_tokens=400)
-            # Remove markdown code blocks
+            # 마크다운 코드블록 제거
             if "```" in raw:
                 parts = raw.split("```")
                 if len(parts) > 1:
                     raw = parts[1].lstrip("json").strip()
-            # Extract JSON object only
+            # JSON 객체만 추출
             start = raw.find("{")
             end = raw.rfind("}") + 1
             if start >= 0 and end > start:
@@ -153,29 +177,29 @@ def _analyze_doc(
             score = float(data.get("score", 0))
             summary = data.get("summary", "")
             key_points = data.get("key_points", [])
-            break  # Success
+            break  # 성공
         except json.JSONDecodeError as e:
-            # JSON parse failure — no point retrying, fall back immediately
+            # JSON 파싱 실패 — 재시도 의미 없음, 즉시 폴백
             if log_fn:
-                log_fn(f"[Sub-agent #{idx}] JSON parse failed: {e}")
-            logger.warning("[Sub-agent #%d] JSON parse failed (attempt %d): %s", idx, attempt + 1, e)
+                log_fn(f"[서브에이전트 #{idx}] JSON 파싱 실패: {e}")
+            logger.warning("[서브에이전트 #%d] JSON 파싱 실패 (시도 %d): %s", idx, attempt + 1, e)
             break
         except (ConnectionError, TimeoutError, OSError) as e:
-            # Network/IO error — retry
-            logger.warning("[Sub-agent #%d] Network error (attempt %d/%d): %s", idx, attempt + 1, _MAX_RETRIES + 1, e)
+            # 네트워크/IO 오류 — 재시도
+            logger.warning("[서브에이전트 #%d] 네트워크 오류 (시도 %d/%d): %s", idx, attempt + 1, _MAX_RETRIES + 1, e)
             if attempt < _MAX_RETRIES:
-                time.sleep(2 ** attempt)  # Exponential backoff: 1s, 2s
+                time.sleep(2 ** attempt)  # 지수 백오프: 1초, 2초
                 continue
             if log_fn:
-                log_fn(f"[Sub-agent #{idx}] Retries exceeded: {e}")
+                log_fn(f"[서브에이전트 #{idx}] 재시도 초과: {e}")
             break
         except Exception as e:
-            logger.exception("[Sub-agent #%d] Unexpected error: %s", idx, e)
+            logger.exception("[서브에이전트 #%d] 예상치 못한 오류: %s", idx, e)
             if log_fn:
-                log_fn(f"[Sub-agent #{idx}] Error: {e}")
+                log_fn(f"[서브에이전트 #{idx}] 오류: {e}")
             break
 
-    # Score-based fallback if no valid result
+    # 정상 결과가 없으면 점수 기반 폴백
     if not summary:
         raw_score = doc.get("score", 0)
         score = min(float(raw_score) * 0.8, 7.0) if raw_score else 0.0
@@ -196,31 +220,33 @@ def run_sub_agents(
     client: ClaudeClient,
     query: str,
     docs: list[RagResult],
-    n_agents: int = 10,
+    n_agents: int = 6,
     log_fn: Callable[[str], None] | None = None,
 ) -> list[SubAgentResult]:
     """
-    Run parallel sub-agents on the top n_agents documents from docs.
-    Skip already-analyzed documents if checkpoints exist.
-    Return results sorted by score in descending order.
+    docs 중 상위 n_agents개에 대해 병렬 서브 에이전트 실행.
+    체크포인트가 있으면 이미 분석된 문서는 스킵.
+    결과를 score 내림차순으로 정렬해 반환.
     """
     target = docs[:n_agents]
     stems = [d.get("stem", "") for d in target]
     ck_key = _make_checkpoint_key(query, stems)
 
-    # Restore checkpoint — load already-analyzed document indices
+    # 체크포인트 복원 — 문서 id 기준 (위치 인덱스는 재정렬에 취약)
     cached = _load_checkpoint(ck_key)
-    cached_by_idx = {c["idx"]: c for c in cached}
-    if cached_by_idx and log_fn:
-        log_fn(f"[Sub-agent] Checkpoint restored: skipping {len(cached_by_idx)}/{len(target)}")
+    cached_by_key = {c["doc_key"]: c for c in cached if c.get("doc_key")}
+    if cached_by_key and log_fn:
+        log_fn(f"[서브에이전트] 체크포인트 복원: {len(cached_by_key)}/{len(target)}개 스킵")
 
     results: list[dict] = []
     lock = threading.Lock()
-    threads = []
+    threads: list[tuple[threading.Thread, int, RagResult]] = []
 
     for i, doc in enumerate(target):
-        if i in cached_by_idx:
-            entry = dict(cached_by_idx[i])
+        hit = cached_by_key.get(_doc_key(doc))
+        if hit:
+            entry = dict(hit)
+            entry["idx"] = i
             entry["doc"] = doc
             with lock:
                 results.append(entry)
@@ -230,36 +256,68 @@ def run_sub_agents(
             args=(client, query, doc, i, results, lock, log_fn),
             daemon=True,
         )
-        threads.append(t)
+        threads.append((t, i, doc))
         t.start()
 
-    for t in threads:
-        t.join(timeout=35)
+    # 스레드마다 35초를 새로 주면 전체 대기가 스레드 수만큼 늘어난다 → 전체 데드라인
+    deadline = time.time() + _SUB_AGENT_TIMEOUT
+    for t, _i, _doc in threads:
+        t.join(timeout=max(deadline - time.time(), 0.0))
 
-    _save_checkpoint(ck_key, results)
+    # 락 안에서 스냅샷 — 데드라인을 넘긴 스레드가 뒤늦게 append 하는 도중
+    # 정렬하면 리스트가 깨진다
+    with lock:
+        collected = list(results)
+
+    # 실제로 분석된 결과만 체크포인트에 남긴다 (시간 초과 폴백을 캐시하면
+    # 다음 실행에서도 저품질 요약이 그대로 복원된다)
+    _save_checkpoint(ck_key, collected)
     _clear_stale_checkpoints()
 
-    results.sort(key=lambda x: -x["score"])
-    return results
+    # 시간 초과로 결과가 없는 문서는 검색 점수 기반 폴백으로 채운다 (유실 방지)
+    done_keys = {_doc_key(a.get("doc") or {}) for a in collected}
+    timed_out = 0
+    for t, i, doc in threads:
+        if not t.is_alive():
+            continue
+        if _doc_key(doc) in done_keys:
+            continue
+        timed_out += 1
+        raw_score = doc.get("score", 0)
+        body = doc.get("body", "")
+        collected.append({
+            "idx": i,
+            "doc": doc,
+            "score": min(float(raw_score) * 0.8, 7.0) if raw_score else 0.0,
+            "summary": body[:150] + ("…" if len(body) > 150 else ""),
+            "key_points": [],
+        })
+    if timed_out:
+        logger.warning("[서브에이전트] %d개 시간 초과 → 점수 기반 폴백", timed_out)
+        if log_fn:
+            log_fn(f"[서브에이전트] {timed_out}개 시간 초과 → 검색 점수 폴백 사용")
+
+    collected.sort(key=lambda x: -x["score"])
+    return collected
 
 
 def build_multi_agent_context(
     client: ClaudeClient,
     query: str,
     docs: list[RagResult],
-    n_agents: int = 10,
+    n_agents: int = 6,
     max_chars: int = 10000,
     log_fn: Callable[[str], None] | None = None,
 ) -> str:
     """
-    Run n_agents sub-agents in parallel → main agent reviews the highest-scoring document.
-    Returns the final RAG context string.
+    서브 에이전트 n_agents개 병렬 실행 → 메인 에이전트가 최고 점수 문서 재검토.
+    최종 RAG 컨텍스트 문자열 반환.
     """
     if not docs:
         return ""
 
     if log_fn:
-        log_fn(f"[Sub-agent] Starting parallel analysis of {min(len(docs), n_agents)} documents...")
+        log_fn(f"[서브에이전트] {min(len(docs), n_agents)}개 병렬 분석 시작...")
 
     analyses = run_sub_agents(client, query, docs, n_agents, log_fn=log_fn)
     if not analyses:
@@ -270,45 +328,45 @@ def build_multi_agent_context(
 
     if log_fn:
         log_fn(
-            f"[Sub-agent] Complete. Best score: {best['score']:.1f}/10 "
+            f"[서브에이전트] 완료. 최고 점수: {best['score']:.1f}/10 "
             f"— {best_doc.get('title', '')}"
         )
-        log_fn("[Main agent] Reviewing highest-scoring document...")
+        log_fn("[메인에이전트] 최고 점수 문서 재검토 중...")
 
-    # Full summary list
+    # 전체 요약 목록
     all_summaries = "\n".join(
         f"  [{a['score']:.1f}/10] {a['doc'].get('title', '')}: {a['summary']}"
         for a in analyses
     )
 
-    # Main agent: review full content of highest-scoring document + all summaries to build context
+    # 메인 에이전트: 최고 점수 문서 전체 내용 + 모든 요약을 보고 컨텍스트 구성
     main_user = (
         f"Q: {query}\n\n"
-        f"Analysis results ({len(analyses)} documents):\n"
+        f"분석 결과 ({len(analyses)}개 문서):\n"
         f"{all_summaries}\n\n"
-        f"━ Most relevant document (relevance {best['score']:.1f}/10) ━\n"
-        f"Title: {best_doc.get('title', '')} | Date: {best_doc.get('date', '')}\n"
+        f"━ 최고 관련 문서 (관련도 {best['score']:.1f}/10) ━\n"
+        f"제목: {best_doc.get('title', '')} | 날짜: {best_doc.get('date', '')}\n"
         f"{best_doc.get('body', '')[:3000]}\n\n"
-        "Based on the above:\n"
-        "1. Extract key facts and figures directly related to the question\n"
-        "2. Identify important connections between documents\n"
-        "3. Describe notable insights and patterns"
+        "위 결과 기반으로:\n"
+        "1. 질문에 직접 관련된 핵심 사실·수치 추출\n"
+        "2. 문서 간 중요 연결 관계 파악\n"
+        "3. 주목할 인사이트·패턴 설명"
     )
 
     try:
         context_review = client.complete(_MAIN_REVIEW_SYSTEM, main_user, max_tokens=1000)
     except Exception as e:
         if log_fn:
-            log_fn(f"[Main agent] Error: {e}")
+            log_fn(f"[메인에이전트] 오류: {e}")
         context_review = f"{best_doc.get('title', '')}: {best['summary']}"
 
-    # Final context assembly
+    # 최종 컨텍스트 조합
     parts = [
-        f"## Multi-Agent Analysis Results ({len(analyses)} documents reviewed)\n\n",
-        f"### Main Agent Comprehensive Analysis\n",
+        f"## 다중 에이전트 분석 결과 ({len(analyses)}개 문서 검토)\n\n",
+        f"### 메인 에이전트 종합 분석\n",
         context_review,
-        f"\n\n### Sub-Agent Evaluation Summary\n{all_summaries}\n\n",
-        "## Reference Document Details\n",
+        f"\n\n### 서브 에이전트 평가 요약\n{all_summaries}\n\n",
+        "## 참고 문서 상세\n",
     ]
 
     total = sum(len(p) for p in parts)

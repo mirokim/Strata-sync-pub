@@ -6,7 +6,7 @@ export type SpeakerId =
   | 'plan_director'
   | 'level_director'
   | 'prog_director'
-  | 'unknown'   // Phase 6: fallback when speaker is not specified in vault files
+  | 'unknown'   // Phase 6: vault 파일에서 speaker 미지정 시 폴백
 
 /** The 5 actual director personas (excludes the 'unknown' fallback). */
 export type DirectorId = Exclude<SpeakerId, 'unknown'>
@@ -113,10 +113,10 @@ export interface ChatMessage {
 
 /** A raw file read from the filesystem vault */
 export interface VaultFile {
-  relativePath: string   // relative to vault root (e.g., "subdir/note.md")
+  relativePath: string   // 볼트 루트 기준 (예: "subdir/note.md")
   absolutePath: string
   content: string        // UTF-8
-  mtime?: number         // file modification timestamp (ms)
+  mtime?: number         // 파일 수정 타임스탬프 (ms)
 }
 
 /**
@@ -161,8 +161,10 @@ export interface LoadedDocument {
    * - skip: exclude from RAG traversal entirely (500+ outbound links, link-only hubs)
    */
   graphWeight?: 'normal' | 'low' | 'skip'
-  /** Multi-vault: vault label this document belongs to (for Slack RAG context source display) */
+  /** 멀티볼트: 이 문서가 속한 볼트 라벨 (Slack RAG 컨텍스트 출처 표시용) */
   vaultLabel?: string
+  /** Raw frontmatter key-value pairs (for fields not mapped to typed properties, e.g. ref_game, ref_collected) */
+  frontmatter?: Record<string, unknown>
 }
 
 // ── Backend / RAG types (Phase 1-3) ──────────────────────────────────────────
@@ -249,9 +251,6 @@ export interface DebateCallbacks {
 
 export type ThemeId = 'dark' | 'oled' | 'white'
 export type GraphMode = '3d' | '2d'
-export type CenterTab = 'graph' | 'document' | 'editor' | 'settings'
+export type CenterTab = 'graph' | 'document' | 'editor' | 'settings' | 'slack-logs'
 export type AppState = 'launch' | 'main'
 export type NodeColorMode = 'document' | 'auto' | 'speaker' | 'folder' | 'tag' | 'topic'
-
-/** Alias for LoadedDocument — used by mock data and sandbox-derived components */
-export type MockDocument = LoadedDocument

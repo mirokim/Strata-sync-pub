@@ -1,20 +1,20 @@
 /**
  * docsCache.ts — IndexedDB persistence for parsed vault documents.
  *
- * Skips IPC file loading + gray-matter parsing entirely when the vault hasn't changed.
- * Also caches folders + imageRegistry to skip the loadFiles IPC on subsequent starts.
+ * 볼트가 바뀌지 않았으면 IPC 파일 로드 + gray-matter 파싱 전체를 건너뜁니다.
+ * folders + imageRegistry도 함께 캐시하여 두 번째 시작 시 loadFiles IPC 자체를 건너뜁니다.
  *
  * Cache key  : vaultPath
- * Invalidation: mtime-based fingerprint mismatch = cache miss
+ * Invalidation: mtime 기반 fingerprint가 달라지면 miss
  */
 
 import type { LoadedDocument } from '@/types'
 import { logger } from './logger'
 
-const DB_NAME = 'strata-sync-docs-cache'
+const DB_NAME = 'rembrandt-docs-cache'
 const STORE   = 'docs'
 const DB_VERSION = 1
-const SCHEMA_VERSION = 2  // v2: includes folders + imageRegistry
+const SCHEMA_VERSION = 2  // v2: folders + imageRegistry 포함
 
 type ImageRegistry = Record<string, { relativePath: string; absolutePath: string }>
 
@@ -53,14 +53,14 @@ function openDB(): Promise<IDBDatabase> {
 
 // ── Path normalization ─────────────────────────────────────────────────────
 
-/** Normalize path separators + remove trailing slash for consistent IDB keys */
+/** 경로 구분자 통일 + 트레일 슬래시 제거 → IDB 키 일관성 확보 */
 function normalizePath(p: string): string {
   return p.replace(/\\/g, '/').replace(/\/$/, '')
 }
 
 // ── Fingerprint ────────────────────────────────────────────────────────────
 
-/** mtime-based fingerprint: detects file additions, deletions, and modifications */
+/** mtime 기반 지문: 파일 추가/삭제/수정 감지 */
 export function buildDocsFingerprint(
   meta: { relativePath: string; mtime: number }[]
 ): string {
@@ -89,10 +89,10 @@ export async function loadDocsCache(
     if (cached.schemaVersion !== SCHEMA_VERSION) return null
     if (cached.fingerprint   !== fingerprint)     return null
     if (!Array.isArray(cached.docs))              return null
-    logger.debug(`[docsCache] Cache hit (${cached.docs.length} docs, skipping loadFiles)`)
+    logger.debug(`[docsCache] 캐시 히트 (${cached.docs.length}개 문서, loadFiles 건너뜀)`)
     return { docs: cached.docs, folders: cached.folders ?? [], imageRegistry: cached.imageRegistry ?? null }
   } catch (err) {
-    logger.warn('[docsCache] Cache read failed:', err)
+    logger.warn('[docsCache] 캐시 읽기 실패:', err)
     return null
   }
 }
@@ -113,8 +113,8 @@ export async function saveDocsCache(
       req.onsuccess = () => res()
       req.onerror   = () => rej(req.error)
     })
-    logger.debug(`[docsCache] Cache saved (${docs.length} docs)`)
+    logger.debug(`[docsCache] 캐시 저장 완료 (${docs.length}개 문서)`)
   } catch (err) {
-    logger.warn('[docsCache] Cache save failed:', err)
+    logger.warn('[docsCache] 캐시 저장 실패:', err)
   }
 }

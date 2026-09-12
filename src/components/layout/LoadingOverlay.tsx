@@ -1,70 +1,41 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useGraphStore } from '@/stores/graphStore'
-import { useSettingsStore, type ParagraphRenderQuality } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 
 const SATELLITES = [0, 60, 120, 180, 240, 300].map((deg, i) => {
   const rad = (deg * Math.PI) / 180
   return { x: Math.round(Math.cos(rad) * 22), y: Math.round(Math.sin(rad) * 22), delay: i * 0.28 }
 })
 
-const QUALITY_OPTIONS: { value: ParagraphRenderQuality; label: string; desc: string }[] = [
-  { value: 'high',   label: 'High',   desc: 'Markdown + WikiLink rendering' },
-  { value: 'medium', label: 'Medium', desc: 'Markdown only rendering' },
-  { value: 'fast',   label: 'Fast',   desc: 'Plain text (fastest)' },
-]
-
-function shouldShowPerfSelector(fileCount: number | null, quality: ParagraphRenderQuality): boolean {
-  if (fileCount === null) return false
-  if (fileCount >= 100) return true
-  if (quality === 'high' && fileCount >= 50) return true
-  return false
-}
-
 export default function LoadingOverlay() {
   const {
     isLoading, vaultPath, vaultReady, loadingProgress, loadingPhase,
-    pendingFileCount, vaults, activeVaultId, vaultDocsCache, bgLoadingInfo,
+    vaults, activeVaultId, vaultDocsCache, bgLoadingInfo,
   } = useVaultStore()
   const graphLayoutReady = useGraphStore(s => s.graphLayoutReady)
-  const { paragraphRenderQuality, setParagraphRenderQuality } = useSettingsStore()
+  const { setParagraphRenderQuality } = useSettingsStore()
 
+  // 백그라운드 로딩(bgLoadingInfo)은 오버레이를 블로킹하지 않음 — UI 클릭 허용
   const shouldShow = isLoading
     || (vaultPath !== null && !vaultReady)
-    || (vaultReady && vaultPath !== null && !graphLayoutReady)
-    || bgLoadingInfo !== null
+  const isBgOnly = !shouldShow && bgLoadingInfo !== null
 
-  const [awaitingChoice, setAwaitingChoice] = useState(false)
-  const selectorShownRef = useRef(false)
-  const frozenFileCountRef = useRef<number | null>(null)
-
-  if (shouldShowPerfSelector(pendingFileCount, paragraphRenderQuality)) {
-    selectorShownRef.current = true
-    if (pendingFileCount !== null) frozenFileCountRef.current = pendingFileCount
-  }
-
+  // Auto-select 'fast' quality on first vault load only — do not clobber user preference on subsequent loads
+  const hasAutoSetQuality = useRef(false)
   useEffect(() => {
-    if (!shouldShow && selectorShownRef.current) {
-      setAwaitingChoice(true)
+    if (!shouldShow && !hasAutoSetQuality.current) {
+      hasAutoSetQuality.current = true
+      setParagraphRenderQuality('fast')
     }
-  }, [shouldShow])
+  }, [shouldShow, setParagraphRenderQuality])
 
-  const handleStart = useCallback(() => {
-    selectorShownRef.current = false
-    frozenFileCountRef.current = null
-    setAwaitingChoice(false)
-  }, [])
-
-  const effectiveShouldShow = shouldShow || awaitingChoice
-  const showSelector = awaitingChoice || shouldShowPerfSelector(pendingFileCount, paragraphRenderQuality)
-  const displayFileCount = frozenFileCountRef.current ?? pendingFileCount
-
-  const [visible, setVisible] = useState(effectiveShouldShow)
+  const [visible, setVisible] = useState(shouldShow)
   const [fading, setFading] = useState(false)
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    if (effectiveShouldShow) {
+    if (shouldShow) {
       if (fadeTimer.current) clearTimeout(fadeTimer.current)
       setFading(false)
       setVisible(true)
@@ -76,7 +47,7 @@ export default function LoadingOverlay() {
       }, 700)
     }
     return () => { if (fadeTimer.current) clearTimeout(fadeTimer.current) }
-  }, [effectiveShouldShow, visible])
+  }, [shouldShow, visible])
 
   // Indeterminate bar pulse (for background loading)
   const [pulseOpacity, setPulseOpacity] = useState(0.4)
@@ -98,6 +69,28 @@ export default function LoadingOverlay() {
     }
     return () => { if (pulseRef.current) clearInterval(pulseRef.current) }
   }, [bgLoadingInfo, isLoading])
+
+  // 백그라운드 인덱싱만 진행 중 — 하단 미니 바만 표시 (UI 블로킹 없음)
+  if (!visible && isBgOnly) {
+    return (
+      <div style={{
+        position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
+        padding: '4px 16px', display: 'flex', alignItems: 'center', gap: 8,
+        background: 'var(--color-bg-surface)', borderTop: '1px solid var(--color-border)',
+        pointerEvents: 'none',
+      }}>
+        <div style={{ height: 2, flex: 1, background: 'var(--color-border)', borderRadius: 1, overflow: 'hidden' }}>
+          <div style={{
+            height: '100%', background: 'var(--color-accent)', width: '50%', borderRadius: 1,
+            opacity: pulseOpacity, transition: 'opacity 0.05s',
+          }} />
+        </div>
+        <span style={{ fontSize: 10, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
+          {bgLoadingInfo!.done + 1}/{bgLoadingInfo!.total} 인덱싱
+        </span>
+      </div>
+    )
+  }
 
   if (!visible) return null
 
@@ -157,7 +150,7 @@ export default function LoadingOverlay() {
           color: 'var(--color-text-primary)', fontSize: 15, fontWeight: 700,
           letterSpacing: '0.05em', opacity: 0.9, marginBottom: 2,
         }}>
-          Strata Sync
+          Sandbox Map
         </div>
 
         {/* Vault list (multi-vault only) */}
@@ -176,7 +169,7 @@ export default function LoadingOverlay() {
                 fontSize: 10, fontWeight: 700, letterSpacing: '0.07em',
                 textTransform: 'uppercase', color: 'var(--color-text-muted)',
               }}>
-                Vault Ready Status
+                볼트 준비 현황
               </span>
               <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
                 {readyCount} / {vaultEntries.length}
@@ -227,9 +220,9 @@ export default function LoadingOverlay() {
                   </span>
                   <span style={{ fontSize: 11, color: 'var(--color-text-muted)', flexShrink: 0 }}>
                     {isCurrentlyLoading ? `${loadingProgress}%`
-                      : isBgLoadingThis ? 'Indexing...'
-                      : isDone ? `${docCount} docs`
-                      : 'Waiting'}
+                      : isBgLoadingThis ? '인덱싱 중...'
+                      : isDone ? `${docCount}개`
+                      : '대기 중'}
                   </span>
                 </div>
               )
@@ -267,52 +260,12 @@ export default function LoadingOverlay() {
         }}>
           <span>
             {isBgLoading
-              ? `Background indexing... (${bgLoadingInfo!.done + 1}/${bgLoadingInfo!.total})`
-              : (loadingPhase || 'Loading vault...')}
+              ? `백그라운드 인덱싱 중... (${bgLoadingInfo!.done + 1}/${bgLoadingInfo!.total})`
+              : (loadingPhase || '볼트 로딩 중...')}
           </span>
           {!isBgLoading && loadingProgress > 0 && <span>{loadingProgress}%</span>}
         </div>
 
-        {/* Quality selector */}
-        {showSelector && (
-          <div style={{
-            marginTop: 4, padding: '10px 12px',
-            background: 'var(--color-bg-secondary)',
-            border: '1px solid var(--color-border)', borderRadius: 4,
-          }}>
-            <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginBottom: 8, letterSpacing: '0.05em' }}>
-              {displayFileCount} files detected — select rendering quality
-            </div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              {QUALITY_OPTIONS.map(({ value, label, desc }) => {
-                const isActive = paragraphRenderQuality === value
-                return (
-                  <button key={value} onClick={() => setParagraphRenderQuality(value)} title={desc}
-                    style={{
-                      flex: 1, padding: '5px 4px', borderRadius: 3,
-                      border: isActive ? '1px solid var(--color-accent, #60a5fa)' : '1px solid var(--color-border)',
-                      background: isActive ? 'rgba(96,165,250,0.12)' : 'var(--color-bg-surface)',
-                      color: isActive ? 'var(--color-accent, #60a5fa)' : 'var(--color-text-secondary)',
-                      fontSize: 11, fontWeight: isActive ? 600 : 400, cursor: 'pointer',
-                    }}>
-                    {label}
-                  </button>
-                )
-              })}
-            </div>
-            {awaitingChoice && (
-              <button onClick={handleStart} style={{
-                marginTop: 8, width: '100%', padding: '6px 0', borderRadius: 3,
-                border: '1px solid var(--color-accent, #60a5fa)',
-                background: 'rgba(96,165,250,0.15)',
-                color: 'var(--color-accent, #60a5fa)', fontSize: 12, fontWeight: 600,
-                cursor: 'pointer', letterSpacing: '0.04em',
-              }}>
-                Start
-              </button>
-            )}
-          </div>
-        )}
       </div>
 
       {/* CSS for spin animation */}

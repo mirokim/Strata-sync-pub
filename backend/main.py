@@ -18,8 +18,8 @@ from backend.routes.health import router as health_router
 from backend.routes.documents import router as documents_router
 
 app = FastAPI(
-    title="Strata Sync Backend",
-    description="FastAPI + ChromaDB + LangChain RAG server for Strata Sync",
+    title="Rembrandt MAP Backend",
+    description="FastAPI + ChromaDB + LangChain RAG server for Rembrandt MAP",
     version="0.1.0",
 )
 

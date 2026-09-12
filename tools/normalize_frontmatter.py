@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-normalize_frontmatter.py — §6 Frontmatter normalization
-- Empty tags: [] → auto-classify based on filename/body keywords
-- Auto-add chief tag (§11.3.1)
-- Re-determine type (for clearly misclassified cases)
-- Auto-insert ## Overview heading for files without one (§10.1)
+normalize_frontmatter.py — §6 프론트매터 통일
+- 빈 tags: [] → 파일명/본문 키워드 기반 자동 분류
+- chief 태그 자동 추가 (§11.3.1)
+- type 재판별 (명백히 잘못 분류된 경우)
+- ## 개요 헤딩 없는 파일에 자동 삽입 (§10.1)
 
-Usage:
+사용법:
   python normalize_frontmatter.py <active_dir>
 """
 
@@ -15,42 +15,42 @@ import sys
 import argparse
 from pathlib import Path
 
-# ── Domain tag rules (filename/title keywords → tags) ────────────────────
+# ── 도메인 태그 규칙 (파일명/제목 키워드 → 태그) ─────────────────────────
 DOMAIN_RULES = [
-    # chief/feedback
+    # chief/피드백
     (['이사장', '피드백', '정례보고', '정례 보고', '회장님'],          ['chief', 'meeting']),
-    # Meeting notes
+    # 회의록
     (['회의록', '회의', 'meeting', '미팅'],                             ['meeting']),
-    # Characters
-    (['캐릭터', 'character', '캐릭터B', '캐릭터C', '캐릭터D', '캐릭터E',
-      '캐릭터C', '캐릭터D', '캐릭터E', '캐릭터F', '캐릭터G'],               ['character']),
-    # Tech/Server
+    # 캐릭터
+    (['캐릭터', 'character', '마티니', '월영', '마투아', '미하일',
+      '타미리스', '다이잔', '스칼렛', '알탄', '보르후'],               ['character']),
+    # 기술/서버
     (['서버', 'server', '데디', 'dedi', '로비', 'lobby',
       '네트워크', 'network'],                                           ['tech', 'server']),
-    # Design/System
+    # 기획/시스템
     (['기획', 'pvp', '점령전', '난투전', 'br', '공성전',
       '매칭', 'matching', '전투', 'combat'],                            ['gameplay']),
-    # Art/Graphics
+    # 아트/그래픽
     (['아트', 'art', 'fx', '이펙트', 'effect', '애니메이션', 'anim',
       '모션', 'motion', 'ui', 'ux', '배경', 'background'],             ['art']),
-    # Spec/Architecture
+    # 스펙/설계
     (['스펙', 'spec', '설계', '구조', 'architecture',
       '시스템 설계', '기술 스펙'],                                       ['spec']),
-    # Guide/Onboarding
+    # 가이드/온보딩
     (['가이드', 'guide', '매뉴얼', 'manual', '온보딩', '튜토리얼',
       '사용법', '설치', 'tutorial', 'how to'],                          ['guide']),
-    # World/Scenario
+    # 세계관/시나리오
     (['세계관', '시나리오', 'scenario', '스토리', 'story',
       '설정', '종족', 'npc', '퀘스트', 'quest'],                        ['world', 'scenario']),
-    # Sound
+    # 사운드
     (['사운드', 'sound', '음악', 'music', '효과음'],                    ['sound']),
-    # Data/Tables
+    # 데이터/테이블
     (['데이터테이블', 'datatable', '데이터 테이블', '블록 목록',
       '오브젝트 목록', 'data table'],                                   ['data']),
-    # Security/Build/Infrastructure
+    # 보안/빌드/인프라
     (['빌드', 'build', '배포', 'deploy', '인프라', 'infra',
       '치트', 'cheat'],                                                 ['tech']),
-    # Reports/Regular meetings
+    # 보고서/정례
     (['보고', '보고서', 'report', '정례'],                              ['meeting', 'report']),
 ]
 
@@ -65,7 +65,7 @@ TYPE_RULES = {
 
 
 def parse_frontmatter(content: str) -> tuple[dict, str, str]:
-    """Parse frontmatter. Returns (fields_dict, fm_raw, body)."""
+    """frontmatter 파싱. (fields_dict, fm_raw, body) 반환."""
     m = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
     if not m:
         return {}, '', content
@@ -80,7 +80,7 @@ def parse_frontmatter(content: str) -> tuple[dict, str, str]:
 
 
 def infer_tags(filename: str, title: str, body: str) -> list[str]:
-    """Infer tags from filename + title + body keywords."""
+    """파일명+제목+본문 키워드로 태그 추론."""
     text = (filename + ' ' + title + ' ' + body[:500]).lower()
     matched_tags = set()
 
@@ -88,13 +88,13 @@ def infer_tags(filename: str, title: str, body: str) -> list[str]:
         for kw in keywords:
             if kw.lower() in text:
                 matched_tags.update(tags)
-                break  # Found first match in this rule, move to next rule
+                break  # 이 규칙에서 첫 매치 찾으면 다음 규칙으로
 
     return sorted(matched_tags) if matched_tags else []
 
 
 def infer_type(filename: str, title: str, current_type: str) -> str:
-    """Infer type from filename/title. Only re-determine if spec is the default."""
+    """파일명/제목으로 type 추론. spec이 default인 경우만 재판별."""
     if current_type != 'spec':
         return current_type
     text = (filename + ' ' + title).lower()
@@ -106,12 +106,12 @@ def infer_type(filename: str, title: str, current_type: str) -> str:
 
 
 def ensure_section_heading(body: str) -> str:
-    """Insert ## Overview if no ## heading exists in body (§10.1)."""
+    """본문에 ## 헤딩이 없으면 ## 개요 삽입 (§10.1)."""
     if '## ' in body:
         return body
-    # Find first paragraph and wrap with ## Overview
+    # 첫 문단 찾아 ## 개요로 감쌈
     lines = body.strip().split('\n')
-    # Insert ## Overview above first non-empty line after H1
+    # H1 이후 첫 비어있지 않은 줄 위에 ## 개요 삽입
     insert_at = 0
     for i, line in enumerate(lines):
         if line.startswith('# '):
@@ -128,7 +128,7 @@ def ensure_section_heading(body: str) -> str:
 
 
 def process_file(md_path: Path) -> dict:
-    """Normalize a single MD file."""
+    """단일 MD 파일 정규화."""
     try:
         content = md_path.read_text(encoding='utf-8', errors='replace')
     except Exception as e:
@@ -142,13 +142,13 @@ def process_file(md_path: Path) -> dict:
     title = fields.get('title', '').strip('"\'')
     changed = False
 
-    # ① Supplement tags
+    # ① tags 보완
     current_tags_raw = fields.get('tags', '[]')
     current_tags = re.findall(r'[\w가-힣]+', current_tags_raw)
 
     if not current_tags or current_tags == ['']:
         new_tags = infer_tags(fname, title, body)
-        # Check chief keywords
+        # chief 키워드 체크
         if any(kw in fname + ' ' + title for kw in CHIEF_KEYWORDS):
             if 'chief' not in new_tags:
                 new_tags.insert(0, 'chief')
@@ -157,7 +157,7 @@ def process_file(md_path: Path) -> dict:
             fm_raw = re.sub(r'tags:.*', f'tags: {new_tags_yaml}', fm_raw)
             changed = True
     else:
-        # Check if chief tag should be added
+        # chief 태그 추가 확인
         if any(kw in fname + ' ' + title for kw in CHIEF_KEYWORDS):
             if 'chief' not in current_tags:
                 new_tags = ['chief'] + current_tags
@@ -165,14 +165,14 @@ def process_file(md_path: Path) -> dict:
                 fm_raw = re.sub(r'tags:.*', f'tags: {new_tags_yaml}', fm_raw)
                 changed = True
 
-    # ② Re-determine type
+    # ② type 재판별
     current_type = fields.get('type', 'spec').strip()
     new_type = infer_type(fname, title, current_type)
     if new_type != current_type:
         fm_raw = re.sub(r'^type:.*$', f'type: {new_type}', fm_raw, flags=re.MULTILINE)
         changed = True
 
-    # ③ Insert ## Overview heading if missing (§10.1)
+    # ③ ## 개요 헤딩 없으면 삽입 (§10.1)
     heading_added = False
     if '## ' not in body:
         body = ensure_section_heading(body)
@@ -191,13 +191,13 @@ def process_file(md_path: Path) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Frontmatter normalization + auto heading insertion (§6, §10.1)')
-    parser.add_argument('active_dir', help='active/ folder path')
+    parser = argparse.ArgumentParser(description='프론트매터 정규화 + 헤딩 자동 삽입 (§6, §10.1)')
+    parser.add_argument('active_dir', help='active/ 폴더 경로')
     args = parser.parse_args()
 
     active_dir = Path(args.active_dir)
     files = sorted(active_dir.glob('*.md'))
-    print(f'Processing {len(files)} files...')
+    print(f'{len(files)}개 파일 처리 시작...')
 
     changed_n, heading_n, error_n = 0, 0, 0
 
@@ -210,10 +210,10 @@ def main():
         if r.get('heading_added'):
             heading_n += 1
 
-    print(f'\n=== §6 Normalization Complete ===')
-    print(f'  Changed files:    {changed_n}')
-    print(f'  ## Overview added: {heading_n}')
-    print(f'  Errors:           {error_n}')
+    print(f'\n=== §6 정규화 완료 ===')
+    print(f'  변경된 파일:      {changed_n}개')
+    print(f'  ## 개요 추가:     {heading_n}개')
+    print(f'  오류:             {error_n}개')
 
 
 if __name__ == '__main__':

@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ChevronRight, ChevronDown, Folder } from 'lucide-react'
-import type { MockDocument, SpeakerId } from '@/types'
+import type { LoadedDocument, SpeakerId } from '@/types'
 import { SPEAKER_CONFIG } from '@/lib/speakerConfig'
 import FileTreeItem from './FileTreeItem'
 import type { ContextMenuState } from './ContextMenu'
 
 interface SpeakerGroupProps {
   speakerId: SpeakerId
-  docs: MockDocument[]
+  docs: LoadedDocument[]
   isOpenOverride?: boolean | null
   onContextMenu?: (state: ContextMenuState) => void
 }

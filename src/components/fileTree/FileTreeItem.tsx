@@ -1,4 +1,4 @@
-import type { MockDocument, LoadedDocument } from '@/types'
+import type { LoadedDocument } from '@/types'
 import { SPEAKER_CONFIG } from '@/lib/speakerConfig'
 import { useUIStore } from '@/stores/uiStore'
 import { cn } from '@/lib/utils'
@@ -6,7 +6,7 @@ import { FileText } from 'lucide-react'
 import type { ContextMenuState } from './ContextMenu'
 
 interface FileTreeItemProps {
-  doc: MockDocument
+  doc: LoadedDocument
   onContextMenu?: (state: ContextMenuState) => void
 }
 
@@ -22,7 +22,7 @@ export default function FileTreeItem({ doc, onContextMenu }: FileTreeItemProps) 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault()
     if (!onContextMenu) return
-    const absolutePath = (doc as LoadedDocument).absolutePath ?? ''
+    const absolutePath = doc.absolutePath ?? ''
     onContextMenu({
       docId: doc.id,
       filename: doc.filename,

@@ -1,5 +1,5 @@
 """
-index_generator.py — Generate index_YYYYMMDD.md (gen_index.py integration)
+index_generator.py — index_YYYYMMDD.md 생성 (gen_index.py 통합)
 """
 import os
 import re
@@ -18,7 +18,7 @@ TYPE_ICON = {
 
 
 def generate_index(active_dir: str, log_fn=print) -> str | None:
-    """Generate index_YYYYMMDD.md in the active_YYYYMMDD/ folder, return path"""
+    """active_YYYYMMDD/ 폴더에 index_YYYYMMDD.md 생성, 경로 반환"""
     folder = Path(active_dir)
     if not folder.exists():
         return None
@@ -69,9 +69,9 @@ def generate_index(active_dir: str, log_fn=print) -> str | None:
         "tags: []",
         "---",
         "",
-        "# Document Index",
+        "# 문서 인덱스",
         "",
-        f"> Total {len(entries)} documents | Reverse date order",
+        f"> 총 {len(entries)}개 문서 | 날짜 역순",
         "",
     ]
 
@@ -89,5 +89,5 @@ def generate_index(active_dir: str, log_fn=print) -> str | None:
     stamp = m.group(1) if m else datetime.now().strftime("%Y%m%d")
     out_path = folder / f"index_{stamp}.md"
     out_path.write_text("\n".join(lines), encoding="utf-8")
-    log_fn(f"  index_{stamp}.md generated: {len(entries)} entries")
+    log_fn(f"  index_{stamp}.md 생성: {len(entries)}개 항목")
     return str(out_path)

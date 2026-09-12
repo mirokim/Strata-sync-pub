@@ -7,13 +7,15 @@
  */
 
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist } from 'zustand/middleware'
+import { electronStorage as electronStorageAdapter } from '@/lib/electronStorage'
 import type { LoadedDocument } from '@/types'
+import { invalidateGraphRAGCache } from '@/lib/graphRAG'
 
-/** Image file path registry: filename -> { relativePath, absolutePath } */
+/** 이미지 파일 경로 레지스트리: filename → { relativePath, absolutePath } */
 export type ImagePathRegistry = Record<string, { relativePath: string; absolutePath: string }>
 
-/** Registered vault entry */
+/** 등록된 볼트 항목 */
 export interface VaultEntry {
   path: string
   label: string
@@ -28,15 +30,15 @@ interface VaultState {
   vaultPath: string | null
   /** Runtime: parsed documents (not persisted) */
   loadedDocuments: LoadedDocument[] | null
-  /** Runtime: per-vault document cache — for Slack bot cross-vault search */
+  /** Runtime: 볼트별 문서 캐시 — Slack 봇 전체 볼트 검색용 */
   vaultDocsCache: Record<string, LoadedDocument[]>
-  /** Runtime: per-vault meta cache (imageRegistry + folders) */
+  /** Runtime: 볼트별 메타 캐시 (imageRegistry + folders) */
   vaultMetaCache: Record<string, { imageRegistry: ImagePathRegistry | null; folders: string[] }>
   /** Runtime: all known subfolder paths in the vault (relative to vault root) */
   vaultFolders: string[]
-  /** Runtime: image filename -> path lookup table (from vault load) */
+  /** Runtime: image filename → path lookup table (from vault load) */
   imagePathRegistry: ImagePathRegistry | null
-  /** Runtime: pre-indexed image data cache: filename -> base64 dataUrl */
+  /** Runtime: 사전 인덱싱된 이미지 데이터 캐시: filename → base64 dataUrl */
   imageDataCache: Record<string, string>
   /** Runtime: true while loading/parsing files */
   isLoading: boolean
@@ -50,19 +52,20 @@ interface VaultState {
   error: string | null
   /** Runtime: total MD file count detected at load start (null = not yet known) */
   pendingFileCount: number | null
-  /** Runtime: background vault indexing progress info */
+  /** Runtime: 백그라운드 볼트 인덱싱 진행 정보 */
   bgLoadingInfo: { label: string; done: number; total: number } | null
-  /** Runtime: last file change diff info */
+  /** Runtime: 마지막 파일 변경 diff 정보 */
   watchDiff: { filePath: string; added: number; removed: number; preview: string } | null
 
-  // Setters
+  // ── Setters ────────────────────────────────────────────────────────────────
   setVaultPath: (path: string | null) => void
   setLoadedDocuments: (docs: LoadedDocument[] | null) => void
-  /** Get all vault documents merged (for bot cross-vault search) */
+  /** Slack 봇용: 모든 볼트 문서를 병합해서 반환 */
   getAllVaultDocs: () => LoadedDocument[]
   setVaultFolders: (folders: string[]) => void
   setImagePathRegistry: (registry: ImagePathRegistry | null) => void
   addImageDataCache: (entries: Record<string, string>) => void
+  touchImageCache: (key: string) => void
   clearImageDataCache: () => void
   setIsLoading: (loading: boolean) => void
   setVaultReady: (ready: boolean) => void
@@ -71,21 +74,21 @@ interface VaultState {
   setPendingFileCount: (count: number | null) => void
   /** Clear vault path + documents + error */
   clearVault: () => void
-  /** Cache vault documents (for background pre-indexing) */
+  /** 볼트 문서를 캐시에 저장 (백그라운드 사전 인덱싱용) */
   cacheVaultDocs: (vaultId: string, docs: LoadedDocument[]) => void
-  /** Set background indexing progress info */
+  /** 백그라운드 인덱싱 진행 정보 설정 */
   setBgLoadingInfo: (info: { label: string; done: number; total: number } | null) => void
-  /** Set file change diff */
+  /** 파일 변경 diff 설정 */
   setWatchDiff: (diff: VaultState['watchDiff']) => void
 
-  // Multi-Vault
-  /** Register a new vault and return its ID. No automatic switch. */
+  // ── Multi-Vault ────────────────────────────────────────────────────────────
+  /** 새 볼트를 등록하고 ID를 반환합니다. 자동 전환 없음. */
   addVault: (path: string, label?: string) => string
-  /** Remove a vault. If it's the active vault, switch to another. */
+  /** 볼트를 제거합니다. 현재 활성 볼트라면 다른 볼트로 전환. */
   removeVault: (id: string) => void
-  /** Switch active vault and update vaultPath. */
+  /** 활성 볼트를 전환하고 vaultPath를 업데이트합니다. */
   switchVault: (id: string) => void
-  /** Change a vault's label. */
+  /** 볼트 라벨을 변경합니다. */
   updateVaultLabel: (id: string, label: string) => void
 }
 
@@ -96,6 +99,9 @@ function generateVaultId(): string {
 function labelFromPath(path: string): string {
   return path.split(/[/\\]/).filter(Boolean).pop() ?? path
 }
+
+/** LRU 접근 순서 추적 배열 — 배열 끝이 가장 최근 접근 */
+let _imageAccessOrder: string[] = []
 
 export const useVaultStore = create<VaultState>()(
   persist(
@@ -118,7 +124,12 @@ export const useVaultStore = create<VaultState>()(
       bgLoadingInfo: null,
       watchDiff: null,
 
-      setVaultPath: (vaultPath) => set((s) => {
+      setVaultPath: (vaultPath) => {
+        // Sync vault path to mcp-config.json
+        if (vaultPath) {
+          window.configAPI?.writeMcp({ vaultPath })
+        }
+        return set((s) => {
         // Also update the active vault's path record
         if (vaultPath && s.activeVaultId && s.vaults[s.activeVaultId]) {
           return {
@@ -133,7 +144,7 @@ export const useVaultStore = create<VaultState>()(
             },
           }
         }
-        // No active vault yet -> create one
+        // No active vault yet → create one
         if (vaultPath) {
           const id = s.activeVaultId || generateVaultId()
           return {
@@ -146,9 +157,14 @@ export const useVaultStore = create<VaultState>()(
           }
         }
         return { vaultPath }
-      }),
+        })
+      },
 
       setLoadedDocuments: (loadedDocuments) => set((s) => {
+        // 문서 집합이 바뀌면 graphRAG 의 docMap/sectionMap/소문자 캐시를 명시적으로 비운다.
+        // 지문 기반 자가 무효화가 있지만, 볼트 전환·에디터 저장·파일 워처 등 모든 경로를
+        // 한 곳에서 확실히 커버하기 위한 것이다.
+        invalidateGraphRAGCache()
         if (loadedDocuments && s.activeVaultId) {
           const label = s.vaults[s.activeVaultId]?.label ?? s.activeVaultId
           // Skip full remap if all docs already carry the correct label
@@ -180,30 +196,56 @@ export const useVaultStore = create<VaultState>()(
       addImageDataCache: (entries) =>
         set((s) => {
           const merged = { ...s.imageDataCache, ...entries }
-          // Cap cache at ~50MB (base64 string length ~ byte size)
-          const MAX_BYTES = 50 * 1024 * 1024
+          // Update LRU access order: move touched keys to end
+          const newKeys = Object.keys(entries)
+          const newKeySet = new Set(newKeys)
+          _imageAccessOrder = _imageAccessOrder.filter(k => !newKeySet.has(k))
+          // Add existing keys that aren't yet tracked
+          for (const k of Object.keys(merged)) {
+            if (!_imageAccessOrder.includes(k) && !newKeySet.has(k)) {
+              _imageAccessOrder.push(k)
+            }
+          }
+          // Newly added/updated entries go to the end (most recent)
+          _imageAccessOrder.push(...newKeys)
+
+          // Cap cache at ~20MB (base64 string length ≈ byte size)
+          const MAX_BYTES = 20 * 1024 * 1024
           const TARGET_BYTES = MAX_BYTES * 0.75  // evict to 75% on overflow
-          const keys = Object.keys(merged)
-          let totalBytes = keys.reduce((sum, k) => sum + merged[k].length, 0)
+          let totalBytes = Object.values(merged).reduce((sum, v) => sum + v.length, 0)
           if (totalBytes > MAX_BYTES) {
-            let i = 0
-            while (totalBytes > TARGET_BYTES && i < keys.length - 1) {
-              totalBytes -= merged[keys[i]].length
-              delete merged[keys[i]]
-              i++
+            // Evict from the front of _imageAccessOrder (least recently used)
+            while (totalBytes > TARGET_BYTES && _imageAccessOrder.length > 1) {
+              const evictKey = _imageAccessOrder.shift()!
+              if (merged[evictKey]) {
+                totalBytes -= merged[evictKey].length
+                delete merged[evictKey]
+              }
             }
           }
           return { imageDataCache: merged }
         }),
-      clearImageDataCache: () => set({ imageDataCache: {} }),
+      touchImageCache: (key) => {
+        const idx = _imageAccessOrder.indexOf(key)
+        if (idx !== -1) {
+          _imageAccessOrder.splice(idx, 1)
+          _imageAccessOrder.push(key)
+        }
+      },
+      clearImageDataCache: () => {
+        _imageAccessOrder = []
+        set({ imageDataCache: {} })
+      },
       setIsLoading: (isLoading) => set({ isLoading }),
       setVaultReady: (vaultReady) => set({ vaultReady }),
       setLoadingProgress: (loadingProgress, loadingPhase = '') =>
         set({ loadingProgress, loadingPhase }),
       setError: (error) => set({ error }),
       setPendingFileCount: (pendingFileCount) => set({ pendingFileCount }),
-      clearVault: () =>
-        set({ vaultPath: null, loadedDocuments: null, vaultFolders: [], imagePathRegistry: null, imageDataCache: {}, error: null, isLoading: false, vaultReady: false, loadingProgress: 0, loadingPhase: '', pendingFileCount: null }),
+      clearVault: () => {
+        _imageAccessOrder = []
+        set({ vaultPath: null, loadedDocuments: null, vaultFolders: [], imagePathRegistry: null, imageDataCache: {}, error: null, isLoading: false, vaultReady: false, loadingProgress: 0, loadingPhase: '', pendingFileCount: null })
+      },
 
       cacheVaultDocs: (vaultId, docs) => set((s) => {
         const label = s.vaults[vaultId]?.label ?? vaultId
@@ -217,7 +259,7 @@ export const useVaultStore = create<VaultState>()(
       setBgLoadingInfo: (bgLoadingInfo) => set({ bgLoadingInfo }),
       setWatchDiff: (watchDiff) => set({ watchDiff }),
 
-      // Multi-Vault actions
+      // ── Multi-Vault actions ──────────────────────────────────────────────────
       addVault: (path, label) => {
         const { vaults } = get()
         // If path already exists, return that ID
@@ -232,25 +274,34 @@ export const useVaultStore = create<VaultState>()(
       },
 
       removeVault: (id) => {
-        const { vaults, activeVaultId } = get()
+        const { vaults, activeVaultId, vaultDocsCache, vaultMetaCache } = get()
         const newVaults = { ...vaults }
         delete newVaults[id]
+        // Clean up caches for the removed vault
+        const newDocsCache = { ...vaultDocsCache }
+        delete newDocsCache[id]
+        const newMetaCache = { ...vaultMetaCache }
+        delete newMetaCache[id]
         const ids = Object.keys(newVaults)
         if (id === activeVaultId && ids.length > 0) {
           const nextId = ids[0]
-          set({ vaults: newVaults, activeVaultId: nextId, vaultPath: newVaults[nextId].path })
+          set({ vaults: newVaults, activeVaultId: nextId, vaultPath: newVaults[nextId].path, vaultDocsCache: newDocsCache, vaultMetaCache: newMetaCache })
         } else if (id === activeVaultId) {
-          set({ vaults: newVaults, activeVaultId: '', vaultPath: null })
+          set({ vaults: newVaults, activeVaultId: '', vaultPath: null, vaultDocsCache: newDocsCache, vaultMetaCache: newMetaCache })
         } else {
-          set({ vaults: newVaults })
+          set({ vaults: newVaults, vaultDocsCache: newDocsCache, vaultMetaCache: newMetaCache })
         }
       },
 
       switchVault: (id) => {
-        const { vaults } = get()
+        const { vaults, clearImageDataCache } = get()
         const entry = vaults[id]
         if (!entry) return
-        set({ activeVaultId: id, vaultPath: entry.path })
+        // Sync vault path to mcp-config.json
+        window.configAPI?.writeMcp({ vaultPath: entry.path })
+        // Release image data from previous vault to prevent memory leak
+        clearImageDataCache()
+        set({ activeVaultId: id, vaultPath: entry.path, loadedDocuments: null, vaultFolders: [], imagePathRegistry: null })
       },
 
       updateVaultLabel: (id, label) => {
@@ -262,7 +313,8 @@ export const useVaultStore = create<VaultState>()(
       },
     }),
     {
-      name: 'strata-sync-vault',
+      name: 'rembrandt-vault',
+      storage: createJSONStorage(() => electronStorageAdapter),
       // Persist vaultPath, vaults, activeVaultId
       partialize: (state) => ({
         vaultPath: state.vaultPath,
@@ -272,7 +324,7 @@ export const useVaultStore = create<VaultState>()(
       // Migration: old state had only vaultPath, no vaults
       merge: (persisted: any, current) => {
         const merged = { ...current, ...persisted }
-        // If old state: vaultPath exists but vaults is empty -> create default entry
+        // If old state: vaultPath exists but vaults is empty → create default entry
         if (merged.vaultPath && (!merged.vaults || Object.keys(merged.vaults).length === 0)) {
           const id = merged.activeVaultId || generateVaultId()
           merged.vaults = { [id]: { path: merged.vaultPath, label: labelFromPath(merged.vaultPath) } }

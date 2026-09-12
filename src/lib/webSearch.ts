@@ -1,8 +1,8 @@
 /**
- * webSearch.ts — DuckDuckGo HTML search (via Electron IPC)
+ * webSearch.ts — DuckDuckGo HTML 검색 (Electron IPC 경유)
  *
- * No API key required. Search runs in the main process via Node.js https module.
- * In non-Electron environments (browser builds), automatically returns [].
+ * API 키 불필요. 검색은 main 프로세스에서 Node.js https 모듈로 실행.
+ * 비 Electron 환경(브라우저 빌드)에서는 자동으로 [] 반환.
  */
 
 export interface WebSearchResult {
@@ -17,15 +17,13 @@ const decodeHtml = (s: string) =>
    .replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&nbsp;/g, ' ')
    .trim()
 
-/**
- * Parse DuckDuckGo HTML response into a search result array.
- * Parses by result block to prevent title/snippet index mismatch.
- */
+/** DuckDuckGo HTML 응답을 파싱하여 검색 결과 배열 반환.
+ * result 블록 단위로 파싱하여 title/snippet 인덱스 불일치 방지. */
 function parseDDGHtml(html: string, maxResults: number): WebSearchResult[] {
   if (!html) return []
   const results: WebSearchResult[] = []
 
-  // Extract each result block, then find title + snippet within each block
+  // 각 result 블록을 추출한 뒤 블록 안에서 title + snippet을 함께 찾음
   const blockRe = /<div[^>]+class="[^"]*result[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/g
   const titleUrlRe = /<a[^>]+class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/
   const snippetRe  = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/
@@ -42,7 +40,7 @@ function parseDDGHtml(html: string, maxResults: number): WebSearchResult[] {
     const sm = content.match(snippetRe)
     const snippet = sm ? decodeHtml(sm[1]) : ''
 
-    // Clean up DuckDuckGo redirect URLs
+    // DuckDuckGo redirect URL 정리
     if (url.includes('duckduckgo.com/l/?')) {
       const uddg = url.match(/uddg=([^&]+)/)
       if (uddg) url = decodeURIComponent(uddg[1])
@@ -51,7 +49,7 @@ function parseDDGHtml(html: string, maxResults: number): WebSearchResult[] {
     results.push({ title, url, snippet })
   }
 
-  // Fallback: if block parsing fails (HTML structure change), use two-array approach
+  // 블록 파싱 실패 시 (HTML 구조 변경) — 기존 두 배열 방식으로 폴백
   if (results.length === 0) {
     const titleUrlRe2 = /<a[^>]+class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g
     const snippetRe2  = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g
@@ -72,13 +70,13 @@ function parseDDGHtml(html: string, maxResults: number): WebSearchResult[] {
   return results
 }
 
-/** Convert search results to a RAG context string */
+/** 검색 결과를 RAG 컨텍스트 문자열로 변환 */
 export function buildWebContext(results: WebSearchResult[], maxChars = 2000): string {
   if (!results.length) return ''
-  const parts = ['## Web Search Results\n']
+  const parts = ['## 웹 검색 결과\n']
   let total = parts[0].length
   for (const r of results) {
-    const chunk = `- **${r.title}**\n  ${r.snippet}\n  Source: ${r.url}\n\n`
+    const chunk = `- **${r.title}**\n  ${r.snippet}\n  출처: ${r.url}\n\n`
     if (total + chunk.length > maxChars) break
     parts.push(chunk)
     total += chunk.length
@@ -87,13 +85,13 @@ export function buildWebContext(results: WebSearchResult[], maxChars = 2000): st
 }
 
 /**
- * Search the web via DuckDuckGo.
- * Electron-only (via window.webSearchAPI IPC).
- * Returns [] on failure.
+ * DuckDuckGo로 웹 검색합니다.
+ * Electron 환경 전용 (window.webSearchAPI IPC 경유).
+ * 실패 시 [] 반환.
  */
 export async function searchWeb(query: string, maxResults = 5): Promise<WebSearchResult[]> {
   try {
-    const api = window.webSearchAPI
+    const api = (window as any).webSearchAPI
     if (!api) return []
     const html: string = await api.search(query)
     return parseDDGHtml(html, maxResults)

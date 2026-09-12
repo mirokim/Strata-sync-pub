@@ -16,7 +16,7 @@
  */
 
 import { getApiKey } from '@/stores/settingsStore'
-import { DEFAULT_MODEL_ID } from '@/lib/modelConfig'
+import { DEFAULT_PERSONA_MODELS } from '@/lib/modelConfig'
 import { logger } from '@/lib/logger'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -38,7 +38,7 @@ export interface ComputerUseResult {
 // ── Anthropic Computer Use API ────────────────────────────────────────────────
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages'
-const COMPUTER_USE_MODEL = DEFAULT_MODEL_ID
+const COMPUTER_USE_MODEL = DEFAULT_PERSONA_MODELS.chief_director
 const COMPUTER_USE_BETA = 'computer-use-2024-10-22'
 
 interface ComputerUseTool {
@@ -75,7 +75,7 @@ export async function computerUseDecide(
 ): Promise<ComputerUseBlock | null> {
   const apiKey = getApiKey('anthropic')
   if (!apiKey) {
-    logger.warn('[ComputerUse] No Anthropic API key')
+    logger.warn('[ComputerUse] Anthropic API 키 없음')
     return null
   }
 
@@ -116,7 +116,7 @@ export async function computerUseDecide(
 
   if (!response.ok) {
     const err = await response.text()
-    logger.error(`[ComputerUse] API error ${response.status}: ${err}`)
+    logger.error(`[ComputerUse] API 오류 ${response.status}: ${err}`)
     return null
   }
 
@@ -140,7 +140,7 @@ export interface GstackResult {
 
 /** Detect how to call gstack in Electron environment */
 async function gstackAvailable(): Promise<boolean> {
-  return typeof window !== 'undefined' && !!window.electronAPI?.isElectron
+  return typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron
 }
 
 /**
@@ -159,12 +159,12 @@ export async function gstackExecute(
   args: string[],
 ): Promise<GstackResult> {
   if (!(await gstackAvailable())) {
-    return { success: false, output: '', error: 'Only available in Electron environment' }
+    return { success: false, output: '', error: 'Electron 환경에서만 사용 가능합니다' }
   }
 
-  const gstackAPI = window.gstackAPI
+  const gstackAPI = (window as unknown as { gstackAPI?: { execute: (cmd: string, args: string[]) => Promise<GstackResult> } }).gstackAPI
   if (!gstackAPI) {
-    return { success: false, output: '', error: 'gstackAPI IPC bridge not available' }
+    return { success: false, output: '', error: 'gstackAPI IPC bridge 없음' }
   }
 
   try {

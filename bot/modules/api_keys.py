@@ -1,26 +1,26 @@
 """
-api_keys.py — Single source of truth for API key loading priority (SSOT)
+api_keys.py — API 키 로드 우선순위 단일 정의 (SSOT)
 
-Priority: Electron Settings > config.json > Environment variables (.env)
+우선순위: Electron Settings > config.json > 환경변수(.env)
 
-All API key access should go through this module.
-Do not use cfg.get("claude_api_key") directly in bot.py.
+모든 API 키 접근은 이 모듈을 통해 수행합니다.
+bot.py에서 직접 cfg.get("claude_api_key") 하지 마세요.
 """
 import os
 
 
 def get_anthropic_key(cfg: dict) -> str:
     """
-    Return the Anthropic API key using a single priority logic.
+    Anthropic API 키를 단일 우선순위 로직으로 반환.
 
-    Priority:
-      1. Electron /settings API (when running)
+    우선순위:
+      1. Electron /settings API (실행 중일 때)
       2. config.json (cfg["claude_api_key"])
-      3. ANTHROPIC_API_KEY environment variable
+      3. 환경변수 ANTHROPIC_API_KEY
 
-    Returns empty string if no key is found.
+    반환값이 빈 문자열이면 키 없음.
     """
-    # 1. Electron settings (only valid when running)
+    # 1. Electron 설정 (실행 중일 때만 유효)
     try:
         from .rag_electron import get_api_key_from_settings
         key = get_api_key_from_settings("anthropic")
@@ -29,10 +29,10 @@ def get_anthropic_key(cfg: dict) -> str:
     except Exception:
         pass
 
-    # 2. config.json key
+    # 2. config.json
     key = cfg.get("claude_api_key", "").strip()
     if key:
         return key
 
-    # 3. Environment variable
+    # 3. 환경변수
     return os.getenv("ANTHROPIC_API_KEY", "")

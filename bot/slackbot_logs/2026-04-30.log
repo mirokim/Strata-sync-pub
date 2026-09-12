@@ -1,0 +1,23 @@
+[04:40:51] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[04:40:51] [READY] Slack bot started
+[16:16:11] [ERR] Failed to check the state of sock (session id: 3718d6f6-3215-49a6-8404-407db3b29c05, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[16:16:21] [ERR] Failed to check the state of sock (session id: 3718d6f6-3215-49a6-8404-407db3b29c05, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[16:16:31] [ERR] Failed to check the state of sock (session id: 3718d6f6-3215-49a6-8404-407db3b29c05, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[16:16:41] [ERR] Failed to check the state of sock (session id: 3718d6f6-3215-49a6-8404-407db3b29c05, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[16:16:51] [ERR] Failed to check the state of sock (session id: 3718d6f6-3215-49a6-8404-407db3b29c05, error: SSLError, message: [SSL: BAD_LENGTH] bad length (_ssl.c:2427))
+[16:16:51] ⚠️ Slack 연결 끊김 — 재연결 대기 중...
+[16:16:51] 🔄 5초 후 재연결 시도... (#1)
+[16:16:57] 🟢 Slack 재연결 성공
+[16:20:13] [ERR] Failed to check the state of sock (session id: eefc56ff-dfa4-4571-be90-d350c187af98, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[16:20:23] [ERR] Failed to check the state of sock (session id: eefc56ff-dfa4-4571-be90-d350c187af98, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[16:20:33] [ERR] Failed to check the state of sock (session id: eefc56ff-dfa4-4571-be90-d350c187af98, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[16:20:43] [ERR] Failed to check the state of sock (session id: eefc56ff-dfa4-4571-be90-d350c187af98, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[16:20:53] [ERR] Failed to check the state of sock (session id: eefc56ff-dfa4-4571-be90-d350c187af98, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[16:23:18] [ERR] Failed to check the state of sock (session id: 236660dc-a512-47ef-9628-a69ff728a98f, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[16:23:28] [ERR] Failed to check the state of sock (session id: 236660dc-a512-47ef-9628-a69ff728a98f, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[16:23:38] [ERR] Failed to check the state of sock (session id: 236660dc-a512-47ef-9628-a69ff728a98f, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[16:23:48] [ERR] Failed to check the state of sock (session id: 236660dc-a512-47ef-9628-a69ff728a98f, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[16:23:58] [ERR] Failed to check the state of sock (session id: 236660dc-a512-47ef-9628-a69ff728a98f, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[16:23:59] ⚠️ Slack 연결 끊김 — 재연결 대기 중...
+[16:23:59] 🔄 5초 후 재연결 시도... (#1)
+[16:24:05] 🟢 Slack 재연결 성공

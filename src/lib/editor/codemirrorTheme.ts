@@ -30,7 +30,7 @@ export const markdownHighlight = HighlightStyle.define([
 export const vaultTheme = EditorView.theme({
   '&': { height: '100%', background: 'transparent' },
   '.cm-scroller': {
-    fontFamily: 'ui-monospace, "Cascadia Code", Consolas, monospace',
+    fontFamily: 'var(--ea-font-mono)',
     fontSize: '13px',
     lineHeight: '1.7',
     padding: '16px 20px',

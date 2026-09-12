@@ -9,8 +9,10 @@ dist-electron/
 .env
 .env.local
 .env.*.local
+mcp-config.json
 
-# Bot config contains API keys/tokens — use config.example.json as template
+# Bot secrets — use .env.example as template
+bot/.env
 bot/config.json
 
 # Electron build artifacts
@@ -24,9 +26,6 @@ release/
 # OS
 .DS_Store
 Thumbs.db
-
-# Internal docs
-docs/
 
 # TypeScript build info
 tsconfig.tsbuildinfo
@@ -44,3 +43,15 @@ venv/
 
 # Claude Code local settings
 .claude/
+
+# Local vault data
+refined_vault/
+sources/
+
+# MiroFish HTML reports (로컬 생성 파일)
+bot/reports/
+
+# Bot 런타임 생성 파일
+bot/step_timings.json
+bot/user_memory.json
+bot/cache/

@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+/* ── Border radius override: flat/rectangular UI ── */
+@theme {
+  --radius-sm: 0.125rem;  /* 2px */
+  --radius:    0.125rem;  /* 2px */
+  --radius-md: 0.1875rem; /* 3px */
+  --radius-lg: 0.1875rem; /* 3px */
+  --radius-xl: 0.25rem;   /* 4px */
+  --radius-2xl: 0.25rem;  /* 4px */
+  --radius-3xl: 0.25rem;  /* 4px */
+}
+
 /* ── Theme: Dark (default) ── */
 [data-theme="dark"] {
   --color-bg-primary: #191919;
@@ -48,6 +59,90 @@
   --color-bg-overlay: rgba(245, 245, 245, var(--panel-opacity, 0.82));
 }
 
+/* ── Semantic status colors (theme-agnostic) ── */
+:root {
+  --color-error:        #f87171;  /* red-400   — 오류 텍스트/아이콘 */
+  --color-success:      #22c55e;  /* green-400 — 성공 텍스트/아이콘 */
+  --color-info:         #3b82f6;  /* blue-400  — 정보/활성 */
+  --color-warning:      #f59e0b;  /* amber-400 — 경고 */
+  --color-bg-tertiary:  rgba(255,255,255,0.06); /* 미묘한 입력창/카드 배경 */
+
+  /* Semi-transparent status backgrounds */
+  --color-error-bg:     rgba(239,68,68,0.1);
+  --color-error-border: rgba(239,68,68,0.3);
+  --color-success-bg:   rgba(52,211,153,0.1);
+  --color-success-border: rgba(52,211,153,0.25);
+  --color-info-bg:      rgba(59,130,246,0.08);
+  --color-info-border:  rgba(59,130,246,0.25);
+  --color-warning-bg:   rgba(245,158,11,0.1);
+  --color-warning-border: rgba(245,158,11,0.25);
+
+  /* Accent semi-transparent (--color-accent: #529cca) */
+  --color-accent-bg:     rgba(82,156,202,0.1);
+  --color-accent-border: rgba(82,156,202,0.25);
+  --color-accent-bg-md:  rgba(82,156,202,0.15);
+  --color-accent-border-md: rgba(82,156,202,0.3);
+
+  /* Thinking / AI process (purple) */
+  --color-thinking:        rgba(168,85,247,0.85);
+  --color-thinking-bg:     rgba(168,85,247,0.05);
+  --color-thinking-border: rgba(168,85,247,0.25);
+
+  /* Neutral disabled / subtle */
+  --color-bg-subtle:    rgba(255,255,255,0.04);
+  --color-bg-disabled:  rgba(255,255,255,0.1);
+
+  /* Slate tones (used in StatusBar, CommandPalette, UsageTab) */
+  --color-slate:          #475569;
+  --color-slate-secondary: #94a3b8;
+  --color-slate-muted:    rgba(148,163,184,0.4);
+
+  /* Inverse (white-on-dark button text) */
+  --color-text-inverse: #ffffff;
+
+  /* Shadow tokens */
+  --shadow-drawer: -4px 0 24px rgba(0,0,0,0.5);
+  --shadow-overlay: 0 4px 24px rgba(0,0,0,0.4);
+}
+
+/* ── Chat bubble design tokens ── */
+:root {
+  --chat-font-size: 14px;
+  --chat-line-height: 1.6;
+  --chat-user-bg: var(--color-bg-surface);
+  --chat-user-border: var(--color-border);
+  --chat-agent-bg: transparent;
+  --chat-agent-border: var(--color-border);
+}
+
+/* ── Edit Agent panel design tokens ── */
+/* Primdev/Vercel-style: mono font, 6px radius, consistent spacing */
+:root {
+  --ea-font-mono: 'Geist Mono', 'Fira Code', ui-monospace, monospace;
+  --ea-radius-sm: 4px;
+  --ea-radius:    6px;
+  --ea-radius-lg: 8px;
+  --ea-radius-xl: 10px;
+  /* Tool accent colors (intentional, not theme-dependent) */
+  --ea-tool-python:  #f59e0b;
+  --ea-tool-search:  #3b82f6;
+  --ea-tool-browser: #a78bfa;
+  --ea-tool-write:   #10b981;
+  --ea-tool-delete:  #ef4444;
+  --ea-tool-default:     var(--color-text-muted);
+  --ea-tool-pdf:         #e11d48;
+  --ea-tool-confluence:  #0052cc;
+  --ea-tool-jira:        #0065ff;
+  /* Log dot colors */
+  --ea-log-wake:  #3b82f6;
+  --ea-log-scan:  #a78bfa;
+  --ea-log-edit:  #10b981;
+  --ea-log-skip:  var(--color-text-muted);
+  --ea-log-error: #ef4444;
+  --ea-log-chat:  #f59e0b;
+  --ea-log-done:  #10b981;
+}
+
 /* ── Speaker color CSS variables ── */
 :root {
   --speaker-chief: #9b59b6;
@@ -72,6 +167,32 @@
 @keyframes blink {
   0%, 100% { opacity: 0.8; }
   50%       { opacity: 0; }
+}
+
+.streaming-cursor {
+  display: inline-block;
+  width: 0.55em;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: middle;
+  animation: blink 1s step-end infinite;
+  opacity: 0.8;
+}
+
+/* ── Toast progress bar ── */
+@keyframes toastProgress {
+  from { width: 100%; }
+  to   { width: 0%; }
+}
+
+/* ── WatchDiff badge fade ── */
+@keyframes fadeSlideDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.watch-diff-badge {
+  animation: fadeSlideDown 0.2s ease forwards;
 }
 
 @layer base {
@@ -149,7 +270,7 @@
 .prose-vault pre {
   background: var(--color-bg-primary);
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: 2px;
   padding: 0.75em 1em;
   overflow-x: auto;
   margin: 0.5em 0;

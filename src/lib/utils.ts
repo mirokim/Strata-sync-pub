@@ -24,9 +24,9 @@ export function truncate(text: string, max = 40): string {
 }
 
 /** Extract [[slug]] references from a markdown string.
- *  Excludes ![[embed]] image embeds. */
+ *  ![[embed]] 형식의 이미지 임베드는 제외합니다. */
 export function extractWikiLinks(text: string): string[] {
-  // negative lookbehind: [[...]] immediately preceded by '!' is an image embed — excluded
+  // negative lookbehind: '!' 바로 앞에 오는 [[...]] 는 이미지 임베드이므로 제외
   const matches = text.match(/(?<!!)\[\[(.*?)\]\]/gs) ?? []
   return matches.map(m => m.slice(2, -2).trim())
 }
@@ -38,18 +38,33 @@ export function extractImageRefs(text: string): string[] {
 }
 
 /**
- * Remove lone Unicode surrogates from a string.
- *
- * JavaScript strings are UTF-16. Slicing document content at a byte boundary
- * (e.g. body.slice(0, 1500)) can split a surrogate pair, leaving an orphaned
- * high surrogate (U+D800-DBFF) or low surrogate (U+DC00-DFFF).
- * JSON.stringify then produces invalid JSON and Anthropic's API returns 400.
- *
- * Regex: match valid pair (keep) OR lone surrogate (remove).
+ * Normalize a file path: backslashes → forward slashes.
+ * Optionally strips leading slashes when `stripLeading` is true.
  */
-export function sanitizeUnicode(str: string): string {
-  return str.replace(
-    /[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDFFF]/g,
-    m => m.length === 2 ? m : ''
-  )
+export function normalizePath(p: string, stripLeading = false): string {
+  let result = p.replace(/\\/g, '/')
+  // Windows 드라이브 문자 소문자 정규화 (C:/ → c:/)
+  if (/^[A-Z]:\//.test(result)) {
+    result = result[0].toLowerCase() + result.slice(1)
+  }
+  if (stripLeading) result = result.replace(/^\/+/, '')
+  return result
+}
+
+/**
+ * Wrap an async file operation with error handling.
+ * Returns the result on success, or `null` on failure (logging the error).
+ */
+export async function safeFileOp<T>(label: string, fn: () => Promise<T>): Promise<T | null> {
+  try {
+    return await fn()
+  } catch (e) {
+    console.error(`[FileOp] ${label} 실패:`, e)
+    // 동적 import로 순환 의존성 방지
+    try {
+      const { showToast } = await import('@/stores/toastStore')
+      showToast(`${label} 실패: ${e instanceof Error ? e.message : String(e)}`, 'error')
+    } catch { /* toast 실패는 무시 */ }
+    return null
+  }
 }

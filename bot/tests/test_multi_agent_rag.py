@@ -1,7 +1,7 @@
 """
-tests/test_multi_agent_rag.py — multi_agent_rag.py unit tests
+tests/test_multi_agent_rag.py — multi_agent_rag.py 유닛 테스트
 
-Run: python -m pytest bot/tests/ -v
+실행: python -m pytest bot/tests/ -v
 """
 import json
 import os
@@ -52,7 +52,7 @@ class TestCheckpointKey(unittest.TestCase):
         self.assertEqual(k1, k2)
 
     def test_order_independent(self):
-        """Different stem order should produce the same key (sorted applied)."""
+        """stems 순서가 달라도 같은 키여야 한다 (sorted 적용)."""
         k1 = _make_checkpoint_key("query", ["a", "b", "c"])
         k2 = _make_checkpoint_key("query", ["c", "a", "b"])
         self.assertEqual(k1, k2)
@@ -89,7 +89,7 @@ class TestCheckpointSaveLoad(unittest.TestCase):
     def test_ttl_expired_returns_empty(self):
         analyses = [{"idx": 0, "score": 1.0, "summary": "s", "key_points": [], "doc": _make_rag_result()}]
         _save_checkpoint("expiredkey", analyses)
-        # Manipulate file mtime to the past
+        # 파일 mtime을 과거로 조작
         path = os.path.join(self.tmp_dir, "expiredkey.json")
         old_time = time.time() - mar._CHECKPOINT_TTL_SECS - 10
         os.utime(path, (old_time, old_time))
@@ -131,8 +131,8 @@ class TestClearStaleCheckpoints(unittest.TestCase):
         self.assertTrue(os.path.exists(path))
 
     def test_lru_removes_oldest_when_over_limit(self):
-        """Delete oldest files first when over size limit."""
-        mar._CHECKPOINT_MAX_MB = 0  # 0MB limit → all files eligible for deletion
+        """용량 초과 시 오래된 파일부터 삭제."""
+        mar._CHECKPOINT_MAX_MB = 0  # 0MB 제한 → 모든 파일 삭제 대상
 
         paths = []
         for i in range(3):
@@ -143,7 +143,7 @@ class TestClearStaleCheckpoints(unittest.TestCase):
             time.sleep(0.01)  # mtime 차이
 
         _clear_stale_checkpoints()
-        # With 0 limit, no files should remain
+        # 제한이 0이므로 파일이 남아있지 않아야 함
         remaining = list(Path(self.tmp_dir).glob("*.json"))
         self.assertEqual(len(remaining), 0)
 
@@ -171,30 +171,30 @@ class TestAnalyzeDoc(unittest.TestCase):
         self.assertEqual(results[0]["score"], 6.0)
 
     def test_invalid_json_falls_back(self):
-        """Falls back to original score on JSON parse failure."""
+        """JSON 파싱 실패 시 원본 score 기반 폴백."""
         client = _make_client("이것은 JSON이 아닙니다")
         doc = _make_rag_result(score=5.0)
         results = self._run_analyze(client, doc)
         self.assertEqual(len(results), 1)
-        # Fallback: score * 0.8 = 4.0, summary is first 150 chars of body
+        # 폴백: score * 0.8 = 4.0, summary는 본문 앞 150자
         self.assertAlmostEqual(results[0]["score"], 4.0, places=1)
         self.assertTrue(len(results[0]["summary"]) > 0)
 
     def test_network_error_retries_and_falls_back(self):
-        """Retries on network error then falls back."""
+        """네트워크 오류 발생 시 재시도 후 폴백."""
         client = MagicMock()
         client.complete.side_effect = ConnectionError("연결 실패")
         logs = []
         results: list = []
         lock = threading.Lock()
         _analyze_doc(client, "쿼리", _make_rag_result(), 0, results, lock, log_fn=logs.append)
-        # complete called up to _MAX_RETRIES=2 retries
+        # 재시도(_MAX_RETRIES=2)까지 complete가 호출됨
         self.assertGreaterEqual(client.complete.call_count, 1)
-        # Result exists via fallback
+        # 폴백으로 결과는 존재
         self.assertEqual(len(results), 1)
 
     def test_thread_safety(self):
-        """Results are correctly collected even when running from multiple threads."""
+        """여러 스레드에서 동시에 실행해도 결과가 올바르게 수집된다."""
         client = _make_client('{"score": 5, "summary": "병렬", "key_points": []}')
         results: list = []
         lock = threading.Lock()

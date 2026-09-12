@@ -90,12 +90,27 @@ const DEFAULTS: McpConfig = {
   teamMembers: [],
 }
 
+function deepMerge(target: any, source: any): any {
+  const result = { ...target }
+  for (const key of Object.keys(source)) {
+    if (
+      source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])
+      && target[key] && typeof target[key] === 'object' && !Array.isArray(target[key])
+    ) {
+      result[key] = deepMerge(target[key], source[key])
+    } else {
+      result[key] = source[key]
+    }
+  }
+  return result
+}
+
 let _config: McpConfig | null = null
 let _configPath: string = ''
 
 export function getConfigPath(): string {
   if (_configPath) return _configPath
-  const envPath = process.env.STRATA_SYNC_CONFIG
+  const envPath = process.env.SANDBOX_MAP_CONFIG
   if (envPath) return resolve(envPath)
   return resolve(process.cwd(), 'mcp-config.json')
 }
@@ -111,9 +126,10 @@ export function loadConfig(): McpConfig {
   }
   try {
     const raw = readFileSync(path, 'utf-8')
-    _config = { ...DEFAULTS, ...JSON.parse(raw) }
+    _config = deepMerge(DEFAULTS, JSON.parse(raw))
     return _config!
-  } catch {
+  } catch (err) {
+    console.error('[config] Failed to parse mcp-config.json, using defaults:', err)
     _config = { ...DEFAULTS }
     return _config
   }
@@ -124,8 +140,13 @@ export function getConfig(): McpConfig {
   return _config
 }
 
+/**
+ * 설정 갱신 — 반드시 deepMerge 를 쓴다.
+ * 얕은 병합이면 `{ jira: { jql } }` 하나만 넣어도 baseUrl/apiToken 이 통째로 사라지고
+ * 그대로 디스크에 flush 되어 복구가 불가능하다.
+ */
 export function updateConfig(updates: Partial<McpConfig>): void {
-  _config = { ...getConfig(), ...updates }
+  _config = deepMerge(getConfig(), updates) as McpConfig
   writeFileSync(_configPath || getConfigPath(), JSON.stringify(_config, null, 2), 'utf-8')
 }
 

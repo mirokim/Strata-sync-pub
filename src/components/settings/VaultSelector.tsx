@@ -18,7 +18,7 @@ import { tfidfIndex } from '@/lib/graphAnalysis'
 import { updateDocInWorker } from '@/lib/bm25WorkerClient'
 import { buildAdjacencyMap } from '@/lib/graphRAG'
 import { parseMarkdownFile } from '@/lib/markdownParser'
-import { buildFingerprint, saveTfIdfCache } from '@/lib/tfidfCache'
+import { invalidateTfIdfCache } from '@/lib/tfidfCache'
 import { buildGraph } from '@/lib/graphBuilder'
 
 export default function VaultSelector() {
@@ -55,7 +55,7 @@ export default function VaultSelector() {
       if (suppressWatchRef.current) return
       if (!useGraphStore.getState().graphLayoutReady) return
 
-      // Only attempt incremental update when a specific changed file is identified
+      // 변경 파일이 특정됐을 때만 증분 업데이트 시도
       if (changedFile && tfidfIndex.isBuilt && window.vaultAPI?.readFile) {
         try {
           const sep = currentVaultPath.includes('\\') ? '\\' : '/'
@@ -64,10 +64,14 @@ export default function VaultSelector() {
           if (content != null) {
             const relativePath = changedFile.replace(/\\/g, '/')
             const file = { relativePath, absolutePath, content, mtime: Date.now() }
-            const updatedDoc = parseMarkdownFile(file)
+            const parsedDoc = parseMarkdownFile(file)
             const { loadedDocuments, setLoadedDocuments, setWatchDiff } = useVaultStore.getState()
+            // parseMarkdownFile 은 pushWithUniqueId 를 거치지 않아 충돌 해소된 id(`_2`)를
+            // 원본 id 로 되돌린다. 같은 경로의 기존 문서가 있으면 그 id 를 유지한다.
+            const existing = loadedDocuments?.find(d => d.absolutePath === absolutePath)
+            const updatedDoc = existing ? { ...parsedDoc, id: existing.id } : parsedDoc
 
-            // Diff calculation — compare with previous rawContent
+            // Diff 계산 — 이전 rawContent와 비교
             const prevDoc = loadedDocuments?.find(d => d.id === updatedDoc.id)
             if (prevDoc?.rawContent != null) {
               const prevLines = prevDoc.rawContent.split('\n')
@@ -83,7 +87,7 @@ export default function VaultSelector() {
                 removed,
                 preview: previewLine.slice(0, 80),
               })
-              // Auto-close after 8 seconds
+              // 8초 후 자동 닫기
               setTimeout(() => {
                 if (useVaultStore.getState().watchDiff?.filePath === relativePath) {
                   setWatchDiff(null)
@@ -92,17 +96,17 @@ export default function VaultSelector() {
             }
 
             if (loadedDocuments) {
-              // Incremental document list update
+              // 문서 목록 증분 업데이트
               const newDocs = loadedDocuments.map(d => d.id === updatedDoc.id ? updatedDoc : d)
               const isNew = !loadedDocuments.some(d => d.id === updatedDoc.id)
               if (isNew) newDocs.push(updatedDoc)
               setLoadedDocuments(newDocs)
 
-              // Incremental graph update
+              // 그래프 증분 업데이트
               const { nodes: newNodes, links: newLinks } = buildGraph(newDocs)
               useGraphStore.getState().setGraph(newNodes, newLinks)
 
-              // BM25 incremental update (worker)
+              // BM25 증분 업데이트 (워커)
               const fingerprint = String(Date.now())
               const adj = buildAdjacencyMap(newLinks)
               const { serialized, implicitLinks } = await updateDocInWorker(
@@ -110,12 +114,15 @@ export default function VaultSelector() {
               )
               tfidfIndex.restore(serialized)
               tfidfIndex.setImplicitLinks(implicitLinks, adj)
-              saveTfIdfCache(currentVaultPath, serialized).catch(() => {})
+              // Date.now() fingerprint 로 저장하면 loadTfIdfCache 의 buildFingerprint(id:mtime)
+              // 와 절대 일치하지 않아 유효했던 캐시를 덮어쓰고 이후 매 시작마다 전체 재빌드가
+              // 된다. 무효화만 하고 다음 볼트 로드에서 올바른 지문으로 다시 쓰게 한다.
+              invalidateTfIdfCache(currentVaultPath).catch(() => {})
             }
-            return  // Incremental update complete — full reload not needed
+            return  // 증분 업데이트 완료 — 전체 재로드 불필요
           }
         } catch {
-          // Fallback to full reload on incremental failure
+          // 증분 실패 시 전체 재로드로 폴백
         }
       }
 
@@ -211,21 +218,21 @@ export default function VaultSelector() {
               color: 'var(--color-text-secondary)',
               opacity: isLoading ? 0.4 : 1,
             }}
-            title="Add new vault"
+            title="새 볼트 추가"
           >
             <Plus size={11} />
-            Add Vault
+            볼트 추가
           </button>
         )}
       </div>
 
       {!isElectron && (
         <p className="text-xs mb-3 px-2 py-1.5 rounded" style={{
-          color: '#f59e0b',
+          color: 'var(--color-warning)',
           background: 'rgba(245,158,11,0.08)',
           border: '1px solid rgba(245,158,11,0.2)',
         }}>
-          Vault selection is only available in the Electron app.
+          Electron 앱에서만 볼트를 선택할 수 있습니다.
         </p>
       )}
 
@@ -238,7 +245,7 @@ export default function VaultSelector() {
             border: '1px dashed var(--color-border)',
           }}
         >
-          No vaults registered.
+          등록된 볼트가 없습니다.
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -292,9 +299,9 @@ export default function VaultSelector() {
                   fontSize: 11, color: 'var(--color-text-muted)',
                   whiteSpace: 'nowrap', flexShrink: 0,
                 }}>
-                  {docCount > 0 ? `${docCount} docs` : '–'}
-                  {isActive && isIndexing && ' · Indexing...'}
-                  {isActive && !isLoading && chunkCount > 0 && ` · ${chunkCount} chunks`}
+                  {docCount > 0 ? `${docCount}개` : '–'}
+                  {isActive && isIndexing && ' · 인덱싱 중…'}
+                  {isActive && !isLoading && chunkCount > 0 && ` · ${chunkCount}청크`}
                 </div>
 
                 {/* Actions */}
@@ -309,7 +316,7 @@ export default function VaultSelector() {
                         color: 'var(--color-text-muted)',
                         opacity: isLoading ? 0.4 : 1,
                       }}
-                      title="Refresh"
+                      title="새로고침"
                     >
                       {isLoading
                         ? <Loader2 size={10} className="animate-spin" />
@@ -327,9 +334,9 @@ export default function VaultSelector() {
                         color: 'var(--color-text-muted)',
                         opacity: isLoading ? 0.4 : 1,
                       }}
-                      title="Switch to this vault"
+                      title="이 볼트로 전환"
                     >
-                      Switch
+                      전환
                     </button>
                   )}
                   <button
@@ -341,7 +348,7 @@ export default function VaultSelector() {
                       color: 'var(--color-text-muted)',
                       opacity: isLoading ? 0.4 : 1,
                     }}
-                    title="Remove vault"
+                    title="볼트 제거"
                   >
                     <X size={10} />
                   </button>
@@ -356,7 +363,7 @@ export default function VaultSelector() {
       {error && (
         <p
           className="text-xs flex items-center gap-1 mt-2"
-          style={{ color: '#ef4444' }}
+          style={{ color: 'var(--color-error)' }}
           data-testid="vault-error"
         >
           <AlertCircle size={10} />
@@ -378,7 +385,7 @@ export default function VaultSelector() {
           data-testid="vault-select-btn"
         >
           <FolderOpen size={12} />
-          Select Vault Folder
+          볼트 폴더 선택
         </button>
       )}
     </div>

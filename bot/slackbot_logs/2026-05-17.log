@@ -1,0 +1,5 @@
+[04:08:07] [ERR] Failed to check the state of sock (session id: 8475739d-0428-440a-8b70-fcfc9e38c555, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[04:08:17] [ERR] Failed to check the state of sock (session id: 8475739d-0428-440a-8b70-fcfc9e38c555, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[04:08:27] [ERR] Failed to check the state of sock (session id: 8475739d-0428-440a-8b70-fcfc9e38c555, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[04:08:37] [ERR] Failed to check the state of sock (session id: 8475739d-0428-440a-8b70-fcfc9e38c555, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[04:08:48] [ERR] Failed to check the state of sock (session id: 8475739d-0428-440a-8b70-fcfc9e38c555, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))

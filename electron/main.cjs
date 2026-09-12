@@ -3,8 +3,36 @@ const path = require('path')
 const fs = require('fs')
 const crypto = require('crypto')
 const { spawn } = require('child_process')
+const cronScheduler = require('./cronScheduler.cjs')
+
+// ── C1: RAG HTTP 서버 인증 토큰 (프로세스당 1회 생성) ─────────────────────
+// 127.0.0.1 바인딩이지만 로컬의 다른 프로세스도 접근 가능하므로 랜덤 토큰 요구.
+// bot.py 는 config.json 의 rag_auth_token 필드로 전달받아 x-rag-auth 헤더에 실어 보내야 함.
+const _ragAuthToken = crypto.randomBytes(24).toString('hex')
 
 let mainWindow
+
+// ── Crash protection: prevent silent exits ──────────────────────────────────
+
+const CRASH_LOG = path.join(__dirname, '..', 'crash.log')
+
+function logCrash(type, err) {
+  const ts = new Date().toISOString()
+  const msg = `[${ts}] [${type}] ${err?.stack || err?.message || err}\n`
+  try { fs.appendFileSync(CRASH_LOG, msg) } catch {}
+  console.error(`[crash] ${type}:`, err)
+}
+
+process.on('uncaughtException', (err) => {
+  logCrash('uncaughtException', err)
+})
+
+process.on('unhandledRejection', (reason) => {
+  logCrash('unhandledRejection', reason)
+})
+
+// 렌더러 메모리 한도 확장 (기본 ~512MB → 2GB) — OOM 크래시 방지
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=2048')
 
 // ── Security: Allowed API domains for CORS bypass ──────────────────────────────
 const ALLOWED_API_DOMAINS = [
@@ -14,43 +42,70 @@ const ALLOWED_API_DOMAINS = [
   'api.x.ai',
 ]
 
+// ── Python backend subprocess (Phase 1-3) ──────────────────────────────────────
+const BACKEND_PORT = parseInt(process.env.BACKEND_PORT || '8765', 10)
+let pythonProcess = null
+let backendReady = false
+
 // ── Slack bot subprocess ────────────────────────────────────────────────────────
 let slackBotProcess = null
-const slackBotLogBuffer = []  // ring buffer — last 500 lines
+const slackBotLogBuffer = []  // ring buffer — last 2000 lines
+let _botLogStream = null
+let _sslBypassRefCount = 0
+
+function _getBotLogStream() {
+  const today = new Date().toISOString().slice(0, 10)
+  const logsDir = path.join(__dirname, '..', 'bot', 'slackbot_logs')
+  if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true })
+  const logFile = path.join(logsDir, `${today}.log`)
+  if (!_botLogStream || _botLogStream._date !== today) {
+    if (_botLogStream) _botLogStream.end()
+    _botLogStream = fs.createWriteStream(logFile, { flags: 'a', encoding: 'utf8' })
+    _botLogStream._date = today
+  }
+  return _botLogStream
+}
 
 const _PYTHON_CMD = process.platform === 'win32' ? 'python' : 'python3'
 
-// ── RAG API authentication token (generated once at app startup) ────────────
-const ragApiToken = crypto.randomBytes(32).toString('hex')
-
 function startSlackBot(config) {
-  if (slackBotProcess) return { ok: false, error: 'Already running' }
+  if (slackBotProcess) return { ok: false, error: '이미 실행 중' }
   const botDir = path.join(__dirname, '..', 'bot')
   const configPath = path.join(botDir, 'config.json')
 
   // Merge caller-supplied config with existing file (if any)
   // Whitelist allowed keys to prevent arbitrary config injection
-  const ALLOWED_BOT_KEYS = new Set(['botToken', 'appToken', 'signingSecret', 'channels', 'debug'])
+  const ALLOWED_BOT_KEYS = new Set(['botToken', 'appToken', 'signingSecret', 'channels', 'debug', 'sendImages', 'slack_model'])
   let existing = {}
   try { existing = JSON.parse(fs.readFileSync(configPath, 'utf8')) } catch {}
   const safeConfig = Object.fromEntries(Object.entries(config).filter(([k]) => ALLOWED_BOT_KEYS.has(k)))
-  const merged = { ...existing, ...safeConfig }
+  // Rename camelCase keys to snake_case expected by bot.py
+  const KEY_MAP = { botToken: 'slack_bot_token', appToken: 'slack_app_token' }
+  const renamedConfig = Object.fromEntries(
+    Object.entries(safeConfig).map(([k, v]) => [KEY_MAP[k] ?? k, v])
+  )
+  // C1: bot.py 가 RAG HTTP 서버 호출 시 사용할 인증 토큰 주입
+  const merged = { ...existing, ...renamedConfig, rag_auth_token: _ragAuthToken }
   fs.writeFileSync(configPath, JSON.stringify(merged, null, 2), 'utf8')
 
   const proc = spawn(_PYTHON_CMD, ['bot.py', '--headless'], {
     cwd: botDir,
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, RAG_API_TOKEN: ragApiToken },
   })
 
   const sendToWindow = (channel, ...args) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, ...args)
   }
 
-  const pushLog = (line) => {
-    slackBotLogBuffer.push(line)
-    if (slackBotLogBuffer.length > 500) slackBotLogBuffer.splice(0, slackBotLogBuffer.length - 500)
-    sendToWindow('bot:log', line)
+  const pushLog = (rawLine) => {
+    // H6: Slack 토큰 (xoxb-/xoxa-/xoxp-/xoxs- 등) 을 저장 전 마스킹
+    const line = String(rawLine).replace(/xox[abpsr]-[A-Za-z0-9-]+/g, '[REDACTED]')
+    const ts = new Date().toISOString().slice(11, 19)
+    const stamped = `[${ts}] ${line}`
+    slackBotLogBuffer.push(stamped)
+    if (slackBotLogBuffer.length > 2000) slackBotLogBuffer.splice(0, slackBotLogBuffer.length - 2000)
+    sendToWindow('bot:log', stamped)
+    try { _getBotLogStream().write(`${stamped}\n`) } catch {}
   }
 
   proc.stdout.on('data', (data) => {
@@ -67,7 +122,7 @@ function startSlackBot(config) {
   })
   proc.on('error', (err) => {
     slackBotProcess = null
-    sendToWindow('bot:log', `[ERROR] Process error: ${err.message}`)
+    sendToWindow('bot:log', `[ERROR] 프로세스 오류: ${err.message}`)
   })
 
   slackBotProcess = proc
@@ -80,30 +135,107 @@ function stopSlackBot() {
   slackBotProcess = null
 }
 
+function startPythonBackend() {
+  const cmd = _PYTHON_CMD
+  const args = [
+    '-m', 'uvicorn', 'backend.main:app',
+    '--host', '127.0.0.1',
+    '--port', String(BACKEND_PORT),
+    '--no-access-log',
+  ]
+
+  try {
+    pythonProcess = spawn(cmd, args, {
+      cwd: process.cwd(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  } catch (err) {
+    console.warn('[backend] Failed to start Python subprocess:', err)
+    return
+  }
+
+  const onData = (data) => {
+    const text = data.toString()
+    if (text.trim()) console.log('[backend]', text.trim())
+    if (text.includes('Application startup complete')) {
+      backendReady = true
+      BrowserWindow.getAllWindows().forEach((w) =>
+        w.webContents.send('backend:ready', { port: BACKEND_PORT })
+      )
+    }
+  }
+
+  pythonProcess.stdout.on('data', onData)
+  pythonProcess.stderr.on('data', onData) // uvicorn writes startup info to stderr
+  pythonProcess.on('error', (err) => {
+    console.warn('[backend] spawn error (Python not installed?):', err.message)
+    pythonProcess = null
+  })
+  pythonProcess.on('exit', (code) => {
+    console.log(`[backend] exited with code ${code}`)
+    backendReady = false
+    pythonProcess = null
+  })
+}
+
+function stopPythonBackend() {
+  if (pythonProcess) {
+    pythonProcess.kill('SIGTERM')
+    pythonProcess = null
+  }
+}
+
 // ── Vault path tracking (for IPC security validation) ─────────────────────────
-/** Absolute path of the currently loaded vault — updated on vault:load-files */
+/** 로드된 모든 볼트의 절대 경로 집합 — vault:load-files 및 vault:set-active-path 시 추가 */
+const loadedVaultPaths = new Set()
+/** 현재 활성 볼트 경로 (단독 참조용) */
 let currentVaultPath = null
 
 // ── Vault IPC helpers (Phase 6) ────────────────────────────────────────────────
 
 /**
  * Verify that filePath is strictly inside vaultPath (no path traversal).
+ *
+ * Primary check: normalized string-prefix (covers new/not-yet-created files).
+ * Secondary check: realpathSync to detect symlink escapes (when files exist).
  */
 function isInsideVault(vaultPath, filePath) {
+  // Primary: normalize both paths lexically (no I/O, works for new files)
+  const normVault = path.normalize(path.resolve(vaultPath)).replace(/\\/g, '/').replace(/\/$/, '')
+  const normFile  = path.normalize(path.resolve(filePath)).replace(/\\/g, '/')
+  const passedPrimary = normFile.startsWith(normVault + '/')
+
+  if (!passedPrimary) return false  // clearly outside vault
+
+  // Secondary: if both paths exist, resolve symlinks to prevent escapes
   try {
-    const resolvedVault = fs.realpathSync(vaultPath)
-    const resolvedFile = fs.realpathSync(path.resolve(filePath))
-    const rel = path.relative(resolvedVault, resolvedFile)
+    const realVault = fs.realpathSync(vaultPath)
+    const realFile  = fs.realpathSync(path.resolve(filePath))
+    const rel = path.relative(realVault, realFile)
     return !rel.startsWith('..') && !path.isAbsolute(rel)
   } catch {
-    // realpathSync fails if path doesn't exist yet (new file) — fall back to lexical check
-    const rel = path.relative(path.resolve(vaultPath), path.resolve(filePath))
-    return !rel.startsWith('..') && !path.isAbsolute(rel)
+    // File doesn't exist yet (new file being created) — primary check passed, allow it
+    try {
+      const realVault  = fs.realpathSync(vaultPath)
+      const realParent = fs.realpathSync(path.dirname(path.resolve(filePath)))
+      const realFile   = path.join(realParent, path.basename(filePath))
+      const rel = path.relative(realVault, realFile)
+      return !rel.startsWith('..') && !path.isAbsolute(rel)
+    } catch {
+      // Parent also doesn't exist or vault isn't real — deny for safety
+      return false
+    }
   }
 }
 
-/** Recognized image file extensions within the vault */
+/** 볼트 내 이미지 파일로 인정하는 확장자 */
 const IMAGE_EXTENSIONS = /\.(png|jpg|jpeg|gif|webp|svg|bmp|avif|tiff?|heic)$/i
+
+// ── Jira / Confluence validation constants ─────────────────────────────────
+/** Hard lower-bound for date range queries — prevents runaway full-history scans */
+const JIRA_DATE_HARD_MIN = '2025-01-01'
+/** Project key format: 1–10 upper/lower alphanum + _ - */
+const PROJECT_KEY_RE = /^[A-Z0-9_-]{1,10}$/i
 
 /**
  * Detect image MIME type from file magic bytes.
@@ -151,7 +283,7 @@ async function readImageAsDataUrl(absPath) {
   return `data:${mime};base64,${buffer.toString('base64')}`
 }
 
-// ── Image registry cache (for strata-img:// protocol handler) ────────────────
+// ── Image registry cache (for rembrandt-img:// protocol handler) ───────────────
 // Kept in main process memory so the protocol handler can resolve filenames
 // without an IPC round-trip.
 
@@ -227,11 +359,11 @@ function resolveImagePath(normalizedName) {
   return searchDir(currentVaultPath, 0)
 }
 
-// ── Register strata-img:// custom protocol ────────────────────────────────────
+// ── Register rembrandt-img:// custom protocol ─────────────────────────────────
 // Must be called before app.ready — registers the scheme as "secure" so Chromium
 // treats it like https:// (no mixed-content errors when served from http:// dev server).
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'strata-img', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
+  { scheme: 'rembrandt-img', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
 ])
 
 /**
@@ -240,8 +372,8 @@ protocol.registerSchemesAsPrivileged([
  * - Stops at depth > 10
  * Returns { files: string[], folders: string[], images: string[] }
  *   files:   absolute paths to .md files
- *   folders: vault-relative paths to subdirectories
- *   images:  absolute paths to image files (paths only, content not read)
+ *   folders: vault-relative paths to subdirectories (e.g. "미니언 시스템")
+ *   images:  absolute paths to image files (경로만, 내용 읽지 않음)
  */
 async function collectVaultContents(vaultPath, dirPath, depth = 0) {
   if (depth > 10) return { files: [], folders: [], images: [] }
@@ -260,24 +392,24 @@ async function collectVaultContents(vaultPath, dirPath, depth = 0) {
     if (entry.name.startsWith('.')) continue  // skip hidden (.obsidian, etc.)
     const fullPath = path.join(dirPath, entry.name)
 
-    // 1) Markdown file
+    // 1) .md 파일
     if (entry.name.toLowerCase().endsWith('.md')) {
       if (isInsideVault(vaultPath, fullPath)) files.push(fullPath)
       continue
     }
 
-    // 2) Image file — collect path only
+    // 2) 이미지 파일 — 경로만 수집
     if (IMAGE_EXTENSIONS.test(entry.name) && isInsideVault(vaultPath, fullPath)) {
       images.push(fullPath)
       continue
     }
 
-    // 3) Check if directory (handles folders with extensions like "3D.v2")
+    // 3) 디렉토리 확인 (확장자 있는 폴더명 "3D.v2" 등 포함)
     let entryIsDir = false
     try { entryIsDir = entry.isDirectory() } catch {}
     if (!entryIsDir && /\.\w{1,10}$/.test(entry.name)) continue
 
-    // 4) Subdirectory — async parallel traversal
+    // 4) 하위 디렉토리 비동기 병렬 탐색
     const relPath = path.relative(vaultPath, fullPath).replace(/\\/g, '/')
     folders.push(relPath)
     subPromises.push(
@@ -285,7 +417,7 @@ async function collectVaultContents(vaultPath, dirPath, depth = 0) {
         files.push(...sub.files)
         folders.push(...sub.folders)
         images.push(...sub.images)
-      }).catch((e) => { console.warn('[vault] Subdirectory read failed:', e.message) })
+      }).catch((e) => { console.warn('[vault] 서브디렉토리 읽기 실패:', e.message) })
     )
   }
 
@@ -300,7 +432,7 @@ function registerVaultIpcHandlers() {
   ipcMain.handle('vault:select-folder', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openDirectory'],
-      title: 'Select Vault Folder',
+      title: '볼트 폴더 선택',
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
@@ -314,15 +446,16 @@ function registerVaultIpcHandlers() {
     const resolvedVault = path.resolve(vaultPath)
 
     try { await fs.promises.access(resolvedVault) } catch {
-      throw new Error(`Vault path does not exist: ${resolvedVault}`)
+      throw new Error(`볼트 경로가 존재하지 않습니다: ${resolvedVault}`)
     }
 
     currentVaultPath = resolvedVault
+    loadedVaultPaths.add(resolvedVault)
     const { files: filePaths, folders: folderRelPaths, images: imagePaths } =
       await collectVaultContents(resolvedVault, resolvedVault)
-    console.log(`[vault] Found ${filePaths.length} .md files, ${folderRelPaths.length} folders, ${imagePaths.length} images (${resolvedVault})`)
+    console.log(`[vault] ${filePaths.length}개 .md 파일, ${folderRelPaths.length}개 폴더, ${imagePaths.length}개 이미지 발견 (${resolvedVault})`)
 
-    // Read files: batch parallel to prevent Windows file handle exhaustion
+    // 파일 읽기: 최대 BATCH_SIZE개씩 병렬 처리 (무제한 동시 I/O → Windows 파일 핸들 폭증 방지)
     const BATCH_SIZE = 100
     const fileResults = []
     for (let i = 0; i < filePaths.length; i += BATCH_SIZE) {
@@ -346,27 +479,26 @@ function registerVaultIpcHandlers() {
     }
     const files = fileResults.filter(Boolean)
 
-    // Image files: return only paths in registry (filename -> {relativePath, absolutePath})
+    // 이미지 파일: 경로만 레지스트리로 반환 (filename → {relativePath, absolutePath})
     const imageRegistry = {}
     for (const absPath of imagePaths) {
       const filename = path.basename(absPath)
       const relativePath = path.relative(resolvedVault, absPath).replace(/\\/g, '/')
-      // On filename collision, first found takes priority (matches Obsidian behavior)
       if (!imageRegistry[filename]) {
         imageRegistry[filename] = { relativePath, absolutePath: absPath }
       }
     }
 
-    // Keep in-memory copy for the strata-img:// protocol handler
+    // Keep in-memory copy for the rembrandt-img:// protocol handler
     currentImageRegistry = imageRegistry
     currentNormalizedImageMap = buildNormalizedImageMap(imageRegistry)
 
-    console.log(`[vault] ${files.length}/${filePaths.length} files read successfully, ${Object.keys(imageRegistry).length} images registered`)
+    console.log(`[vault] ${files.length}/${filePaths.length}개 파일 읽기 성공, ${Object.keys(imageRegistry).length}개 이미지 등록`)
     return { files, folders: folderRelPaths, imageRegistry }
   })
 
   // ── vault:scan-metadata ───────────────────────────────────────────────────────
-  // Lightweight scan: returns path + mtime only (no content) for cache fingerprint
+  // 파일 내용 없이 경로 + mtime만 반환 (캐시 지문용 경량 스캔)
   ipcMain.handle('vault:scan-metadata', async (_event, vaultPath) => {
     if (!vaultPath || typeof vaultPath !== 'string') return []
     const resolvedVault = path.resolve(vaultPath)
@@ -389,18 +521,17 @@ function registerVaultIpcHandlers() {
   let watchDebounce = null
 
   ipcMain.handle('vault:watch-start', (_event, vaultPath) => {
-    if (!vaultPath || typeof vaultPath !== 'string') return false
-    // Security: only allow watching the currently loaded vault
-    const resolvedPath = path.resolve(vaultPath)
-    if (currentVaultPath && resolvedPath !== currentVaultPath) return false
+    if (!vaultPath) return false
     if (watcher) { watcher.close(); watcher = null }
+    clearTimeout(watchDebounce); watchDebounce = null
 
     try {
       let lastChangedFile = null
       watcher = fs.watch(vaultPath, { recursive: true }, (_eventType, filename) => {
         if (!filename || !filename.endsWith('.md')) return
-        // Skip internal app config directory — written by the app itself
-        if (filename.replace(/\\/g, '/').startsWith('.strata-sync/')) return
+        // Skip internal app config directory (.rembrandt/) — written by the app itself
+        // (e.g. personas.md saved by usePersonaVaultSaver). These are not user vault edits.
+        if (filename.replace(/\\/g, '/').startsWith('.rembrandt/')) return
         lastChangedFile = filename
         clearTimeout(watchDebounce)
         watchDebounce = setTimeout(() => {
@@ -424,31 +555,35 @@ function registerVaultIpcHandlers() {
   })
 
   // ── vault:set-active-path ────────────────────────────────────────────────────
-  // Pre-update currentVaultPath when loadVaultCached skips vault:load-files
+  // loadVaultCached가 vault:load-files를 호출하지 않을 때 currentVaultPath를 선제 갱신
+  // H5: 활성 경로가 바뀌면 이전 볼트 권한을 누적하지 않도록 집합을 새 경로만 남기고 교체
   ipcMain.handle('vault:set-active-path', (_event, vaultPath) => {
     if (!vaultPath || typeof vaultPath !== 'string') return false
     const resolved = path.resolve(vaultPath)
     try { fs.accessSync(resolved) } catch { return false }
     currentVaultPath = resolved
+    loadedVaultPaths.clear()
+    loadedVaultPaths.add(resolved)
     return true
   })
 
   // ── vault:save-file ──────────────────────────────────────────────────────────
-  ipcMain.handle('vault:save-file', (_event, filePath, content) => {
+  ipcMain.handle('vault:save-file', async (_event, filePath, content) => {
     if (!filePath || typeof filePath !== 'string') throw new Error('Invalid file path')
     if (typeof content !== 'string') throw new Error('Invalid content')
     const resolved = path.resolve(filePath)
-    if (!currentVaultPath || !isInsideVault(currentVaultPath, resolved)) {
-      throw new Error(`Security error: cannot write to path outside vault (${resolved})`)
+    // 로드된 볼트 경로 중 하나라도 포함하면 허용 (다중 볼트 지원)
+    const vaultPaths = loadedVaultPaths.size > 0 ? loadedVaultPaths : (currentVaultPath ? new Set([currentVaultPath]) : null)
+    if (vaultPaths && ![...vaultPaths].some(vp => isInsideVault(vp, resolved))) {
+      throw new Error(`보안 오류: 볼트 외부 파일은 저장할 수 없습니다 (${resolved})`)
     }
-    fs.mkdirSync(path.dirname(resolved), { recursive: true })
-    // Atomic write: write to temp file then rename to prevent data loss on crash
+    await fs.promises.mkdir(path.dirname(resolved), { recursive: true })
     const tmp = resolved + '.~tmp'
     try {
-      fs.writeFileSync(tmp, content, 'utf-8')
-      fs.renameSync(tmp, resolved)
+      await fs.promises.writeFile(tmp, content, 'utf-8')
+      await fs.promises.rename(tmp, resolved)
     } catch (e) {
-      try { fs.unlinkSync(tmp) } catch {}
+      try { await fs.promises.unlink(tmp) } catch {}
       throw e
     }
     return { success: true, path: resolved }
@@ -459,15 +594,12 @@ function registerVaultIpcHandlers() {
     if (!absolutePath || typeof absolutePath !== 'string') throw new Error('Invalid path')
     if (!newFilename || typeof newFilename !== 'string') throw new Error('Invalid filename')
     const resolved = path.resolve(absolutePath)
-    if (!currentVaultPath || !isInsideVault(currentVaultPath, resolved)) {
-      throw new Error(`Security error: cannot rename file outside vault (${resolved})`)
+    if (currentVaultPath && !isInsideVault(currentVaultPath, resolved)) {
+      throw new Error(`보안 오류: 볼트 외부 파일은 이름 변경할 수 없습니다 (${resolved})`)
     }
-    if (!fs.existsSync(resolved)) throw new Error(`File does not exist: ${resolved}`)
-    // Sanitize newFilename — strip any path traversal, accept only the basename
-    const safeFilename = path.basename(newFilename)
-    if (!safeFilename) throw new Error('Invalid filename: empty after sanitization')
+    if (!fs.existsSync(resolved)) throw new Error(`파일이 존재하지 않습니다: ${resolved}`)
     const dir = path.dirname(resolved)
-    const newPath = path.join(dir, safeFilename)
+    const newPath = path.join(dir, newFilename)
     fs.renameSync(resolved, newPath)
     return { success: true, newPath }
   })
@@ -476,29 +608,32 @@ function registerVaultIpcHandlers() {
   ipcMain.handle('vault:delete-file', (_event, absolutePath) => {
     if (!absolutePath || typeof absolutePath !== 'string') throw new Error('Invalid path')
     const resolved = path.resolve(absolutePath)
-    if (!currentVaultPath || !isInsideVault(currentVaultPath, resolved)) {
-      throw new Error(`Security error: cannot delete file outside vault (${resolved})`)
+    if (currentVaultPath && !isInsideVault(currentVaultPath, resolved)) {
+      throw new Error(`보안 오류: 볼트 외부 파일은 삭제할 수 없습니다 (${resolved})`)
     }
-    if (!fs.existsSync(resolved)) throw new Error(`File does not exist: ${resolved}`)
+    if (!fs.existsSync(resolved)) throw new Error(`파일이 존재하지 않습니다: ${resolved}`)
     fs.unlinkSync(resolved)
     return { success: true }
   })
 
   // ── vault:read-file ───────────────────────────────────────────────────────────
-  ipcMain.handle('vault:read-file', (_event, filePath) => {
+  ipcMain.handle('vault:read-file', async (_event, filePath) => {
     if (!filePath || typeof filePath !== 'string') return null
     const resolved = path.resolve(filePath)
-    // Security: reject reads outside the current vault (or when no vault is loaded)
-    if (!currentVaultPath || !isInsideVault(currentVaultPath, resolved)) return null
-    if (!fs.existsSync(resolved)) return null
-    return fs.readFileSync(resolved, 'utf-8')
+    // Must be inside current vault — same guard as vault:save-file and vault:read-image
+    if (currentVaultPath && !isInsideVault(currentVaultPath, resolved)) return null
+    try {
+      return await fs.promises.readFile(resolved, 'utf-8')
+    } catch {
+      return null
+    }
   })
 
   // ── vault:read-image ──────────────────────────────────────────────────────────
   ipcMain.handle('vault:read-image', (_event, filePath) => {
     if (!filePath || typeof filePath !== 'string') return null
     const resolved = path.resolve(filePath)
-    if (!currentVaultPath || !isInsideVault(currentVaultPath, resolved)) return null
+    if (currentVaultPath && !isInsideVault(currentVaultPath, resolved)) return null
     if (!fs.existsSync(resolved)) return null
     return readImageAsDataUrl(resolved)
   })
@@ -517,8 +652,8 @@ function registerVaultIpcHandlers() {
   ipcMain.handle('vault:create-folder', (_event, folderPath) => {
     if (!folderPath || typeof folderPath !== 'string') throw new Error('Invalid folder path')
     const resolved = path.resolve(folderPath)
-    if (!currentVaultPath || !isInsideVault(currentVaultPath, resolved)) {
-      throw new Error(`Security error: cannot create folder outside vault (${resolved})`)
+    if (currentVaultPath && !isInsideVault(currentVaultPath, resolved)) {
+      throw new Error(`보안 오류: 볼트 외부에 폴더를 만들 수 없습니다 (${resolved})`)
     }
     fs.mkdirSync(resolved, { recursive: true })
     return { success: true, path: resolved }
@@ -530,14 +665,16 @@ function registerVaultIpcHandlers() {
     if (!destFolderPath || typeof destFolderPath !== 'string') throw new Error('Invalid destination folder')
     const resolvedSrc = path.resolve(absolutePath)
     const resolvedDest = path.resolve(destFolderPath)
-    if (!currentVaultPath || !isInsideVault(currentVaultPath, resolvedSrc)) {
-      throw new Error(`Security error: cannot move file outside vault (${resolvedSrc})`)
+    if (currentVaultPath && !isInsideVault(currentVaultPath, resolvedSrc)) {
+      throw new Error(`보안 오류: 볼트 외부 파일은 이동할 수 없습니다 (${resolvedSrc})`)
     }
-    const isVaultRoot = resolvedDest === path.resolve(currentVaultPath)
-    if (!isVaultRoot && !isInsideVault(currentVaultPath, resolvedDest)) {
-      throw new Error(`Security error: cannot move file to a location outside vault (${resolvedDest})`)
+    if (currentVaultPath) {
+      const isVaultRoot = resolvedDest === path.resolve(currentVaultPath)
+      if (!isVaultRoot && !isInsideVault(currentVaultPath, resolvedDest)) {
+        throw new Error(`보안 오류: 볼트 외부로 파일을 이동할 수 없습니다 (${resolvedDest})`)
+      }
     }
-    if (!fs.existsSync(resolvedSrc)) throw new Error(`File does not exist: ${resolvedSrc}`)
+    if (!fs.existsSync(resolvedSrc)) throw new Error(`파일이 존재하지 않습니다: ${resolvedSrc}`)
     fs.mkdirSync(resolvedDest, { recursive: true })
     const filename = path.basename(resolvedSrc)
     const newPath = path.join(resolvedDest, filename)
@@ -546,6 +683,14 @@ function registerVaultIpcHandlers() {
   })
 }
 
+function registerBackendIpcHandlers() {
+  ipcMain.handle('backend:getStatus', () => ({
+    ready: backendReady,
+    port: BACKEND_PORT,
+  }))
+
+  ipcMain.handle('backend:isReady', () => backendReady)
+}
 
 // ── Window control IPC handlers (Fix 0) ───────────────────────────────────────
 
@@ -579,15 +724,15 @@ ipcMain.handle('tools:read-app-file', (_event, relativePath) => {
 // ── PDF Report export ─────────────────────────────────────────────────────────
 
 ipcMain.handle('report:export-pdf', async (_event, html, suggestedName) => {
-  // Choose save path
+  // 저장 경로 선택
   const { canceled, filePath } = await dialog.showSaveDialog({
-    title: 'Save Report',
-    defaultPath: suggestedName || 'chat-report.pdf',
-    filters: [{ name: 'PDF File', extensions: ['pdf'] }],
+    title: '보고서 저장',
+    defaultPath: suggestedName || '대화보고서.pdf',
+    filters: [{ name: 'PDF 파일', extensions: ['pdf'] }],
   })
   if (canceled || !filePath) return { ok: false, reason: 'canceled' }
 
-  // Load HTML in a hidden BrowserWindow and print to PDF
+  // 숨겨진 BrowserWindow에 HTML을 로드하고 printToPDF
   const win = new BrowserWindow({
     show: false,
     webPreferences: { sandbox: true },
@@ -620,7 +765,7 @@ ipcMain.handle('web:search', async (_event, query) => {
   const https = require('https')
   const querystring = require('querystring')
   return new Promise((resolve) => {
-    const params = querystring.stringify({ q: query, kl: 'us-en' })
+    const params = querystring.stringify({ q: query, kl: 'kr-kr' })
     const req = https.request({
       hostname: 'html.duckduckgo.com',
       path: '/html/',
@@ -628,7 +773,7 @@ ipcMain.handle('web:search', async (_event, query) => {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Language': 'ko-KR,ko;q=0.9',
         'Content-Length': Buffer.byteLength(params),
       },
     }, (res) => {
@@ -647,9 +792,28 @@ ipcMain.handle('web:search', async (_event, query) => {
 
 function registerConfluenceIpcHandlers() {
   /**
+   * Fetch all pages from a Confluence space via REST API v1.
+   * Uses Electron's net.fetch to bypass CORS.
+   * Returns raw page objects: { id, title, body.storage.value, metadata.labels, version, history }
+   */
+  /**
    * Returns the REST API base path for a Confluence instance.
    * Atlassian Cloud uses /wiki/rest/api; Server/Data Center uses /rest/api.
    */
+
+  /**
+   * Strip Confluence page paths (/display/, /pages/, /browse/, viewpage.action)
+   * so users can paste any Confluence URL as the base URL.
+   */
+  function normalizeConfluenceBaseUrl(baseUrl) {
+    try {
+      const parsed = new URL(baseUrl)
+      const pagePathRe = /\/(display|pages|browse|viewpage\.action)(\/|$)/i
+      if (pagePathRe.test(parsed.pathname)) return parsed.origin
+    } catch { /* fall through */ }
+    return baseUrl.replace(/\/+$/, '')
+  }
+
   function getRestApiBase(baseUrl) {
     try {
       const host = new URL(baseUrl).hostname
@@ -680,39 +844,396 @@ function registerConfluenceIpcHandlers() {
    */
   async function withSSLBypass(bypass, fn) {
     if (!bypass) return fn()
-    const { session } = require('electron')
-    session.defaultSession.setCertificateVerifyProc((_req, cb) => cb(0))
+    _sslBypassRefCount++
+    if (_sslBypassRefCount === 1) {
+      // 처음 진입 시에만 SSL bypass 활성화
+      session.defaultSession.setCertificateVerifyProc((_req, cb) => cb(0))
+    }
     try {
       return await fn()
     } finally {
-      session.defaultSession.setCertificateVerifyProc(null)  // restore default
+      _sslBypassRefCount--
+      if (_sslBypassRefCount === 0) {
+        // 마지막 호출이 끝날 때만 복원
+        session.defaultSession.setCertificateVerifyProc(null)
+      }
     }
   }
+
+  // ── Jira API ──────────────────────────────────────────────────────────────
+  ipcMain.handle('jira:test-connection', async (_event, config) => {
+    const { baseUrl, authType = 'cloud', email, apiToken, bypassSSL = false } = config
+    if (!baseUrl || !apiToken) throw new Error('baseUrl과 apiToken은 필수입니다.')
+    try {
+      const parsed = new URL(baseUrl)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error()
+    } catch { throw new Error('유효하지 않은 baseUrl 형식입니다. http(s)://... 형식이어야 합니다.') }
+    if (authType !== 'server_pat' && !email) throw new Error('이메일(사용자명)이 필요합니다.')
+
+    const base = baseUrl.replace(/\/+$/, '')
+    const isCloud = base.includes('atlassian.net')
+    const apiVersion = isCloud ? '3' : '2'
+    const restBase = `${base}/rest/api/${apiVersion}`
+
+    let authHeader
+    if (authType === 'server_pat') {
+      authHeader = `Bearer ${apiToken}`
+    } else {
+      authHeader = `Basic ${Buffer.from(`${email}:${apiToken}`).toString('base64')}`
+    }
+    const headers = { Authorization: authHeader, Accept: 'application/json' }
+
+    const url = `${restBase}/myself`
+    let res
+    try {
+      res = await withSSLBypass(bypassSSL, () => net.fetch(url, { headers }))
+    } catch (fetchErr) {
+      const msg = fetchErr?.message ?? String(fetchErr)
+      if (msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('ETIMEDOUT')) {
+        throw new Error(`서버에 연결할 수 없습니다. VPN 및 Base URL을 확인하세요.\n(${msg})`)
+      }
+      throw new Error(`연결 오류: ${msg}`)
+    }
+
+    if (res.status === 401) throw new Error('인증 실패 (401). 이메일/비밀번호 또는 API 토큰을 확인하세요.')
+    if (res.status === 403) throw new Error('접근 거부 (403). 계정 권한을 확인하세요.')
+    if (!res.ok) throw new Error(`연결 실패: ${res.status} ${res.statusText}`)
+
+    let displayName = ''
+    try {
+      const data = await res.json()
+      displayName = data.displayName ?? data.name ?? ''
+    } catch { /* ignore */ }
+
+    return { ok: true, displayName }
+  })
+
+  ipcMain.handle('jira:fetch-issues', async (_event, config) => {
+    const { baseUrl, authType = 'cloud', email, apiToken, projectKey, jql: customJql, dateFrom, dateTo, bypassSSL = false } = config
+    if (!baseUrl || !apiToken) throw new Error('baseUrl, apiToken 은 필수 항목입니다.')
+    // Validate URL format and protocol to prevent SSRF
+    try {
+      const parsed = new URL(baseUrl)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error()
+    } catch { throw new Error('유효하지 않은 baseUrl 형식입니다. http(s)://... 형식이어야 합니다.') }
+    if (authType !== 'server_pat' && !email) throw new Error('Cloud / Server Basic 인증은 이메일이 필요합니다.')
+    if (projectKey && !PROJECT_KEY_RE.test(projectKey)) throw new Error('유효하지 않은 Project Key 형식입니다. 영문·숫자·_- (최대 10자) 만 허용됩니다.')
+
+    const effectiveDateFrom = (!dateFrom || dateFrom < JIRA_DATE_HARD_MIN) ? JIRA_DATE_HARD_MIN : dateFrom
+
+    const base = baseUrl.replace(/\/+$/, '')
+    const isCloud = authType === 'cloud'
+    const apiVersion = isCloud ? '3' : '2'
+    const restBase = `${base}/rest/api/${apiVersion}`
+
+    // Build auth header
+    let authHeader
+    if (authType === 'server_pat') {
+      authHeader = `Bearer ${apiToken}`
+    } else {
+      const b64 = Buffer.from(`${email}:${apiToken}`).toString('base64')
+      authHeader = `Basic ${b64}`
+    }
+    const headers = { 'Authorization': authHeader, 'Accept': 'application/json', 'Content-Type': 'application/json' }
+
+    // Build JQL — customJql은 사용자 입력이므로 위험 패턴 차단
+    let jql = customJql?.trim()
+    if (jql && /\b(DROP|DELETE|INSERT|UPDATE|EXEC|UNION)\b/i.test(jql)) {
+      throw new Error('JQL에 허용되지 않는 키워드가 포함되어 있습니다.')
+    }
+    if (!jql) {
+      jql = projectKey ? `project = "${projectKey}"` : 'order by updated DESC'
+      jql += ` AND updated >= "${effectiveDateFrom}"`
+      if (dateTo) jql += ` AND updated <= "${dateTo}"`
+      jql += ' ORDER BY updated DESC'
+    }
+
+    const fields = 'summary,description,status,assignee,reporter,priority,issuetype,labels,components,created,updated,comment,attachment,fixVersions,customfield_10016'
+
+    const issues = []
+    let startAt = 0
+    const maxResults = 50
+
+    while (true) {
+      const url = `${restBase}/search?jql=${encodeURIComponent(jql)}&startAt=${startAt}&maxResults=${maxResults}&fields=${encodeURIComponent(fields)}`
+      let res
+      try {
+        res = await withSSLBypass(bypassSSL, () => net.fetch(url, { headers }))
+      } catch (fetchErr) {
+        const msg = fetchErr?.message ?? String(fetchErr)
+        if (msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND')) {
+          throw new Error(`서버에 연결할 수 없습니다. VPN 연결 상태 및 Base URL을 확인하세요.\n(${msg})`)
+        }
+        throw fetchErr
+      }
+      if (!res.ok) {
+        const errText = await res.text().catch(() => String(res.status))
+        if (res.status === 401) throw new Error(`인증 실패 (401). API 토큰 또는 이메일을 확인하세요.`)
+        if (res.status === 403) throw new Error(`접근 거부 (403). 해당 프로젝트에 대한 읽기 권한이 없습니다.`)
+        throw new Error(`Jira API ${res.status}: ${errText.slice(0, 300)}`)
+      }
+      const data = await res.json()
+      for (const issue of (data.issues ?? [])) issues.push(issue)
+      if (issues.length >= data.total || (data.issues ?? []).length < maxResults) break
+      startAt += maxResults
+    }
+
+    return issues
+  })
+
+  ipcMain.handle('jira:save-issues', async (_event, vaultPath, targetFolder, issuesWithMd) => {
+    if (!vaultPath || typeof vaultPath !== 'string') throw new Error('Invalid vault path')
+    const resolvedVault = path.resolve(vaultPath)
+    if (!targetFolder || typeof targetFolder !== 'string') throw new Error('Invalid target folder')
+    if (!path.isAbsolute(targetFolder) && targetFolder.includes('..')) throw new Error('Invalid target folder')
+    const targetDir = path.isAbsolute(targetFolder) ? targetFolder : path.resolve(path.join(resolvedVault, targetFolder))
+    // C2: 절대경로 targetFolder 도 볼트 내부임을 강제 검증 (path traversal 방어)
+    if (path.isAbsolute(targetFolder) && !isInsideVault(resolvedVault, targetDir)) {
+      throw new Error(`보안 오류: targetFolder 는 볼트 내부여야 합니다 (${targetDir})`)
+    }
+
+    fs.mkdirSync(targetDir, { recursive: true })
+    let saved = 0
+    const savedFiles = []
+    for (const { filename, content } of issuesWithMd) {
+      if (!filename || typeof content !== 'string') continue
+      const safeFilename = path.basename(filename)
+      const filePath = path.join(targetDir, safeFilename)
+      fs.writeFileSync(filePath, content, 'utf-8')
+      saved++
+      savedFiles.push(filePath)
+    }
+    return { saved, targetDir, files: savedFiles }
+  })
+
+  // ── Jira: Get assignable project members ──────────────────────────────────
+  ipcMain.handle('jira:get-members', async (_event, config) => {
+    const { baseUrl, authType = 'cloud', email, apiToken, projectKey, bypassSSL = false } = config
+    if (!baseUrl || !apiToken) throw new Error('baseUrl과 apiToken은 필수입니다.')
+    try {
+      const parsed = new URL(baseUrl)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error()
+    } catch { throw new Error('유효하지 않은 baseUrl 형식입니다.') }
+
+    const base = baseUrl.replace(/\/+$/, '')
+    const isCloud = base.includes('atlassian.net')
+    const apiVersion = isCloud ? '3' : '2'
+    const restBase = `${base}/rest/api/${apiVersion}`
+
+    let authHeader
+    if (authType === 'server_pat') {
+      authHeader = `Bearer ${apiToken}`
+    } else {
+      authHeader = `Basic ${Buffer.from(`${email}:${apiToken}`).toString('base64')}`
+    }
+    const headers = { Authorization: authHeader, Accept: 'application/json' }
+
+    // Cloud: /rest/api/3/users/search  (no project required)
+    // Server/DC: /rest/api/2/user/assignable/search?project=KEY  (project required)
+    //            /rest/api/2/user/search?username=.  (fallback — lists all users)
+    const url = projectKey
+      ? `${restBase}/user/assignable/search?project=${encodeURIComponent(projectKey)}&maxResults=50`
+      : isCloud
+        ? `${restBase}/users/search?maxResults=50`
+        : `${restBase}/user/search?username=.&maxResults=50`
+    let res
+    try {
+      res = await withSSLBypass(bypassSSL, () => net.fetch(url, { headers }))
+    } catch (fetchErr) {
+      throw new Error(`연결 오류: ${fetchErr?.message ?? fetchErr}`)
+    }
+    if (!res.ok) {
+      const errText = await res.text().catch(() => String(res.status))
+      throw new Error(`Jira API ${res.status}: ${errText.slice(0, 200)}`)
+    }
+    const data = await res.json()
+    return (Array.isArray(data) ? data : []).map(u => ({
+      accountId: u.accountId ?? '',
+      displayName: u.displayName ?? '',
+      emailAddress: u.emailAddress ?? '',
+    }))
+  })
+
+  // ── Jira: Create a new issue ──────────────────────────────────────────────
+  ipcMain.handle('jira:create-issue', async (_event, config, fields) => {
+    const { baseUrl, authType = 'cloud', email, apiToken, projectKey, bypassSSL = false } = config
+    if (!baseUrl || !apiToken) throw new Error('baseUrl과 apiToken은 필수입니다.')
+    try {
+      const parsed = new URL(baseUrl)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error()
+    } catch { throw new Error('유효하지 않은 baseUrl 형식입니다.') }
+    if (!fields?.summary?.trim()) throw new Error('summary(이슈 제목)는 필수입니다.')
+    const effectiveProjectKey = (fields.projectKey || projectKey || '').trim()
+    if (effectiveProjectKey && !PROJECT_KEY_RE.test(effectiveProjectKey)) throw new Error('유효하지 않은 Project Key 형식입니다. 영문·숫자·_- (최대 10자) 만 허용됩니다.')
+
+    const base = baseUrl.replace(/\/+$/, '')
+    const isCloud = authType === 'cloud'
+    const restBase = isCloud ? `${base}/rest/api/3` : `${base}/rest/api/2`
+
+    let authHeader
+    if (authType === 'server_pat') {
+      authHeader = `Bearer ${apiToken}`
+    } else {
+      authHeader = `Basic ${Buffer.from(`${email}:${apiToken}`).toString('base64')}`
+    }
+    const headers = { Authorization: authHeader, Accept: 'application/json', 'Content-Type': 'application/json' }
+
+    const descText = (fields.description ?? '').trim()
+    const body = {
+      fields: {
+        project: { key: effectiveProjectKey },
+        summary: fields.summary.trim(),
+        description: isCloud
+          ? { version: 1, type: 'doc', content: descText ? [{ type: 'paragraph', content: [{ type: 'text', text: descText }] }] : [] }
+          : descText,
+        issuetype: fields.issuetype
+          ? (/^\d+$/.test(fields.issuetype) ? { id: fields.issuetype } : { name: fields.issuetype })
+          : { name: 'Task' },
+        ...(fields.priority ? { priority: { name: fields.priority } } : {}),
+        labels: Array.isArray(fields.labels) ? fields.labels : [],
+      },
+    }
+    if (fields.assigneeAccountId) body.fields.assignee = isCloud
+      ? { accountId: fields.assigneeAccountId }
+      : { name: fields.assigneeAccountId }
+    if (fields.parentKey) body.fields.parent = { key: fields.parentKey }
+    if (fields.component) body.fields.components = [{ name: fields.component }]
+
+    let res
+    try {
+      res = await withSSLBypass(bypassSSL, () => net.fetch(`${restBase}/issue`, {
+        method: 'POST', headers, body: JSON.stringify(body),
+      }))
+    } catch (fetchErr) {
+      throw new Error(`연결 오류: ${fetchErr?.message ?? fetchErr}`)
+    }
+    if (!res.ok) {
+      const errText = await res.text().catch(() => String(res.status))
+      if (res.status === 400) throw new Error(`요청 오류 (400): ${errText.slice(0, 300)}`)
+      if (res.status === 401) throw new Error('인증 실패 (401). API 토큰을 확인하세요.')
+      if (res.status === 403) throw new Error('권한 없음 (403). 이슈 생성 권한이 필요합니다.')
+      throw new Error(`Jira API ${res.status}: ${errText.slice(0, 200)}`)
+    }
+    const data = await res.json()
+    const issueKey = data.key
+
+    // ── 활성 스프린트 자동 배정 ───────────────────────────────────────────
+    let sprintId = null
+    try {
+      const agileBase = `${base}/rest/agile/1.0`
+      const pKey = fields.projectKey || projectKey
+      // 설정에 boardId가 있으면 바로 사용, 없으면 scrum 보드 자동 탐색
+      let boardId = config.boardId ?? null
+      if (!boardId) {
+        const boardRes = await withSSLBypass(bypassSSL, () =>
+          net.fetch(`${agileBase}/board?projectKeyOrId=${pKey}&type=scrum&maxResults=10`, { headers })
+        )
+        if (boardRes.ok) {
+          const boardData = await boardRes.json()
+          boardId = boardData?.values?.[0]?.id ?? null
+        }
+      }
+      if (boardId) {
+        const sprintRes = await withSSLBypass(bypassSSL, () =>
+          net.fetch(`${agileBase}/board/${boardId}/sprint?state=active&maxResults=1`, { headers })
+        )
+        if (sprintRes.ok) {
+          const sprintData = await sprintRes.json()
+          sprintId = sprintData?.values?.[0]?.id ?? null
+        }
+      }
+    } catch (_) { /* 스프린트 조회 실패 시 백로그 유지 */ }
+
+    if (sprintId) {
+      try {
+        await withSSLBypass(bypassSSL, () =>
+          net.fetch(`${base}/rest/agile/1.0/sprint/${sprintId}/issue`, {
+            method: 'POST', headers, body: JSON.stringify({ issues: [issueKey] }),
+          })
+        )
+      } catch (_) { /* 스프린트 배정 실패 시 무시 */ }
+    }
+
+    return { key: issueKey, id: data.id, url: `${base}/browse/${issueKey}`, sprintId }
+  })
+
+  ipcMain.handle('confluence:test-connection', async (_event, config) => {
+    const { baseUrl, authType = 'cloud', email, apiToken, bypassSSL = false } = config
+    if (!baseUrl || !apiToken) throw new Error('baseUrl과 apiToken은 필수입니다.')
+    try {
+      const parsed = new URL(baseUrl)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error()
+    } catch { throw new Error('유효하지 않은 baseUrl 형식입니다. http(s)://... 형식이어야 합니다.') }
+    if (authType !== 'server_pat' && !email) throw new Error('이메일(사용자명)이 필요합니다.')
+
+    const base = normalizeConfluenceBaseUrl(baseUrl)
+    const headers = buildConfluenceAuthHeaders(authType, email, apiToken)
+    const restBase = getRestApiBase(base)
+
+    async function tryFetch(url) {
+      try {
+        return await withSSLBypass(bypassSSL, () => net.fetch(url, { headers }))
+      } catch (fetchErr) {
+        const msg = fetchErr?.message ?? String(fetchErr)
+        if (msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('ETIMEDOUT')) {
+          throw new Error(`서버에 연결할 수 없습니다. VPN 및 Base URL을 확인하세요.\n(${msg})`)
+        }
+        throw new Error(`연결 오류: ${msg}`)
+      }
+    }
+
+    // /rest/api/space?limit=1 — 모든 Confluence 버전에서 인증 필요, 범용 지원
+    const spaceUrl = `${restBase}/space?limit=1`
+    const res = await tryFetch(spaceUrl)
+
+    if (res.status === 401) throw new Error('인증 실패 (401). 사용자명/비밀번호 또는 API 토큰을 확인하세요.')
+    if (res.status === 403) throw new Error('접근 거부 (403). 계정 권한을 확인하세요.')
+    if (!res.ok) throw new Error(`연결 실패: ${res.status} ${res.statusText}`)
+
+    // 사용자 표시명은 /user/current 에서 가져오되, 404여도 연결 성공으로 처리
+    let displayName = ''
+    try {
+      const userRes = await tryFetch(`${restBase}/user/current`)
+      if (userRes.ok) {
+        const data = await userRes.json()
+        displayName = data.displayName ?? data.username ?? data.name ?? ''
+      }
+    } catch { /* 표시명 취득 실패는 무시 */ }
+
+    return { ok: true, displayName }
+  })
 
   ipcMain.handle('confluence:fetch-pages', async (_event, config) => {
     const { baseUrl, authType = 'cloud', email, apiToken, spaceKey, dateFrom, dateTo, bypassSSL = false } = config
 
     // Validate required fields (server_pat doesn't need email)
     if (!baseUrl || !apiToken || !spaceKey) {
-      throw new Error('baseUrl, apiToken, and spaceKey are required.')
+      throw new Error('baseUrl, apiToken, spaceKey 는 필수 항목입니다.')
     }
+    // Validate URL format and protocol to prevent SSRF
+    try {
+      const parsed = new URL(baseUrl)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error()
+    } catch { throw new Error('유효하지 않은 baseUrl 형식입니다. http(s)://... 형식이어야 합니다.') }
     if (authType !== 'server_pat' && !email) {
-      throw new Error('Cloud / Server Basic auth requires an email (or username).')
-    }
-    // Sanitize spaceKey — Confluence space keys are alphanumeric + hyphens/underscores only.
-    // Reject anything else to prevent CQL injection.
-    if (!/^[A-Za-z0-9_~-]+$/.test(spaceKey)) {
-      throw new Error(`Invalid spaceKey: "${spaceKey}". Space keys may only contain letters, digits, hyphens, underscores, and tildes.`)
+      throw new Error('Cloud / Server Basic 인증은 이메일(사용자명)이 필요합니다.')
     }
 
-    // Date range validation — hard lower bound: 2025-01-01
-    const HARD_MIN = '2025-01-01'
-    const effectiveDateFrom = (!dateFrom || dateFrom < HARD_MIN) ? HARD_MIN : dateFrom
-    if (dateFrom && dateFrom < HARD_MIN) {
-      console.warn(`[Confluence] dateFrom(${dateFrom}) < minimum allowed(${HARD_MIN}), correcting to ${HARD_MIN}.`)
+    // Date range validation — hard lower bound: JIRA_DATE_HARD_MIN
+    const effectiveDateFrom = (!dateFrom || dateFrom < JIRA_DATE_HARD_MIN) ? JIRA_DATE_HARD_MIN : dateFrom
+    if (dateFrom && dateFrom < JIRA_DATE_HARD_MIN) {
+      console.warn(`[Confluence] dateFrom(${dateFrom}) < 최소 허용값(${JIRA_DATE_HARD_MIN}), ${JIRA_DATE_HARD_MIN}로 보정합니다.`)
     }
 
-    const base = baseUrl.replace(/\/+$/, '')
+    // Input validation — prevent CQL injection
+    const SPACE_KEY_RE = /^[A-Z0-9_~-]{1,100}$/i
+    // YYYY-MM-DD 또는 YYYY-MM-DD HH:mm (datetime — lastSyncAt 기반 증분 동기화)
+    const DATE_RE = /^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?$/
+    if (!SPACE_KEY_RE.test(spaceKey)) throw new Error('유효하지 않은 Space Key 형식입니다. 영문·숫자·_~- 만 허용됩니다.')
+    if (dateTo && !DATE_RE.test(dateTo)) throw new Error('유효하지 않은 dateTo 형식입니다. YYYY-MM-DD 형식이어야 합니다.')
+    if (!DATE_RE.test(effectiveDateFrom)) throw new Error('유효하지 않은 dateFrom 형식입니다. YYYY-MM-DD 또는 YYYY-MM-DD HH:mm 형식이어야 합니다.')
+
+    const base = normalizeConfluenceBaseUrl(baseUrl)
     const headers = buildConfluenceAuthHeaders(authType, email, apiToken)
     const restBase = getRestApiBase(base)
 
@@ -730,7 +1251,7 @@ function registerConfluenceIpcHandlers() {
       const url =
         `${restBase}/content/search` +
         `?cql=${encodeURIComponent(cql)}` +
-        `&expand=body.storage,metadata.labels,version,history` +
+        `&expand=body.storage,body.view,metadata.labels,version,history` +
         `&limit=${limit}` +
         `&start=${start}`
 
@@ -740,10 +1261,10 @@ function registerConfluenceIpcHandlers() {
       } catch (fetchErr) {
         const msg = fetchErr?.message ?? String(fetchErr)
         if (msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('ETIMEDOUT')) {
-          throw new Error(`Cannot connect to server. Check your VPN connection and Base URL.\n(${msg})`)
+          throw new Error(`서버에 연결할 수 없습니다. VPN 연결 상태 및 Base URL을 확인하세요.\n(${msg})`)
         }
         if (msg.includes('certificate') || msg.includes('CERT') || msg.includes('SSL')) {
-          throw new Error(`SSL certificate error. If using a corporate CA certificate, enable the "Bypass SSL Certificate" option.\n(${msg})`)
+          throw new Error(`SSL 인증서 오류입니다. 사내 CA 인증서 사용 시 "SSL 인증서 우회" 옵션을 활성화하세요.\n(${msg})`)
         }
         throw fetchErr
       }
@@ -751,12 +1272,12 @@ function registerConfluenceIpcHandlers() {
         const errText = await res.text().catch(() => String(res.status))
         if (res.status === 401) {
           const hint = authType === 'server_pat'
-            ? 'Please verify your PAT token is correct.'
-            : 'Please verify your API token or email/username.'
-          throw new Error(`Authentication failed (401). ${hint}`)
+            ? 'PAT 토큰이 올바른지 확인하세요.'
+            : 'API 토큰 또는 이메일/사용자명을 확인하세요.'
+          throw new Error(`인증 실패 (401). ${hint}`)
         }
-        if (res.status === 403) throw new Error(`Access denied (403). You do not have read permission for this space.`)
-        if (res.status === 404) throw new Error(`Space or search API not found (404). Check your Space Key and Base URL.`)
+        if (res.status === 403) throw new Error(`접근 거부 (403). 해당 스페이스에 대한 읽기 권한이 없습니다.`)
+        if (res.status === 404) throw new Error(`스페이스 또는 검색 API를 찾을 수 없습니다 (404). Space Key와 Base URL을 확인하세요.`)
         throw new Error(`Confluence API ${res.status}: ${errText.slice(0, 300)}`)
       }
       const data = await res.json()
@@ -782,26 +1303,25 @@ function registerConfluenceIpcHandlers() {
     if (!vaultPath || typeof vaultPath !== 'string') throw new Error('Invalid vault path')
     const resolvedVault = path.resolve(vaultPath)
 
-    // Validate targetFolder — block absolute paths and traversal, allow nested relative paths
     if (!targetFolder || typeof targetFolder !== 'string') throw new Error('Invalid target folder')
-    if (path.isAbsolute(targetFolder) || targetFolder.includes('..')) throw new Error('Invalid target folder')
-    const targetDir = path.resolve(path.join(resolvedVault, targetFolder))
-    if (!isInsideVault(resolvedVault, targetDir)) throw new Error('Target folder is outside vault')
+    if (!path.isAbsolute(targetFolder) && targetFolder.includes('..')) throw new Error('Invalid target folder')
+    const targetDir = path.isAbsolute(targetFolder) ? targetFolder : path.resolve(path.join(resolvedVault, targetFolder))
+    // C2: 절대경로 targetFolder 도 볼트 내부임을 강제 검증 (path traversal 방어)
+    if (path.isAbsolute(targetFolder) && !isInsideVault(resolvedVault, targetDir)) {
+      throw new Error(`보안 오류: targetFolder 는 볼트 내부여야 합니다 (${targetDir})`)
+    }
 
     fs.mkdirSync(targetDir, { recursive: true })
     let saved = 0
     const savedFiles = []
     for (const { filename, content } of pagesWithMd) {
       if (!filename || typeof content !== 'string') continue
-      // Sanitize to plain basename — no path traversal
       const safeFilename = path.basename(filename)
       const filePath = path.join(targetDir, safeFilename)
-      if (!isInsideVault(resolvedVault, filePath)) continue
       fs.writeFileSync(filePath, content, 'utf-8')
       savedFiles.push(filePath)
       saved++
     }
-    // targetDir IS the active dir (per manual: vault/active/ = targetFolder)
     return { saved, targetDir, activeDir: targetDir, files: savedFiles }
   })
 
@@ -809,8 +1329,202 @@ function registerConfluenceIpcHandlers() {
    * Rollback: delete the given file paths and remove empty directories.
    * Returns { deleted, errors } — errors are non-fatal (file locked / already gone).
    */
+  // ── MCP Config sync (GUI → mcp-config.json) ──────────────────────────────
+  ipcMain.handle('config:write-mcp', async (_event, patch) => {
+    // SEC-4: allowlist — only known GUI-managed keys may be written
+    const ALLOWED_MCP_KEYS = new Set(['jira', 'confluence', 'slackBot', 'vaultPath'])
+    const mcpConfigPath = process.env.SANDBOX_MAP_CONFIG
+      || path.join(__dirname, '..', 'mcp-config.json')
+    let current = {}
+    try { current = JSON.parse(fs.readFileSync(mcpConfigPath, 'utf-8')) } catch {}
+    // Deep merge one level (top-level keys like jira, confluence, slackBot)
+    const merged = { ...current }
+    for (const [k, v] of Object.entries(patch)) {
+      if (!ALLOWED_MCP_KEYS.has(k)) {
+        console.warn(`[config:write-mcp] 허용되지 않은 키 무시: "${k}"`)
+        continue
+      }
+      merged[k] = typeof v === 'object' && v !== null && !Array.isArray(v)
+        ? { ...(current[k] ?? {}), ...v }
+        : v
+    }
+    fs.writeFileSync(mcpConfigPath, JSON.stringify(merged, null, 2), 'utf-8')
+    return { ok: true }
+  })
+
+  // ── Settings file persistence (userData/settings.json, vault.json) ────────
+  // Atomic write: tmp → rename (크래시 시 파일 손상 방지)
+  // Backup: 쓰기 성공 시 .bak 유지 → 읽기 실패 시 .bak 복구
+  const settingsDir = app.getPath('userData')
+  const ALLOWED_SETTINGS_FILES = new Set(['settings.json', 'vault.json'])
+
+  function validateSettingsFile(filename) {
+    if (!ALLOWED_SETTINGS_FILES.has(filename)) throw new Error(`허용되지 않은 설정 파일: "${filename}"`)
+    return path.join(settingsDir, filename)
+  }
+
+  ipcMain.handle('settings:read', async (_event, filename) => {
+    const filePath = validateSettingsFile(filename)
+    const bakPath = filePath + '.bak'
+    // 1차: 원본 파일
+    try {
+      const raw = fs.readFileSync(filePath, 'utf-8')
+      return JSON.parse(raw)
+    } catch (err) {
+      if (err.code !== 'ENOENT') {
+        console.warn(`[settings:read] ${filename} 손상 또는 읽기 불가:`, err.message, '— .bak 시도')
+      }
+    }
+    // 2차: 백업 파일 복구
+    try {
+      const raw = fs.readFileSync(bakPath, 'utf-8')
+      const parsed = JSON.parse(raw)
+      console.warn(`[settings:read] ${filename} → .bak에서 복구 완료`)
+      fs.writeFileSync(filePath, raw, 'utf-8')
+      return parsed
+    } catch { /* 백업도 없음 — 최초 실행 */ }
+    return null
+  })
+
+  ipcMain.handle('settings:write', async (_event, filename, data) => {
+    const filePath = validateSettingsFile(filename)
+    const tmpPath = filePath + '.tmp'
+    const bakPath = filePath + '.bak'
+
+    // 데이터 타입 검증
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new Error(`settings:write — data must be a plain object`)
+    }
+
+    // JSON 직렬화 (circular ref, BigInt 등 방어)
+    let json
+    try {
+      json = JSON.stringify(data, null, 2)
+    } catch (err) {
+      throw new Error(`settings:write — JSON 직렬화 실패: ${err.message}`)
+    }
+
+    // 크기 제한 (10MB)
+    if (json.length > 10 * 1024 * 1024) {
+      throw new Error(`settings:write — 파일 크기 초과 (${(json.length / 1024 / 1024).toFixed(1)}MB > 10MB)`)
+    }
+
+    // Atomic write
+    fs.writeFileSync(tmpPath, json, 'utf-8')
+    try { fs.renameSync(filePath, bakPath) } catch { /* 최초 저장 시 원본 없음 */ }
+    try {
+      fs.renameSync(tmpPath, filePath)
+    } catch (err) {
+      // 2차 rename 실패 → .bak에서 원본 복구
+      console.error(`[settings:write] ${filename} rename 실패:`, err.message)
+      try { fs.renameSync(bakPath, filePath) } catch { /* .bak 복구도 실패 */ }
+      try { fs.unlinkSync(tmpPath) } catch { /* tmp 정리 */ }
+      throw err
+    }
+    return { ok: true }
+  })
+
+  // ── Confluence Write: get page info ───────────────────────────────────────
+  ipcMain.handle('confluence:get-page-info', async (_event, config, pageIdOrUrl) => {
+    const { baseUrl, authType = 'cloud', email, apiToken, bypassSSL = false } = config
+    if (!baseUrl || !apiToken) throw new Error('baseUrl과 apiToken은 필수입니다.')
+    const base = normalizeConfluenceBaseUrl(baseUrl)
+    const headers = buildConfluenceAuthHeaders(authType, email, apiToken)
+    const restBase = getRestApiBase(base)
+
+    // Extract numeric page ID from URL or use directly
+    let pageId = String(pageIdOrUrl).trim()
+    const urlMatch = pageId.match(/pageId=(\d+)/) || pageId.match(/\/pages\/(\d+)/)
+    if (urlMatch) pageId = urlMatch[1]
+    if (!/^\d+$/.test(pageId)) throw new Error('페이지 ID를 추출할 수 없습니다. pageId=XXXXXX 형식의 URL을 붙여넣으세요.')
+
+    const url = `${restBase}/content/${pageId}?expand=version,space,ancestors`
+    const res = await withSSLBypass(bypassSSL, () => net.fetch(url, { headers }))
+    if (!res.ok) {
+      const txt = await res.text().catch(() => String(res.status))
+      if (res.status === 404) throw new Error(`페이지를 찾을 수 없습니다 (ID: ${pageId})`)
+      throw new Error(`Confluence ${res.status}: ${txt.slice(0, 200)}`)
+    }
+    const data = await res.json()
+    return {
+      id: data.id,
+      title: data.title,
+      version: data.version?.number ?? 1,
+      spaceKey: data.space?.key ?? '',
+      url: `${base}/pages/${data.id}`,
+    }
+  })
+
+  // ── Confluence Write: create new page ─────────────────────────────────────
+  ipcMain.handle('confluence:create-page', async (_event, config, opts) => {
+    const { baseUrl, authType = 'cloud', email, apiToken, spaceKey, bypassSSL = false } = config
+    if (!baseUrl || !apiToken) throw new Error('baseUrl과 apiToken은 필수입니다.')
+    if (!opts?.title?.trim()) throw new Error('페이지 제목은 필수입니다.')
+    if (!opts?.storageBody?.trim()) throw new Error('페이지 내용은 필수입니다.')
+
+    const effectiveSpaceKey = opts.spaceKey || spaceKey
+    if (!effectiveSpaceKey) throw new Error('Space Key가 없습니다. Confluence 설정에서 Space Key를 입력하세요.')
+
+    const base = normalizeConfluenceBaseUrl(baseUrl)
+    const headers = { ...buildConfluenceAuthHeaders(authType, email, apiToken), 'Content-Type': 'application/json' }
+    const restBase = getRestApiBase(base)
+
+    const body = {
+      type: 'page',
+      title: opts.title.trim(),
+      space: { key: effectiveSpaceKey },
+      body: { storage: { value: opts.storageBody, representation: 'storage' } },
+    }
+    if (opts.parentId) body.ancestors = [{ id: String(opts.parentId) }]
+
+    const res = await withSSLBypass(bypassSSL, () => net.fetch(`${restBase}/content`, {
+      method: 'POST', headers, body: JSON.stringify(body),
+    }))
+    if (!res.ok) {
+      const txt = await res.text().catch(() => String(res.status))
+      if (res.status === 400) throw new Error(`요청 오류 (400): ${txt.slice(0, 300)}`)
+      if (res.status === 403) throw new Error('권한 없음 (403). 페이지 생성 권한이 필요합니다.')
+      throw new Error(`Confluence ${res.status}: ${txt.slice(0, 200)}`)
+    }
+    const data = await res.json()
+    return { id: data.id, title: data.title, url: `${base}/pages/${data.id}` }
+  })
+
+  // ── Confluence Write: update existing page ────────────────────────────────
+  ipcMain.handle('confluence:update-page', async (_event, config, opts) => {
+    const { baseUrl, authType = 'cloud', email, apiToken, bypassSSL = false } = config
+    if (!baseUrl || !apiToken) throw new Error('baseUrl과 apiToken은 필수입니다.')
+    if (!opts?.pageId) throw new Error('pageId는 필수입니다.')
+    if (!opts?.title?.trim()) throw new Error('페이지 제목은 필수입니다.')
+    if (!opts?.storageBody?.trim()) throw new Error('페이지 내용은 필수입니다.')
+    if (!opts?.currentVersion) throw new Error('currentVersion은 필수입니다.')
+
+    const base = normalizeConfluenceBaseUrl(baseUrl)
+    const headers = { ...buildConfluenceAuthHeaders(authType, email, apiToken), 'Content-Type': 'application/json' }
+    const restBase = getRestApiBase(base)
+
+    const body = {
+      type: 'page',
+      title: opts.title.trim(),
+      version: { number: opts.currentVersion + 1 },
+      body: { storage: { value: opts.storageBody, representation: 'storage' } },
+    }
+
+    const res = await withSSLBypass(bypassSSL, () => net.fetch(`${restBase}/content/${opts.pageId}`, {
+      method: 'PUT', headers, body: JSON.stringify(body),
+    }))
+    if (!res.ok) {
+      const txt = await res.text().catch(() => String(res.status))
+      if (res.status === 409) throw new Error('버전 충돌 (409). 페이지가 다른 사람에 의해 수정됐습니다. 새로고침 후 재시도하세요.')
+      if (res.status === 403) throw new Error('권한 없음 (403). 페이지 편집 권한이 필요합니다.')
+      throw new Error(`Confluence ${res.status}: ${txt.slice(0, 200)}`)
+    }
+    const data = await res.json()
+    return { id: data.id, title: data.title, version: data.version?.number, url: `${base}/pages/${data.id}` }
+  })
+
   ipcMain.handle('confluence:rollback', async (_event, files, dirs) => {
-    if (!currentVaultPath) throw new Error('No vault is currently open')
+    if (!currentVaultPath) throw new Error('볼트가 열려있지 않습니다')
     const resolvedVault = path.resolve(currentVaultPath)
     let deleted = 0
     const errors = []
@@ -818,7 +1532,7 @@ function registerConfluenceIpcHandlers() {
     for (const f of (files ?? [])) {
       const resolved = path.resolve(f)
       if (!isInsideVault(resolvedVault, resolved)) {
-        errors.push(`Security: path outside vault rejected — ${path.basename(f)}`)
+        errors.push(`보안: 볼트 외부 경로 거부됨 — ${path.basename(f)}`)
         continue
       }
       try {
@@ -832,17 +1546,17 @@ function registerConfluenceIpcHandlers() {
     for (const d of (dirs ?? [])) {
       const resolved = path.resolve(d)
       if (!isInsideVault(resolvedVault, resolved)) {
-        errors.push(`Security: folder outside vault rejected — ${path.basename(d)}`)
+        errors.push(`보안: 볼트 외부 폴더 거부됨 — ${path.basename(d)}`)
         continue
       }
       try {
         if (fs.existsSync(resolved)) {
           const remaining = fs.readdirSync(resolved)
           if (remaining.length === 0) fs.rmdirSync(resolved)
-          else errors.push(`Folder not empty (${remaining.length} items): ${path.basename(d)}`)
+          else errors.push(`폴더 비어있지 않음 (${remaining.length}개): ${path.basename(d)}`)
         }
       } catch (e) {
-        errors.push(`Failed to delete folder (${path.basename(d)}): ${e.message}`)
+        errors.push(`폴더 삭제 실패 (${path.basename(d)}): ${e.message}`)
       }
     }
 
@@ -855,7 +1569,7 @@ function registerConfluenceIpcHandlers() {
    */
   ipcMain.handle('confluence:download-attachments', async (_event, config, vaultPath, targetFolder, pageId) => {
     const { baseUrl, authType = 'cloud', email, apiToken, bypassSSL = false } = config
-    const base = baseUrl.replace(/\/+$/, '')
+    const base = normalizeConfluenceBaseUrl(baseUrl)
     const headers = buildConfluenceAuthHeaders(authType, email, apiToken)
     const restBase = getRestApiBase(base)
 
@@ -903,6 +1617,35 @@ function registerConfluenceIpcHandlers() {
         scriptName.includes('/') || scriptName.includes('\\') || scriptName.includes('..')) {
       throw new Error(`Invalid script name: ${scriptName}`)
     }
+    // Validate args: must be array of strings; each item either a known flag or a safe path
+    const safeArgs = Array.isArray(args) ? args : []
+    const ALLOWED_FLAGS = new Set(['--vault', '--dry-run', '--verbose', '--force', '--fix', '--top', '--days', '--threshold'])
+    const NUMERIC_FLAGS = new Set(['--top', '--days', '--threshold'])
+    for (let i = 0; i < safeArgs.length; i++) {
+      const arg = safeArgs[i]
+      if (typeof arg !== 'string') throw new Error('Script args must be strings')
+      if (arg.startsWith('-')) {
+        if (!ALLOWED_FLAGS.has(arg)) throw new Error(`Unknown flag: ${arg}`)
+        // Validate flag values
+        if (NUMERIC_FLAGS.has(arg)) {
+          const val = safeArgs[i + 1]
+          if (typeof val !== 'string' || !/^\d+(\.\d+)?$/.test(val)) {
+            throw new Error(`${arg} requires a numeric value`)
+          }
+          i++  // 값 소비 — 다음 반복에서 숫자 값을 플래그로 오인하지 않도록
+        }
+        if (arg === '--vault') {
+          const val = safeArgs[i + 1]
+          if (typeof val !== 'string') throw new Error('--vault requires a path value')
+          const resolvedVal = path.resolve(val)
+          const resolvedVault = currentVaultPath ? path.resolve(currentVaultPath) : null
+          if (resolvedVault && !resolvedVal.startsWith(resolvedVault)) {
+            throw new Error(`--vault value must be inside the current vault`)
+          }
+          i++  // 값 소비
+        }
+      }
+    }
 
     const appDir = app.isPackaged
       ? path.join(process.resourcesPath, 'manual', 'scripts')
@@ -913,15 +1656,14 @@ function registerConfluenceIpcHandlers() {
       throw new Error(`Script path escapes scripts directory`)
     }
     if (!fs.existsSync(scriptPath)) {
-      throw new Error(`Script not found: ${scriptPath}`)
+      throw new Error(`스크립트를 찾을 수 없습니다: ${scriptPath}`)
     }
 
-    const safeArgs = (Array.isArray(args) ? args : []).map(String)
     return new Promise((resolve) => {
       const pyCmd = process.platform === 'win32' ? 'python' : 'python3'
-      const proc = spawn(pyCmd, [scriptPath, ...safeArgs], {
+      const proc = spawn(pyCmd, ['-X', 'utf8', scriptPath, ...(args ?? [])], {
         cwd: app.isPackaged ? process.resourcesPath : path.join(__dirname, '..'),
-        env: { ...process.env },
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
       })
       let stdout = ''
       let stderr = ''
@@ -935,7 +1677,7 @@ function registerConfluenceIpcHandlers() {
     })
   })
 
-  // ── tools:run-vault-tool — Run Python scripts from tools/ folder for Edit Agent ──
+  // ── tools:run-vault-tool — Edit Agent용 tools/ 폴더 파이썬 스크립트 실행 ────────
   ipcMain.handle('tools:run-vault-tool', async (_event, scriptName, args) => {
     if (!scriptName || typeof scriptName !== 'string' ||
         scriptName.includes('/') || scriptName.includes('\\') || scriptName.includes('..')) {
@@ -949,7 +1691,7 @@ function registerConfluenceIpcHandlers() {
       throw new Error('Script path escapes tools directory')
     }
     if (!fs.existsSync(scriptPath)) {
-      throw new Error(`Script not found: ${scriptPath}`)
+      throw new Error(`스크립트를 찾을 수 없습니다: ${scriptPath}`)
     }
     const safeArgs = (Array.isArray(args) ? args : []).map(String)
     return new Promise((resolve) => {
@@ -969,7 +1711,7 @@ function registerConfluenceIpcHandlers() {
     })
   })
 
-  // ── gstack:execute — Headless browser binary execution ───────────────────────
+  // ── gstack:execute — gstack 헤드리스 브라우저 바이너리 실행 ─────────────────────
   ipcMain.handle('gstack:execute', async (_event, command, args) => {
     const ALLOWED = new Set(['goto', 'text', 'snapshot', 'click', 'fill', 'js'])
     if (!ALLOWED.has(command)) return { success: false, output: '', error: `Unknown command: ${command}` }
@@ -1003,9 +1745,15 @@ function createWindow() {
     height: 960,
     minWidth: 1200,
     minHeight: 700,
-    title: 'STRATA SYNC',
-    icon: path.join(__dirname, '..', 'ico.png'),
-    frame: false,            // Remove native OS title bar (custom TopBar handles controls)
+    title: 'SANDBOX MAP',
+    icon: path.join(__dirname, '..', 'public', 'sandbox-map.png'),  // window titlebar icon
+    frame: true,
+    titleBarStyle: 'hidden',   // Hide native title text, keep window controls
+    titleBarOverlay: {
+      color: '#202020',        // matches --color-bg-secondary dark theme
+      symbolColor: '#9b9a97', // matches --color-text-secondary
+      height: 36,              // matches TopBar h-9
+    },
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -1014,13 +1762,19 @@ function createWindow() {
     },
     autoHideMenuBar: true,
     backgroundColor: '#191919',
-    show: false,  // Show after ready-to-show event — prevents "not responding" during JS parse
+    show: false,  // ready-to-show 이벤트 후 표시 — JS 파싱 중 '응답없음' 방지
   })
 
-  // Show window after JS bundle parse and first render complete (Electron recommended pattern)
+  // JS 번들 파싱·첫 렌더 완료 후 창 표시 (Electron 공식 권장 패턴)
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
   })
+
+  // Explicitly set taskbar icon on Windows (setAppUserModelId must be called before this)
+  if (process.platform === 'win32') {
+    const iconPath = path.join(__dirname, '..', 'public', 'sandbox-map.png')
+    if (require('fs').existsSync(iconPath)) mainWindow.setIcon(iconPath)
+  }
 
   // ── Security: Handle CORS for allowed API domains ──
   // Strip Origin header so Chromium does not enforce CORS preflight at all.
@@ -1039,15 +1793,13 @@ function createWindow() {
   // (some API servers return 4xx for OPTIONS, which fails the preflight).
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const url = new URL(details.url)
-    const isAllowed = ALLOWED_API_DOMAINS.some(
-      d => url.hostname === d || url.hostname.endsWith('.' + d)
-    )
+    const isAllowed = ALLOWED_API_DOMAINS.some(d => url.hostname === d)
     if (isAllowed) {
       const responseHeaders = {
         ...details.responseHeaders,
         'access-control-allow-origin': ['*'],
         'access-control-allow-headers': ['*'],
-        'access-control-allow-methods': ['GET, POST, PUT, DELETE, OPTIONS'],
+        'access-control-allow-methods': ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
       }
       if (details.method === 'OPTIONS') {
         callback({ responseHeaders, statusLine: 'HTTP/1.1 204 No Content' })
@@ -1072,23 +1824,24 @@ function createWindow() {
 
   // ── Crash recovery: renderer process gone (GPU crash, OOM, etc.) ───────────
   let rendererCrashCount = 0
-  const CRASH_RESET_MS = 30_000  // crash count reset window: 30 seconds
+  const CRASH_RESET_MS = 30_000  // 30초 내 크래시 횟수 기준
   let crashResetTimer = null
 
   mainWindow.webContents.on('render-process-gone', (event, details) => {
+    logCrash('render-process-gone', `reason: ${details.reason}, exitCode: ${details.exitCode}`)
     console.error('[main] render-process-gone:', details.reason, 'exitCode:', details.exitCode)
     if (details.reason === 'clean-exit') return
 
     rendererCrashCount++
-    console.warn(`[main] Renderer crash count: ${rendererCrashCount}`)
+    console.warn(`[main] 렌더러 크래시 횟수: ${rendererCrashCount}`)
 
-    // Stop auto-restart after 3 crashes within 30s to prevent infinite reload loop
+    // 30초 안에 3번 이상 크래시하면 무한 재시작 방지 — 재로드 중단
     if (rendererCrashCount >= 3) {
-      console.error('[main] Repeated crashes detected — stopping auto-restart. Please restart the app manually.')
+      console.error('[main] 반복 크래시 감지 — 자동 재시작 중단. 앱을 수동으로 재시작하세요.')
       return
     }
 
-    // Reset counter after 30s
+    // 타이머: 30초 후 카운터 리셋
     if (crashResetTimer) clearTimeout(crashResetTimer)
     crashResetTimer = setTimeout(() => { rendererCrashCount = 0 }, CRASH_RESET_MS)
 
@@ -1112,10 +1865,15 @@ function createWindow() {
 
   // ── Unresponsive renderer: log for now (could show dialog if needed) ───────
   mainWindow.on('unresponsive', () => {
-    console.warn('[main] window became unresponsive')
+    logCrash('unresponsive', 'window became unresponsive')
   })
   mainWindow.on('responsive', () => {
     console.log('[main] window responsive again')
+  })
+
+  // GPU 프로세스 크래시 등 — Electron child process 전체
+  app.on('child-process-gone', (_event, details) => {
+    logCrash('child-process-gone', `type: ${details.type}, reason: ${details.reason}, exitCode: ${details.exitCode}`)
   })
 }
 
@@ -1136,10 +1894,10 @@ if (!gotTheLock) {
 const RAG_API_PORT = 7331
 const _ragResolvers = new Map()
 
-// MiroFish real-time progress — for /mirofish-progress polling
+// MiroFish 실시간 진행 상태 — /mirofish-progress 폴링용
 let _mirofishProgress = { running: false, feed: [], round: 0, totalRounds: 0 }
 
-// Receive partial feed updates from the renderer
+// 렌더러에서 보내는 부분 피드 업데이트 수신
 ipcMain.on('rag:mirofish:progress', (_event, data) => {
   if (data && typeof data === 'object') {
     _mirofishProgress = { ...data }
@@ -1176,13 +1934,13 @@ function startRagApiServer() {
       res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' })
       res.end(JSON.stringify(data))
     }
-    // Top-level exception guard — prevent unhandled rejections in async handler
+    // 최상위 예외 방어 — async 핸들러의 unhandled rejection 방지
     const _handleRequest = async () => {
 
-    // Authentication: require Bearer token on all endpoints
-    const authHeader = req.headers['authorization'] || ''
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
-    if (token !== ragApiToken) {
+    // C1: 모든 RAG HTTP 엔드포인트는 x-rag-auth 헤더의 랜덤 토큰을 요구한다.
+    // 127.0.0.1 바인딩만으로는 같은 머신의 타 프로세스 접근을 막지 못함.
+    const _authed = req.headers['x-rag-auth'] === _ragAuthToken
+    if (!_authed) {
       return send(401, { error: 'unauthorized' })
     }
 
@@ -1195,7 +1953,7 @@ function startRagApiServer() {
       const query = url.searchParams.get('q') || ''
       const topN  = Math.min(parseInt(url.searchParams.get('n') || '5', 10), 20)
       if (!query.trim()) return send(400, { error: 'query required' })
-      const results = await ipcRequest('rag:search', { query, topN }, 15000)
+      const results = await ipcRequest('rag:search', { query, topN }, 28000)
       return results ? send(200, results) : send(504, { error: 'timeout' })
     }
 
@@ -1239,19 +1997,19 @@ function startRagApiServer() {
     }
 
     if (url.pathname === '/mirofish-progress') {
-      // Return partial feed of the currently running simulation (for polling)
+      // 현재 실행 중인 시뮬레이션의 부분 피드 반환 (폴링용)
       return send(200, _mirofishProgress)
     }
 
     if (url.pathname === '/mirofish-save') {
-      // Save MiroFish simulation results as a vault MD file
+      // MiroFish 시뮬레이션 결과를 볼트 MD 파일로 저장
       if (req.method !== 'POST') return send(405, { error: 'POST required' })
-      // If currentVaultPath is null, query the renderer directly (race condition after app start)
+      // currentVaultPath가 null이면 렌더러에서 직접 조회 (앱 시작 직후 타이밍 경쟁 방어)
       if (!currentVaultPath) {
         const rendererVaultPath = await ipcRequest('rag:get-vault-path', {}, 5000)
         if (rendererVaultPath && typeof rendererVaultPath === 'string') {
           currentVaultPath = rendererVaultPath
-          console.log('[mirofish-save] currentVaultPath restored via IPC:', currentVaultPath)
+          console.log('[mirofish-save] currentVaultPath 복원 via IPC:', currentVaultPath)
         }
       }
       if (!currentVaultPath) return send(503, { error: 'vault not loaded' })
@@ -1264,18 +2022,18 @@ function startRagApiServer() {
           req.on('error', reject)
         })
       } catch { return send(400, { error: 'invalid request' }) }
-      let saveBody = {}
-      try { saveBody = JSON.parse(rawSave) } catch { return send(400, { error: 'invalid json' }) }
-      const topic    = (typeof saveBody.topic    === 'string' ? saveBody.topic    : '').slice(0, 200)
-      const report   = (typeof saveBody.report   === 'string' ? saveBody.report   : '').slice(0, 50000)
-      const brief    = (typeof saveBody.brief    === 'string' ? saveBody.brief    : '').slice(0, 5000)
-      const feedArr  = Array.isArray(saveBody.feed) ? saveBody.feed.slice(0, 200) : []
+      let body = {}
+      try { body = JSON.parse(rawSave) } catch { return send(400, { error: 'invalid json' }) }
+      const topic    = (typeof body.topic    === 'string' ? body.topic    : '').slice(0, 200)
+      const report   = (typeof body.report   === 'string' ? body.report   : '').slice(0, 50000)
+      const brief    = (typeof body.brief    === 'string' ? body.brief    : '').slice(0, 5000)
+      const feedArr  = Array.isArray(body.feed) ? body.feed.slice(0, 200) : []
       if (!topic) return send(400, { error: 'topic required' })
 
       const now    = new Date()
       const dateStr = now.toISOString().slice(0, 10)
       const timeStr = now.toTimeString().slice(0, 5).replace(':', '-')
-      const slug   = topic.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 40)
+      const slug   = topic.replace(/[^\uAC00-\uD7A3\u3131-\u314Ea-zA-Z0-9]/g, '_').slice(0, 40)
       const fname  = `MiroFish_${dateStr}_${timeStr}_${slug}.md`
       const folder = path.join(currentVaultPath, 'MiroFish')
       const fpath  = path.join(folder, fname)
@@ -1292,16 +2050,16 @@ function startRagApiServer() {
         `tags: [mirofish, simulation]`,
         `---`,
         ``,
-        `# MiroFish Simulation: ${topic}`,
+        `# 🐟 MiroFish 시뮬레이션: ${topic}`,
         ``,
-        brief ? `## PM Brief\n${brief}\n` : '',
-        `## Analysis Report`,
+        brief ? `## PM 브리프\n${brief}\n` : '',
+        `## 분석 보고서`,
         report,
         ``,
-        feedMd ? `## Simulation Feed\n\n${feedMd}` : '',
+        feedMd ? `## 시뮬레이션 피드\n\n${feedMd}` : '',
       ].filter(l => l !== undefined).join('\n')
 
-      // Path traversal defense — verify final file path is inside vault
+      // 경로 순회(path traversal) 방어 — 최종 파일 경로가 vault 내부인지 검증
       if (!isInsideVault(currentVaultPath, fpath)) {
         return send(400, { error: 'invalid filename' })
       }
@@ -1316,7 +2074,7 @@ function startRagApiServer() {
     }
 
     if (url.pathname === '/ask') {
-      // Parse POST body (may include history), fallback to GET params
+      // POST body 파싱 (history 포함 가능), GET 파라미터 폴백
       let body = {}
       if (req.method === 'POST') {
         try {
@@ -1348,7 +2106,7 @@ function startRagApiServer() {
         .filter(m => m && typeof m === 'object' && typeof m.data === 'string' && _ALLOWED_MEDIA.includes(m.mediaType))
         .slice(0, 5)
       if (!query) return send(400, { error: 'query required' })
-      // Images: 150s, text-only: 120s — multi-vault sequential RAG + LLM latency
+      // 이미지: 150초, 텍스트: 120초 — 멀티볼트 순차 RAG + LLM 지연 대응 (기존 60초에서 확대)
       const timeoutMs  = images.length > 0 ? 150000 : 120000
       const result = await ipcRequest('rag:ask', { query, directorId, history, images }, timeoutMs)
       return result ? send(200, result) : send(504, { error: 'timeout' })
@@ -1367,19 +2125,11 @@ function startRagApiServer() {
     if (resolve) resolve(results)
   })
 
-  // Clear all pending resolvers on renderer crash (prevent memory leaks)
+  // 렌더러 크래시 시 대기 중인 resolver 모두 null로 해소 (메모리 누수 방지)
   function clearRagResolvers() {
     for (const resolve of _ragResolvers.values()) resolve(null)
     _ragResolvers.clear()
   }
-
-  server.on('error', (err) => {
-    if (err.code === 'EADDRINUSE') {
-      console.warn(`[RAG API] Port ${RAG_API_PORT} already in use — Slack bot bridge unavailable. Close other instances of STRATA SYNC and restart.`)
-    } else {
-      console.error('[RAG API] Server error:', err)
-    }
-  })
 
   server.listen(RAG_API_PORT, '127.0.0.1', () => {
     console.log(`[RAG API] http://127.0.0.1:${RAG_API_PORT}`)
@@ -1392,31 +2142,25 @@ function startRagApiServer() {
 }
 
   if (process.platform === 'win32') {
-    app.setAppUserModelId('com.strata-sync.app')
+    app.setAppUserModelId('com.sandbox-map.app')
   }
 
   app.whenReady().then(() => {
-    // ── strata-img:// protocol — serve vault images directly from disk ────────
-    // No base64 encoding, no size limits, no MIME guessing in the renderer.
-    // The browser loads images natively via this custom secure scheme.
-    protocol.handle('strata-img', async (request) => {
+    // ── rembrandt-img:// protocol — serve vault images directly from disk ──────
+    // This replaces the data-URL/IPC approach: no base64 encoding, no size limits,
+    // no MIME guessing in the renderer. The browser loads images natively.
+    protocol.handle('rembrandt-img', async (request) => {
       try {
         const url = new URL(request.url)
-        // URL: strata-img:///image-2025-6-30_12-13-7.png
+        // URL: rembrandt-img:///image-2025-6-30_12-13-7.png
         // pathname = '/image-2025-6-30_12-13-7.png'
         const normalizedName = decodeURIComponent(url.pathname.replace(/^\/+/, ''))
         if (!normalizedName) return new Response(null, { status: 400 })
 
         const absPath = resolveImagePath(normalizedName)
         if (!absPath) {
-          console.warn('[strata-img] not found:', normalizedName)
+          console.warn('[rembrandt-img] not found:', normalizedName)
           return new Response(null, { status: 404 })
-        }
-
-        // Security: ensure resolved image is inside the current vault
-        if (!currentVaultPath || !isInsideVault(currentVaultPath, absPath)) {
-          console.warn('[strata-img] blocked: path outside vault:', absPath)
-          return new Response(null, { status: 403 })
         }
 
         // Use async read to avoid blocking the main process for large images
@@ -1434,16 +2178,59 @@ function startRagApiServer() {
           },
         })
       } catch (err) {
-        console.error('[strata-img] handler error:', err)
+        console.error('[rembrandt-img] handler error:', err)
         return new Response(null, { status: 500 })
       }
     })
 
     registerVaultIpcHandlers()
+    registerBackendIpcHandlers()
     registerWindowIpcHandlers()
     registerConfluenceIpcHandlers()
+    startPythonBackend()
     createWindow()
     startRagApiServer()
+
+    // ── Cron Job Scheduler IPC ──────────────────────────────────────────────────
+    // Initialize scheduler async — 시작 시 메인 프로세스 블로킹 방지
+    ;(async () => {
+      try {
+        const settingsPath = path.join(app.getPath('userData'), 'settings.json')
+        let cronConfigs = null
+        try {
+          const raw = await fs.promises.readFile(settingsPath, 'utf-8')
+          const settings = JSON.parse(raw)
+          cronConfigs = settings?.state?.cronConfigs || null
+        } catch { /* first run — no settings file yet */ }
+        cronScheduler.initCronScheduler(
+          cronConfigs,
+          () => slackBotProcess
+        )
+      } catch (err) {
+        console.error('[main] Cron scheduler init failed:', err)
+      }
+    })()
+
+    ipcMain.handle('cron:get-state', () => cronScheduler.getFullState())
+    ipcMain.handle('cron:update-config', async (_event, jobId, patch) => {
+      cronScheduler.updateJobConfig(jobId, patch)
+      return { ok: true }
+    })
+    ipcMain.handle('cron:run-now', async (_event, jobId) => {
+      cronScheduler.executeJob(jobId).catch(err => {
+        console.error(`[cron] Job ${jobId} failed:`, err.message)
+      })
+      return { ok: true }
+    })
+    ipcMain.handle('cron:get-logs', () => cronScheduler.getLogs())
+    ipcMain.handle('cron:get-runs', () => cronScheduler.getRuns())
+    ipcMain.handle('cron:list-log-files', () => cronScheduler.listLogFiles())
+    ipcMain.handle('cron:load-log-file', (_event, date) => cronScheduler.loadLogFile(date))
+    // 렌더러(editAgentRunner 등)가 run 내부 세부 로그를 scheduler 에 주입
+    ipcMain.handle('cron:append-log', (_event, jobId, level, message, extra) => {
+      cronScheduler.addLog(jobId, level, message, extra || {})
+      return { ok: true }
+    })
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -1455,15 +2242,23 @@ function startRagApiServer() {
   })
 
   app.on('before-quit', () => {
+    cronScheduler.shutdown()
+    stopPythonBackend()
     stopSlackBot()
   })
-
-  // ── RAG API token IPC (renderer can fetch the token for authenticated requests) ──
-  ipcMain.handle('rag:get-token', () => ragApiToken)
 
   // ── Slack bot IPC ──────────────────────────────────────────────────────────
   ipcMain.handle('bot:start', (_event, config) => startSlackBot(config))
   ipcMain.handle('bot:stop',  () => { stopSlackBot(); return { ok: true } })
   ipcMain.handle('bot:status', () => ({ running: slackBotProcess !== null }))
   ipcMain.handle('bot:get-logs', () => [...slackBotLogBuffer])
+  ipcMain.handle('bot:read-log-file', async (_event, date) => {
+    if (!date || typeof date !== 'string') return null
+    const logPath = path.join(__dirname, '..', 'bot', 'slackbot_logs', `${date}.log`)
+    try {
+      return await fs.promises.readFile(logPath, 'utf-8')
+    } catch {
+      return null
+    }
+  })
 }

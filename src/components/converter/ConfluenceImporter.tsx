@@ -2,8 +2,8 @@
  * ConfluenceImporter — Confluence batch converter
  *
  * Two import modes:
- *   Folder — webkitdirectory: pick downloaded_pages folder (offline)
- *   API    — enter Confluence URL + credentials, fetch live (Confluence Cloud or Server)
+ *   📁 폴더  — webkitdirectory: pick downloaded_pages folder (offline)
+ *   🔗 API  — enter Confluence URL + credentials, fetch live (Confluence Cloud or Server)
  *
  * Both modes produce the same ConfluenceExportPage objects and use the same
  * convertConfluenceExportPage() → MD pipeline.
@@ -43,7 +43,7 @@ interface PageItem {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function downloadMd(text: string, title: string) {
-  const safe = (title.trim() || 'converted_doc').replace(/[\\/:*?"<>|]/g, '_').slice(0, 60)
+  const safe = (title.trim() || '변환문서').replace(/[\\/:*?"<>|]/g, '_').slice(0, 60)
   const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -131,12 +131,12 @@ export default function ConfluenceImporter() {
 
   const handleFetchPages = async () => {
     const urlTrim = apiUrl.trim()
-    if (!urlTrim) { setApiFetchError('Please enter a Confluence URL.'); return }
+    if (!urlTrim) { setApiFetchError('Confluence URL을 입력하세요.'); return }
     if (authType === 'cloud' && (!apiEmail.trim() || !apiToken.trim())) {
-      setApiFetchError('Please enter email and API token.'); return
+      setApiFetchError('이메일과 API 토큰을 입력하세요.'); return
     }
     if (authType === 'server' && !apiPat.trim()) {
-      setApiFetchError('Please enter a Personal Access Token.'); return
+      setApiFetchError('Personal Access Token을 입력하세요.'); return
     }
 
     setApiFetching(true)
@@ -155,7 +155,7 @@ export default function ConfluenceImporter() {
       setPages(items)
       setSelectedIds(new Set(items.map(p => p.id)))
     } catch (err) {
-      setApiFetchError(err instanceof Error ? err.message : 'Failed to fetch page list')
+      setApiFetchError(err instanceof Error ? err.message : '페이지 목록 조회 실패')
     } finally {
       setApiFetching(false)
     }
@@ -189,7 +189,7 @@ export default function ConfluenceImporter() {
     for (let i = 0; i < updated.length; i++) {
       if (!selectedIds.has(updated[i].id)) continue
 
-      updated[i] = { ...updated[i], status: 'running', progressMsg: 'Preparing...' }
+      updated[i] = { ...updated[i], status: 'running', progressMsg: '준비 중…' }
       setPages([...updated])
 
       try {
@@ -217,7 +217,7 @@ export default function ConfluenceImporter() {
         updated[i] = {
           ...updated[i],
           status: 'error',
-          error: err instanceof Error ? err.message : 'Conversion failed',
+          error: err instanceof Error ? err.message : '변환 실패',
           progressMsg: undefined,
         }
       }
@@ -258,8 +258,8 @@ export default function ConfluenceImporter() {
       {/* Mode toggle */}
       <div className="flex gap-1">
         {([
-          { id: 'folder', label: 'Import Folder', icon: <Folder size={11} /> },
-          { id: 'api',    label: 'API Connect',  icon: <Globe  size={11} /> },
+          { id: 'folder', label: '폴더 불러오기', icon: <Folder size={11} /> },
+          { id: 'api',    label: 'API 연동',     icon: <Globe  size={11} /> },
         ] as const).map(m => (
           <button
             key={m.id}
@@ -291,7 +291,7 @@ export default function ConfluenceImporter() {
             📌 <code style={{ color: 'var(--color-accent)' }}>{'ID_제목.html'}</code>
             {' '}+{' '}
             <code style={{ color: 'var(--color-accent)' }}>{'ID_files/'}</code>
-            {' '}structure is automatically recognized.
+            {' '}구조를 자동으로 인식합니다.
           </div>
 
           <div
@@ -302,15 +302,15 @@ export default function ConfluenceImporter() {
             <Folder size={24} style={{ color: 'var(--color-text-muted)' }} />
             <div className="text-center">
               <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                Select downloaded_pages folder
+                downloaded_pages 폴더 선택
               </div>
               <div className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
-                HTML + PDF, DOCX, PPTX, XLSX attachments auto-converted
+                HTML + PDF · DOCX · PPTX · XLSX 첨부파일 자동 변환
               </div>
             </div>
             {pages.length > 0 && (
               <div className="text-xs font-medium" style={{ color: 'var(--color-accent)' }}>
-                ✓ {pages.length} pages detected
+                ✓ {pages.length}개 페이지 감지됨
               </div>
             )}
             <input
@@ -330,7 +330,7 @@ export default function ConfluenceImporter() {
           {/* Auth type toggle */}
           <div className="flex gap-1">
             {([
-              { id: 'cloud',  label: 'Cloud (Email + API Token)' },
+              { id: 'cloud',  label: 'Cloud (이메일 + API 토큰)' },
               { id: 'server', label: 'Server / DC (PAT)' },
             ] as const).map(t => (
               <button
@@ -361,7 +361,7 @@ export default function ConfluenceImporter() {
             {authType === 'cloud' ? (
               <>
                 <InputField
-                  label="Email"
+                  label="이메일"
                   value={apiEmail}
                   onChange={setApiEmail}
                   placeholder="you@company.com"
@@ -369,7 +369,7 @@ export default function ConfluenceImporter() {
                 />
                 <div>
                   <label className="text-[10px] block mb-1" style={{ color: 'var(--color-text-muted)' }}>
-                    API Token{' '}
+                    API 토큰{' '}
                     <a
                       href="https://id.atlassian.com/manage-profile/security/api-tokens"
                       target="_blank"
@@ -377,7 +377,7 @@ export default function ConfluenceImporter() {
                       className="underline"
                       style={{ color: 'var(--color-accent)' }}
                     >
-                      Get one ↗
+                      발급받기 ↗
                     </a>
                   </label>
                   <div className="relative">
@@ -416,7 +416,7 @@ export default function ConfluenceImporter() {
                     type={showSecret ? 'text' : 'password'}
                     value={apiPat}
                     onChange={e => setApiPat(e.target.value)}
-                    placeholder="Enter token"
+                    placeholder="토큰 입력"
                     disabled={running}
                     className="w-full px-2.5 py-1.5 pr-8 text-xs rounded"
                     style={{
@@ -439,10 +439,10 @@ export default function ConfluenceImporter() {
             )}
 
             <InputField
-              label="Space Key (optional, blank for all)"
+              label="Space Key (선택, 빈칸이면 전체)"
               value={spaceKey}
               onChange={setSpaceKey}
-              placeholder="e.g.: PROJ"
+              placeholder="예: PROJ"
               disabled={running}
             />
           </div>
@@ -457,7 +457,7 @@ export default function ConfluenceImporter() {
               color: 'white',
             }}
           >
-            {apiFetching ? '⟳ Fetching page list...' : '📥 Fetch Page List'}
+            {apiFetching ? '⟳ 페이지 목록 불러오는 중…' : '📥 페이지 목록 불러오기'}
           </button>
 
           {/* Fetch error */}
@@ -488,7 +488,7 @@ export default function ConfluenceImporter() {
           >
             {done ? (
               <span className="text-xs" style={{ color: 'var(--color-accent)' }}>
-                ✓ {doneCount} / {pages.filter(p => selectedIds.has(p.id)).length} converted
+                ✓ {doneCount} / {pages.filter(p => selectedIds.has(p.id)).length}개 변환 완료
               </span>
             ) : (
               <label
@@ -502,7 +502,7 @@ export default function ConfluenceImporter() {
                   disabled={running}
                   className="cursor-pointer"
                 />
-                Select All ({selectedIds.size}/{pages.length})
+                전체 선택 ({selectedIds.size}/{pages.length}개)
               </label>
             )}
             {running && currentRunning?.progressMsg && (
@@ -617,7 +617,7 @@ export default function ConfluenceImporter() {
                       onClick={() => handleDownloadOne(item)}
                       className="shrink-0 p-1 rounded transition-colors hover:bg-[var(--color-bg-hover)]"
                       style={{ color: 'var(--color-accent)' }}
-                      title="Download MD"
+                      title="MD 다운로드"
                     >
                       <Download size={11} />
                     </button>
@@ -649,7 +649,7 @@ export default function ConfluenceImporter() {
             style={{ color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}
           >
             <RotateCcw size={11} />
-            Reset
+            초기화
           </button>
 
           {done ? (
@@ -660,7 +660,7 @@ export default function ConfluenceImporter() {
               style={{ background: 'var(--color-accent)', color: 'white' }}
             >
               <Download size={11} />
-              Download All ({doneCount})
+              전체 다운로드 ({doneCount}개)
             </button>
           ) : (
             <button
@@ -673,8 +673,8 @@ export default function ConfluenceImporter() {
               }}
             >
               {running
-                ? `⟳ Converting... (${doneCount}/${selectedCount})`
-                : `▶ Convert ${selectedCount} pages`}
+                ? `⟳ 변환 중… (${doneCount}/${selectedCount})`
+                : `▶ ${selectedCount}개 페이지 변환`}
             </button>
           )}
         </div>

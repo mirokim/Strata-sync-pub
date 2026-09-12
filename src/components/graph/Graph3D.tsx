@@ -75,6 +75,8 @@ export default function Graph3D({ width, height }: Props) {
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const renderBudgetRef = useRef(0)
+  const prevNodeCountRef = useRef(0)
+  const prevLinkCountRef = useRef(0)
 
   const draggingNodeIdRef = useRef<string | null>(null)
   const draggingSimNodeRef = useRef<SimNode3D | null>(null)  // cached ref avoids O(n) find per drag frame
@@ -184,7 +186,7 @@ export default function Graph3D({ width, height }: Props) {
     }
     if (sphereDirty && sphereInstancedRef.current) {
       sphereInstancedRef.current.instanceMatrix.needsUpdate = true
-      sphereInstancedRef.current.boundingSphere = null  // Invalidate cached boundingSphere → ensures raycast accuracy
+      sphereInstancedRef.current.boundingSphere = null  // 캐싱된 boundingSphere 무효화 → raycast 정확도 보장
     }
     if (octaDirty && octaInstancedRef.current) {
       octaInstancedRef.current.instanceMatrix.needsUpdate = true
@@ -403,7 +405,7 @@ export default function Graph3D({ width, height }: Props) {
     linePosRef.current = posArray
     const colorArray = new Float32Array(links.length * 6)
     for (let i = 0; i < links.length; i++) {
-      // strength [0.15, 1.0] → brightness: weak links darker, strong links brighter
+      // strength [0.15, 1.0] → brightness: 약한 링크는 어둡게, 강한 링크는 밝게
       const s = (links[i] as GraphLink).strength ?? 0.5
       const brightness = EDGE_DEF_R * (0.5 + s * 2.0)
       for (let v = 0; v < 2; v++) {
@@ -539,8 +541,10 @@ export default function Graph3D({ width, height }: Props) {
         renderBudgetRef.current--
       }
       // Always track previous AI highlight set — must be outside renderBudget guard
-      // so delta comparisons stay accurate even when rendering is paused
-      prevAiHighlightRef.current = aiSet
+      // so delta comparisons stay accurate even when rendering is paused.
+      // Clear old reference first so GC can collect the previous Set immediately.
+      prevAiHighlightRef.current = null as unknown as Set<string>
+      prevAiHighlightRef.current = new Set(aiSet)
     }
     animate()
     setGraphLayoutReady(true)
@@ -627,8 +631,10 @@ export default function Graph3D({ width, height }: Props) {
       octaInstancedRef.current = null
       instancedMeshArrayRef.current = []
     }
+    prevNodeCountRef.current = nodes.length
+    prevLinkCountRef.current = links.length
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, links, setGraphLayoutReady])
+  }, [nodes.length, links.length, setGraphLayoutReady])
 
   // ── Focus node: animate camera to target node position ────────────────────
   useEffect(() => {
@@ -640,11 +646,12 @@ export default function Graph3D({ width, height }: Props) {
     if (!camera || !controls) return
 
     const { x, y, z } = nodeData.pos
-    // Target: controls.target → node position, camera → 120 units away from node
+    // 목표: controls.target → 노드 위치, camera → 노드에서 120 단위 거리
     const from = camera.position.clone()
     const toTarget = new THREE.Vector3(x, y, z)
     const toPos = toTarget.clone().add(new THREE.Vector3(0, 0, 120))
 
+    let rafId: number | null = null
     let t = 0
     const step = () => {
       t = Math.min(t + 0.05, 1)
@@ -653,10 +660,14 @@ export default function Graph3D({ width, height }: Props) {
       controls.target.lerp(toTarget, ease)
       controls.update()
       renderBudgetRef.current = Math.max(renderBudgetRef.current, 2)
-      if (t < 1) requestAnimationFrame(step)
+      if (t < 1) rafId = requestAnimationFrame(step)
+      else rafId = null
     }
-    requestAnimationFrame(step)
+    rafId = requestAnimationFrame(step)
     setFocusNode(null)
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId)
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusNodeId])
 
@@ -700,7 +711,7 @@ export default function Graph3D({ width, height }: Props) {
     renderBudgetRef.current = Math.max(renderBudgetRef.current, 5)
   }, [selectedNodeId, nodes])
 
-  // ── Wire opacity real-time sync ──────────────────────────────────────────────
+  // ── Wire opacity 실시간 반영 ──────────────────────────────────────────────
   useEffect(() => {
     if (lineMatRef.current) {
       lineMatRef.current.opacity = physics.linkOpacity
@@ -709,7 +720,7 @@ export default function Graph3D({ width, height }: Props) {
     }
   }, [physics.linkOpacity])
 
-  // ── Node size real-time sync ─────────────────────────────────────────────────
+  // ── Node size 실시간 반영 ─────────────────────────────────────────────────
   useEffect(() => {
     const baseScale = physics.nodeRadius / 7
     const dummy = dummyRef.current
@@ -769,7 +780,7 @@ export default function Graph3D({ width, height }: Props) {
     renderBudgetRef.current = Math.max(renderBudgetRef.current, 3)
   }, [aiHighlightNodeIds])
 
-  // ── Neighbor highlight — color-dim approach (InstancedMesh compatible) ──────────
+  // ── Neighbor highlight — color-dim approach (InstancedMesh 호환) ──────────
   useEffect(() => {
     const dataMap = nodeDataRef.current
     const colorArray = lineColorArrayRef.current
@@ -994,13 +1005,13 @@ export default function Graph3D({ width, height }: Props) {
     if (!renderer || !camera) return
 
     if (draggingNodeIdRef.current) {
-      // Only classify as drag when moved 4px+ (prevent false click detection)
+      // 4px 이상 움직였을 때만 드래그로 판정 (클릭 오인 방지)
       if (!isDraggingRef.current) {
         const dx = e.clientX - mouseDownPosRef.current.x
         const dy = e.clientY - mouseDownPosRef.current.y
         if (dx * dx + dy * dy > 16) { isDraggingRef.current = true; nodeWasDraggedRef.current = true }
       }
-      if (!isDraggingRef.current) return  // Still below threshold — treat as click
+      if (!isDraggingRef.current) return  // 아직 임계값 미달 — 클릭으로 처리
       const ndc = getNDC(e.clientX, e.clientY)
       raycasterRef.current.setFromCamera(ndc, camera)
       const intersection = new THREE.Vector3()
@@ -1069,7 +1080,7 @@ export default function Graph3D({ width, height }: Props) {
     if (lastHoveredRef.current !== null) {
       lastHoveredRef.current = null
       setHoveredNode(null)
-      // Tooltip pinned by click persists when mouse leaves
+      // 클릭으로 고정된 툴팁은 마우스가 나가도 유지
     }
   }, [setHoveredNode])
 
@@ -1106,7 +1117,7 @@ export default function Graph3D({ width, height }: Props) {
     setSelectedNode(nodeId)
     setSelectedDoc(docId)
 
-    // Show tooltip immediately on click — project node's 3D position to screen coordinates
+    // 클릭 즉시 툴팁 표시 — 노드의 3D 위치를 화면 좌표로 투영
     let tooltipX = e.clientX
     let tooltipY = e.clientY
     const nodeData = nodeDataRef.current.get(nodeId)
@@ -1119,7 +1130,7 @@ export default function Graph3D({ width, height }: Props) {
     setTooltip({ nodeId, x: tooltipX, y: tooltipY })
 
     if (clickTimerRef.current) {
-      // ── Double-click: cancel timer → open editor ────────────────────────────────
+      // ── 더블클릭: 타이머 취소 → 에디터 열기 ────────────────────────────────
       clearTimeout(clickTimerRef.current)
       clickTimerRef.current = null
       setTooltip(null)
@@ -1150,7 +1161,7 @@ export default function Graph3D({ width, height }: Props) {
         openInEditor(docId)
       }
     } else {
-      // ── Single-click: keep tooltip, wait 300ms for re-click ──────────────────────────
+      // ── 싱글클릭: 툴팁 유지, 300ms 내 재클릭 대기 ──────────────────────────
       clickTimerRef.current = setTimeout(() => { clickTimerRef.current = null }, 300)
     }
   }, [getNDC, nodeIdFromHit, setSelectedNode, setSelectedDoc, setHoveredNode,
@@ -1182,6 +1193,21 @@ export default function Graph3D({ width, height }: Props) {
       }}
       data-testid="graph-3d"
     >
+      <div
+        role="img"
+        aria-label={`지식 그래프: ${nodes.length}개 노드, ${links.length}개 링크`}
+        style={{
+          position: 'absolute',
+          width: 1,
+          height: 1,
+          padding: 0,
+          margin: -1,
+          overflow: 'hidden',
+          clip: 'rect(0,0,0,0)',
+          whiteSpace: 'nowrap',
+          borderWidth: 0,
+        }}
+      />
       {tooltip && <NodeTooltip nodeId={tooltip.nodeId} x={tooltip.x} y={tooltip.y} />}
     </div>
   )

@@ -1,0 +1,74 @@
+[00:55:12] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[00:55:12] [READY] Slack bot started
+[02:12:20] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[02:12:20] [READY] Slack bot started
+[02:23:44] [Slack] PM: 최근 보고 내용 어떻게 생각해
+[02:24:20] [RAG] Electron /ask 성공 (BFS+LLM)
+[02:24:20] [Image] 자동 이미지 3개
+[02:24:22] [Image] 업로드 완료: 설정 회의_14. 에타큐브 조각 발견 및 최근 사건 v2_1.jpg
+[02:24:24] [Image] 업로드 완료: 설정 회의_14. 에타큐브 조각 발견 및 최근 사건 v2_2.jpg
+[02:24:26] [Image] 업로드 완료: 210129_프로젝트A_정례보고_M8플레이시나리오_v2_p10_1.png
+[02:27:45] [Slack] PM: 최근 캐릭터 보고 내용은 어떻게 생각해
+[02:27:45] [Slack] 히스토리 1턴 복원
+[02:28:15] [RAG] Electron /ask 성공 (BFS+LLM)
+[02:28:15] [Image] 자동 이미지 3개
+[02:28:17] [Image] 업로드 완료: 10차_신규캐릭터 아이데이션-1_p2_1.png
+[02:28:18] [Image] 업로드 완료: 10차_신규캐릭터 아이데이션-1_p2_2.jpg
+[02:28:20] [Image] 업로드 완료: 10차_신규캐릭터 아이데이션-1_p2_3.jpg
+[02:59:44] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[02:59:44] [READY] Slack bot started
+[03:08:52] [Slack] PM: 최근 보고 기준으로 캐릭터들 어떻게 생각해?
+[03:09:49] [RAG] Electron /ask 성공 (BFS+LLM)
+[03:09:49] [Image] 자동 이미지 3개
+[03:09:52] [Image] 업로드 실패 (프로젝트 렘브란트_점령전1_신전구역 보고 히스토리_p2_1.jpeg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAZI1uLg5SZRpCgACGKF_wA_c_2AMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUEhTUlBERkYACgAEAAAAAAACASoACwACAAAAFNurJyymHBwXOfkbrdmM8qA-yz3rAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[03:09:53] [Image] 업로드 실패 (프로젝트 렘브란트_점령전1_신전구역 보고 히스토리_p2_2.jpeg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAU1ZrUYXDrR7CgACGKF_wGIKpBgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUTA2TkgxVUgACgAEAAAAAAABYCsACwACAAAAFN0K20ewy_UmzvF72rP7YohUfE66AA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[03:09:54] [Image] 업로드 실패 (프로젝트 렘브란트_점령전1_신전구역 보고 히스토리_p2_3.jpeg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAYsanCSY0oWGCgACGKF_wKAD4BgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUDVSU0QxVFIACgAEAAAAAAABQfwACwACAAAAFJzNXtMZy7140bja0yQ-RSRMtFPvAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[03:12:33] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[03:12:33] [READY] Slack bot started
+[03:20:22] [Slack] PM: 3월 27일 대면 보고 결과는?
+[03:21:17] [RAG] Electron /ask 성공 (BFS+LLM)
+[03:21:17] [Image] 자동 이미지 3개
+[03:21:19] [Image] 업로드 실패 (210129_프로젝트A_정례보고_M8플레이시나리오_v2_p10_1.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAASAt2Mri2HDUCgACGKGAYCU2hcAMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUDVTWjBTQUsACgAEAAAAAAAZ0cYACwACAAAAFIy_rM5mNilM7F_A6KEDssyxQUZZAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[03:21:20] [Image] 업로드 실패 (210129_프로젝트A_정례보고_M8플레이시나리오_v2_p10_2.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAZdzKtzNGlhvCgACGKGAYGcSsOAMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUUZKUjlTNDgACgAEAAAAAAAADeUACwACAAAAFD1kjE_-yuo0qMDdinYxG67c8njNAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[03:21:21] [Image] 업로드 실패 (210129_프로젝트A_정례보고_M8플레이시나리오_v2_p10_3.jpg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAeED-sUDHda3CgACGKGAYLVuNygMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUEs4UFNONEUACgAEAAAAAAAAqA8ACwACAAAAFEPlmJDzOcDCkVSA40pBg_C4r8CHAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[04:54:11] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[04:54:11] [READY] Slack bot started
+[07:23:04] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[07:23:04] [READY] Slack bot started
+[07:24:46] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[07:24:46] [READY] Slack bot started
+[07:35:04] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[07:35:04] [READY] Slack bot started
+[07:42:52] [ERR] Failed to check the state of sock (session id: b601221f-c992-4aa3-ac58-58d744521094, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[07:43:02] [ERR] Failed to check the state of sock (session id: b601221f-c992-4aa3-ac58-58d744521094, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[07:43:12] [ERR] Failed to check the state of sock (session id: b601221f-c992-4aa3-ac58-58d744521094, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[07:43:22] [ERR] Failed to check the state of sock (session id: b601221f-c992-4aa3-ac58-58d744521094, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[07:43:32] [ERR] Failed to check the state of sock (session id: b601221f-c992-4aa3-ac58-58d744521094, error: SSLEOFError, message: EOF occurred in violation of protocol (_ssl.c:2427))
+[07:43:33] ⚠️ Slack 연결 끊김 — 재연결 대기 중...
+[07:43:33] 🔄 5초 후 재연결 시도... (#1)
+[07:43:39] 🟢 Slack 재연결 성공
+[10:23:22] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[10:23:22] [READY] Slack bot started
+[10:26:03] [쿼리정제] '월영 어떻게 해야할까? 다른게임과 비교해서 가야할 방향을 알려줘' → '월영 어떻게 해야할까? 다른게임과 비교해서 가야할 방향을'
+[10:26:03] [Slack] PM: 월영 어떻게 해야할까? 다른게임과 비교해서 가야할 방향을 알려줘
+[10:27:04] [RAG] Electron /ask 성공 (BFS+LLM)
+[10:27:04] [Image] 자동 이미지 3개
+[10:27:06] [Image] 업로드 실패 (프로젝트A_아트_월영수정방향성_1219_ver3 _2__p3_1.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAdE72tX7nU6ECgACGKGXnEWb7KgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUTJHSkowSkQACgAEAAAAAAAONjoACwACAAAAFLbJRSQntJ7xRaNhcVWM7y_5dKq-AA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[10:27:06] [Image] 업로드 실패 (프로젝트A_아트_월영수정방향성_1219_ver3 _2__p4_1.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAfIO4AXMJjbJCgACGKGXnG-v_RgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUE1IOTNIQVMACgAEAAAAAAAOxfkACwACAAAAFHm2p7YxUV4cGC4c9-rjva55DhIlAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[10:27:07] [Image] 업로드 실패 (프로젝트A_아트_월영수정방향성_1219_ver3 _2__p4_2.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAVVQUg4sl2VRCgACGKGXnJtoZugMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUEg4MjBYU1AACgAEAAAAAAAO1kYACwACAAAAFP2ahlxU8UQo5B8Hu7KCfbvbzUmNAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[10:27:31] [쿼리정제] '월영 진행 상황 알려줘' → '월영 진행 상황'
+[10:27:31] [Slack] PM: 월영 진행 상황 알려줘
+[10:27:31] [Slack] 히스토리 1턴 복원
+[10:27:35] [ERR] on_error invoked (session id: 1e6ffbb6-c8c5-4414-ad1c-4fa6812c4d38, error: SSLWantReadError, message: The operation did not complete (read) (_ssl.c:2580))
+[10:27:35] ⚠️ Slack 연결 끊김 — 재연결 대기 중...
+[10:27:35] 🔄 5초 후 재연결 시도... (#1)
+[10:27:41] 🟢 Slack 재연결 성공
+[10:28:13] [RAG] Electron /ask 성공 (BFS+LLM)
+[10:28:13] [Image] 자동 이미지 3개
+[10:28:14] [Image] 업로드 실패 (2차_월영_20250528_p2_1.jpeg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAV_5UuibBvtiCgACGKGXrBv_FMgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUEg4N0dXTjcACgAEAAAAAAAAzZMACwACAAAAFAfkzMhTiMT2gxvPhk3t8f8Zk7CSAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[10:28:14] [Image] 업로드 실패 (2차_월영_20250528_p3_1.jpeg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAVyTbpFEf7B8CgACGKGXrEMtWsgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUFQ3SjgyUE4ACgAEAAAAAAAAuZwACwACAAAAFHvtn4AXG7105xtz8RxseiZ4Z0WBAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[10:28:15] [Image] 업로드 실패 (2차_월영_20250528_p3_2.jpeg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAWczXrA4iugaCgACGKGXrGqZJsgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUDg2RjBDSDUACgAEAAAAAAAAgRMACwACAAAAFHUKw0QTlYkzz9WUmGgtlS04-I0-AA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[10:40:59] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[10:40:59] [READY] Slack bot started
+[10:58:28] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[10:58:28] [READY] Slack bot started

@@ -13,7 +13,7 @@ const TYPE_CONFIG: Record<ToastItem['type'], {
   iconColor: string
 }> = {
   success: { icon: <CheckCircle size={14} />, border: 'rgba(34,197,94,0.4)',   iconColor: 'var(--color-success)' },
-  error:   { icon: <XCircle size={14} />,     border: 'rgba(239,68,68,0.4)',    iconColor: 'var(--color-error)' },
+  error:   { icon: <XCircle size={14} />,     border: 'var(--color-error-border)',    iconColor: 'var(--color-error)' },
   warn:    { icon: <AlertTriangle size={14} />,border: 'rgba(245,158,11,0.4)', iconColor: 'var(--color-warning)' },
   info:    { icon: <Info size={14} />,         border: 'rgba(96,165,250,0.4)',  iconColor: 'var(--color-info)' },
 }
@@ -30,6 +30,8 @@ function Toast({ toast }: { toast: ToastItem }) {
   return (
     <div
       style={{
+        position: 'relative',
+        overflow: 'hidden',
         display: 'flex',
         alignItems: 'flex-start',
         gap: 8,
@@ -64,6 +66,19 @@ function Toast({ toast }: { toast: ToastItem }) {
       >
         <X size={12} />
       </button>
+      {/* Progress bar — shrinks from 100% to 0% over durationMs */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          height: 2,
+          background: cfg.iconColor,
+          opacity: 0.5,
+          borderRadius: '0 0 8px 8px',
+          animation: `toastProgress ${toast.durationMs}ms linear forwards`,
+        }}
+      />
     </div>
   )
 }

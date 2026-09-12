@@ -1,13 +1,13 @@
 /**
- * logger.ts — conditional logger
+ * logger.ts — 조건부 로거
  *
- * Outputs debug/warn logs in development environments only.
- * Errors are always output (for production error tracking).
+ * 개발 환경에서만 debug/warn 로그를 출력합니다.
+ * error는 항상 출력합니다 (프로덕션 에러 추적용).
  *
- * Usage:
+ * 사용법:
  *   import { logger } from '@/lib/logger'
- *   logger.debug('[vault] loaded', files.length)
- *   logger.error('[vault] failed:', err)
+ *   logger.debug('[vault] 로드됨', files.length)
+ *   logger.error('[vault] 실패:', err)
  */
 
 const isDev = import.meta.env.DEV

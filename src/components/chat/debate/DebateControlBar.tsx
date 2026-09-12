@@ -7,10 +7,10 @@ import { useDebateStore } from '@/stores/debateStore'
 import { DEBATE_PROVIDER_LABELS, DEBATE_PROVIDER_COLORS } from '@/services/debateRoles'
 
 const STATUS_LABELS: Record<string, string> = {
-  running: 'Running',
-  paused: 'Paused',
-  completed: 'Completed',
-  stopped: 'Stopped',
+  running: '진행 중',
+  paused: '일시 정지',
+  completed: '완료',
+  stopped: '중단됨',
 }
 
 const STATUS_BG: Record<string, string> = {
@@ -88,7 +88,7 @@ export function DebateControlBar() {
                         : undefined,
                     animation: loadingProvider === p ? 'pulse 1s infinite' : undefined,
                   }}
-                  title={`${DEBATE_PROVIDER_LABELS[p] || p}${isJudge ? ' (Judge)' : ''}`}
+                  title={`${DEBATE_PROVIDER_LABELS[p] || p}${isJudge ? ' (심판)' : ''}`}
                 />
               )
             })}
@@ -101,7 +101,7 @@ export function DebateControlBar() {
             <span style={{ color: DEBATE_PROVIDER_COLORS[loadingProvider] || '#888', fontWeight: 600 }}>
               {DEBATE_PROVIDER_LABELS[loadingProvider] || loadingProvider}
             </span>
-            <span style={{ color: 'var(--color-text-muted)' }}>responding</span>
+            <span style={{ color: 'var(--color-text-muted)' }}>응답 중</span>
           </span>
         )}
 
@@ -127,7 +127,7 @@ export function DebateControlBar() {
             }}
           >
             <SkipForward className="w-3.5 h-3.5" />
-            Next Turn
+            다음 턴
           </button>
         )}
       </div>
@@ -139,7 +139,7 @@ export function DebateControlBar() {
             onClick={pauseDebate}
             className="p-1.5 rounded-lg transition"
             style={{ color: 'var(--color-text-secondary)' }}
-            title="Pause"
+            title="일시 정지"
           >
             <Pause className="w-3.5 h-3.5" />
           </button>
@@ -149,7 +149,7 @@ export function DebateControlBar() {
             onClick={resumeDebate}
             className="p-1.5 rounded-lg transition"
             style={{ color: '#4caf50' }}
-            title="Resume"
+            title="계속하기"
           >
             <Play className="w-3.5 h-3.5" />
           </button>
@@ -159,7 +159,7 @@ export function DebateControlBar() {
             onClick={stopDebate}
             className="p-1.5 rounded-lg transition"
             style={{ color: 'var(--color-text-muted)' }}
-            title="Stop"
+            title="종료"
           >
             <Square className="w-3.5 h-3.5" />
           </button>
@@ -171,7 +171,7 @@ export function DebateControlBar() {
             style={{ color: 'var(--color-accent)', background: 'rgba(82,156,202,0.1)' }}
           >
             <Plus className="w-3 h-3" />
-            New Debate
+            새 토론
           </button>
         )}
       </div>

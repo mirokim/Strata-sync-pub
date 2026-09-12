@@ -28,7 +28,7 @@ const MONO = 'var(--ea-font-mono)'
 export default function EditAgentLogEntryRow({ entry }: Props) {
   const dot   = ACTION_DOT[entry.action]   ?? ACTION_DOT.error
   const label = ACTION_LABEL[entry.action] ?? entry.action
-  const time  = new Date(entry.timestamp).toLocaleTimeString('en-US', {
+  const time  = new Date(entry.timestamp).toLocaleTimeString('ko-KR', {
     hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
   })
 

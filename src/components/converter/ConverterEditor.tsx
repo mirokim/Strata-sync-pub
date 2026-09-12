@@ -1,10 +1,10 @@
 /**
- * ConverterEditor — MD conversion editor (center panel 'editor' tab)
+ * ConverterEditor — MD 변환 에디터 (중앙 패널 'editor' 탭)
  *
- * 3-stage pipeline:
- *   Stage 1 — Input: paste text / upload file / batch folder conversion
- *   Stage 2 — AI Processing: Claude extracts keywords + builds Obsidian structure (streaming)
- *   Stage 3 — Review & Approve: editable textarea + keyword chips + save/download
+ * 3단계 파이프라인:
+ *   Stage 1 — 입력: 텍스트 붙여넣기 / 파일 업로드 / 폴더 일괄 변환
+ *   Stage 2 — AI 처리: Claude가 키워드 추출 + Obsidian 구조 생성 (스트리밍)
+ *   Stage 3 — 검토·승인: 편집 가능 textarea + 키워드 칩 + 저장/다운로드
  */
 
 import { useState, useRef, useEffect, useMemo } from 'react'
@@ -18,12 +18,7 @@ import { convertToObsidianMD } from '@/services/llmClient'
 import { readFileAsText, type ConversionMeta, type ConversionType } from '@/lib/mdConverter'
 import { cn } from '@/lib/utils'
 
-const DOC_TYPES: { value: ConversionType; label: string }[] = [
-  { value: 'minutes',  label: 'Meeting Minutes' },
-  { value: 'report',   label: 'Report' },
-  { value: 'proposal', label: 'Proposal' },
-  { value: 'other',    label: 'Other' },
-]
+const DOC_TYPES: ConversionType[] = ['회의록', '보고서', '기획서', '기타']
 
 const SUPPORTED_EXTS = ['.txt', '.md', '.html', '.htm', '.docx', '.pdf']
 function isSupportedFile(name: string): boolean {
@@ -56,7 +51,7 @@ function today(): string {
 }
 
 function safeName(title: string): string {
-  return (title.trim() || 'converted_document')
+  return (title.trim() || '변환_문서')
     .replace(/[\\/:*?"<>|]/g, '_')
     .slice(0, 60)
 }
@@ -102,9 +97,9 @@ function StepIndicator({
   step2Status: Step2Status
 }) {
   const steps: { key: Stage | 'processing'; label: string }[] = [
-    { key: 'input',      label: '1. Input' },
-    { key: 'processing', label: '2. AI Processing' },
-    { key: 'review',     label: '3. Review & Approve' },
+    { key: 'input',      label: '1. 입력' },
+    { key: 'processing', label: '2. AI 처리' },
+    { key: 'review',     label: '3. 검토·승인' },
   ]
 
   return (
@@ -143,9 +138,9 @@ function StepIndicator({
       {stage === 'processing' && (
         <div className="flex items-center gap-3 ml-6">
           {([
-            { key: 'analyze',  label: 'Document analysis' },
-            { key: 'keywords', label: 'Keyword extraction' },
-            { key: 'structure',label: 'MD generation' },
+            { key: 'analyze',  label: '문서 분석' },
+            { key: 'keywords', label: '키워드 추출' },
+            { key: 'structure',label: 'MD 생성' },
           ] as const).map(s => (
             <span
               key={s.key}
@@ -193,7 +188,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
     title: '',
     speaker: 'chief_director',
     date: today(),
-    type: 'minutes',
+    type: '회의록',
   })
 
   // Keep meta.speaker in sync if currently selected speaker is removed
@@ -275,7 +270,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
         setMeta(m => ({ ...m, title: file.name.replace(/\.[^.]+$/, '') }))
       }
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Failed to read file')
+      setUploadError(err instanceof Error ? err.message : '파일 읽기 실패')
     }
   }
 
@@ -331,7 +326,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
       setFinalMd(mdResult)
       setTimeout(() => setStage('review'), 400)
     } catch (err) {
-      setProcessError(err instanceof Error ? err.message : 'Error during conversion')
+      setProcessError(err instanceof Error ? err.message : '변환 중 오류 발생')
       setStep2Status(s => ({ ...s, structure: 'pending' }))
     }
   }
@@ -381,7 +376,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
         updatedItems[i] = {
           ...updatedItems[i],
           status: 'error',
-          error: err instanceof Error ? err.message : 'Conversion failed',
+          error: err instanceof Error ? err.message : '변환 실패',
         }
         setBatchItems([...updatedItems])
       }
@@ -452,7 +447,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
             onClick={() => setCenterTab('graph')}
             className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-[var(--color-bg-hover)]"
             style={{ color: 'var(--color-text-muted)' }}
-            title="Back to graph"
+            title="그래프로 돌아가기"
           >
             <ChevronLeft size={12} />
             Graph
@@ -461,7 +456,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
             className="text-xs font-medium px-2"
             style={{ color: 'var(--color-text-secondary)' }}
           >
-            ✏️ MD Conversion Editor
+            ✏️ MD 변환 에디터
           </span>
         </div>
       )}
@@ -473,7 +468,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
       <div className="flex-1 min-h-0 overflow-y-auto p-4">
 
         {/* ════════════════════════════════════════════════════════════════════
-            STAGE 1: Input
+            STAGE 1: 입력
         ════════════════════════════════════════════════════════════════════ */}
         {stage === 'input' && (
           <div className="flex flex-col gap-4 max-w-2xl mx-auto">
@@ -481,9 +476,9 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
             {/* Input tabs */}
             <div className="flex gap-1">
               {([
-                { id: 'paste',      label: 'Paste',        icon: null },
-                { id: 'upload',     label: 'Upload File',  icon: null },
-                { id: 'folder',     label: 'Batch Folder', icon: <Folder size={11} /> },
+                { id: 'paste',      label: '붙여넣기',    icon: null },
+                { id: 'upload',     label: '파일 업로드', icon: null },
+                { id: 'folder',     label: '폴더 일괄',  icon: <Folder size={11} /> },
                 { id: 'confluence', label: 'Confluence', icon: <Globe size={11} /> },
               ] as const).map(t => (
                 <button
@@ -502,12 +497,12 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
               ))}
             </div>
 
-            {/* ── Paste ──────────────────────────────────────────────────── */}
+            {/* ── 붙여넣기 ──────────────────────────────────────────────── */}
             {inputTab === 'paste' && (
               <textarea
                 value={content}
                 onChange={e => setContent(e.target.value)}
-                placeholder="Paste your source text here..."
+                placeholder="원문 텍스트를 여기에 붙여넣기하세요..."
                 rows={10}
                 className="w-full resize-none rounded-lg px-3 py-2 text-sm"
                 style={{
@@ -520,7 +515,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
               />
             )}
 
-            {/* ── File Upload ───────────────────────────────────────────── */}
+            {/* ── 파일 업로드 ───────────────────────────────────────────── */}
             {inputTab === 'upload' && (
               <div
                 className="flex flex-col items-center justify-center gap-3 rounded-lg p-8 cursor-pointer transition-colors hover:bg-[var(--color-bg-hover)]"
@@ -532,7 +527,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                 <Upload size={24} style={{ color: 'var(--color-text-muted)' }} />
                 <div className="text-center">
                   <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                    Drag a file here or click to upload
+                    파일을 드래그하거나 클릭하여 업로드
                   </div>
                   <div className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
                     .txt .md .html .docx .pdf
@@ -556,7 +551,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
               </div>
             )}
 
-            {/* ── Batch Folder ───────────────────────────────────────────── */}
+            {/* ── 폴더 일괄 ─────────────────────────────────────────────── */}
             {inputTab === 'folder' && (
               <div className="flex flex-col gap-3">
                 {/* Folder picker trigger */}
@@ -574,15 +569,15 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                   <Folder size={24} style={{ color: 'var(--color-text-muted)' }} />
                   <div className="text-center">
                     <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                      Click to select a folder
+                      폴더를 클릭하여 선택
                     </div>
                     <div className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
-                      Supported formats: .txt .md .html .docx .pdf
+                      지원 형식: .txt .md .html .docx .pdf
                     </div>
                   </div>
                   {folderFiles.length > 0 && (
                     <div className="text-xs font-medium" style={{ color: 'var(--color-accent)' }}>
-                      ✓ {folderFiles.length} file{folderFiles.length !== 1 ? 's' : ''} found
+                      ✓ {folderFiles.length}개 파일 발견
                     </div>
                   )}
                   {/* webkitdirectory set imperatively in useEffect */}
@@ -613,10 +608,10 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                           onChange={toggleAll}
                           className="cursor-pointer"
                         />
-                        Select all ({selectedIndices.size}/{folderFiles.length} selected)
+                        전체 선택 ({selectedIndices.size}/{folderFiles.length}개 선택됨)
                       </label>
                       <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                        Choose files to convert
+                        변환할 파일 선택
                       </span>
                     </div>
 
@@ -672,20 +667,20 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
               </div>
             )}
 
-            {/* ── Confluence Import ─────────────────────────────────────── */}
+            {/* ── Confluence 가져오기 ─────────────────────────────────── */}
             {inputTab === 'confluence' && <ConfluenceImporter />}
 
-            {/* ── Metadata form (paste / upload / folder only) ───────────── */}
+            {/* ── Metadata form (붙여넣기 / 업로드 / 폴더 전용) ─────────── */}
             {inputTab !== 'confluence' && (<>
             <div className="grid grid-cols-2 gap-3">
               {/* Title — only for single-file modes */}
               {inputTab !== 'folder' && (
                 <div className="col-span-2">
-                  <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Title</label>
+                  <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>제목</label>
                   <input
                     value={meta.title}
                     onChange={e => setMeta(m => ({ ...m, title: e.target.value }))}
-                    placeholder="Document title (Obsidian filename)"
+                    placeholder="문서 제목 (Obsidian 파일명)"
                     className="w-full px-3 py-1.5 text-sm rounded"
                     style={{
                       background: 'var(--color-bg-secondary)',
@@ -702,12 +697,12 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                     className="text-xs px-3 py-2 rounded"
                     style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}
                   >
-                    📝 The filename will be used as the title for each document
+                    📝 파일명이 각 문서의 제목으로 사용됩니다
                   </div>
                 </div>
               )}
               <div>
-                <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Speaker</label>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>스피커</label>
                 <select
                   value={meta.speaker}
                   onChange={e => setMeta(m => ({ ...m, speaker: e.target.value }))}
@@ -725,7 +720,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                 </select>
               </div>
               <div>
-                <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Date</label>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>날짜</label>
                 <input
                   type="date"
                   value={meta.date}
@@ -741,7 +736,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                 />
               </div>
               <div>
-                <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Type</label>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>유형</label>
                 <select
                   value={meta.type}
                   onChange={e => setMeta(m => ({ ...m, type: e.target.value as ConversionType }))}
@@ -753,7 +748,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                     outline: 'none',
                   }}
                 >
-                  {DOC_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  {DOC_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
             </div>
@@ -771,7 +766,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                   }}
                 >
                   <Folder size={14} />
-                  Batch convert {selectedIndices.size} file{selectedIndices.size !== 1 ? 's' : ''}
+                  {selectedIndices.size}개 파일 일괄 변환
                   <ArrowRight size={14} />
                 </button>
               ) : (
@@ -784,7 +779,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                     color: canStartSingle ? '#fff' : 'var(--color-text-muted)',
                   }}
                 >
-                  Start AI Conversion
+                  AI 변환 시작
                   <ArrowRight size={14} />
                 </button>
               )}
@@ -794,7 +789,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
         )}
 
         {/* ════════════════════════════════════════════════════════════════════
-            STAGE 2: AI Processing
+            STAGE 2: AI 처리
         ════════════════════════════════════════════════════════════════════ */}
         {stage === 'processing' && (
           <div className="flex flex-col gap-4 max-w-2xl mx-auto">
@@ -804,7 +799,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-                    Converting file {batchCurrentIdx + 1} / {batchItems.length}…
+                    파일 {batchCurrentIdx + 1} / {batchItems.length} 변환 중…
                   </div>
                   <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
                     {batchItems[batchCurrentIdx]?.file.name}
@@ -854,7 +849,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
             {/* Single-file processing header */}
             {!isBatchMode && (
               <div className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-                Claude is analyzing the document...
+                Claude가 문서를 분석하고 있습니다...
               </div>
             )}
 
@@ -873,7 +868,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
               }}
             >
               {streamedText || (
-                <span style={{ color: 'var(--color-text-muted)' }}>Waiting...</span>
+                <span style={{ color: 'var(--color-text-muted)' }}>대기 중...</span>
               )}
               <span
                 style={{
@@ -895,9 +890,9 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                 className="text-xs px-3 py-2 rounded"
                 style={{ background: '#3d1a1a', color: '#e74c3c', border: '1px solid #5a2020' }}
               >
-                Error: {processError}
+                오류: {processError}
                 <button onClick={handleReset} className="ml-3 underline" style={{ color: 'var(--color-accent)' }}>
-                  Start over
+                  처음부터 다시
                 </button>
               </div>
             )}
@@ -905,7 +900,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
         )}
 
         {/* ════════════════════════════════════════════════════════════════════
-            STAGE 3: Review & Approve
+            STAGE 3: 검토·승인
         ════════════════════════════════════════════════════════════════════ */}
         {stage === 'review' && (
           <div className="flex flex-col gap-4 max-w-2xl mx-auto">
@@ -920,10 +915,10 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                 >
                   <div>
                     <div className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
-                      Batch conversion complete
+                      일괄 변환 완료
                     </div>
                     <div className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                      Success: {batchDoneCount} / {batchItems.length} total
+                      성공 {batchDoneCount}개 / 전체 {batchItems.length}개
                     </div>
                   </div>
                   <button
@@ -933,7 +928,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                     style={{ background: 'var(--color-accent)', color: '#fff' }}
                   >
                     <Download size={12} />
-                    Download all ({batchDoneCount})
+                    모두 다운로드 ({batchDoneCount}개)
                   </button>
                 </div>
 
@@ -1002,7 +997,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                     style={{ color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}
                   >
                     <RotateCcw size={12} />
-                    Convert again
+                    다시 변환
                   </button>
                 </div>
               </>
@@ -1013,7 +1008,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                 {keywords.length > 0 && (
                   <div>
                     <div className="text-xs mb-2" style={{ color: 'var(--color-text-muted)' }}>
-                      Extracted keywords
+                      추출된 키워드
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       {keywords.map(kw => (
@@ -1036,7 +1031,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                 {/* Editable MD textarea */}
                 <div>
                   <div className="text-xs mb-2" style={{ color: 'var(--color-text-muted)' }}>
-                    Generated markdown (editable)
+                    생성된 마크다운 (편집 가능)
                   </div>
                   <textarea
                     value={finalMd}
@@ -1062,7 +1057,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                     style={{ color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}
                   >
                     <RotateCcw size={12} />
-                    Edit again
+                    다시 편집
                   </button>
                   <div className="flex-1" />
                   <button
@@ -1073,12 +1068,12 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                       background: saveStatus === 'saved' ? '#2ecc71' : 'var(--color-accent)',
                       color: '#fff',
                     }}
-                    title={!vaultPath ? 'Please select a vault first (⚙️ Settings)' : undefined}
+                    title={!vaultPath ? '볼트를 먼저 선택하세요 (⚙️ Settings)' : undefined}
                   >
-                    {saveStatus === 'saving' ? 'Saving...'
-                      : saveStatus === 'saved' ? <><Check size={12} /> Saved</>
-                      : saveStatus === 'error' ? 'Save failed'
-                      : <><Save size={12} /> Approve &amp; Save</>
+                    {saveStatus === 'saving' ? '저장 중...'
+                      : saveStatus === 'saved' ? <><Check size={12} /> 저장됨</>
+                      : saveStatus === 'error' ? '저장 실패'
+                      : <><Save size={12} /> 승인 &amp; 저장</>
                     }
                   </button>
                   <button
@@ -1087,13 +1082,13 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                     style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}
                   >
                     <Download size={12} />
-                    Download .md
+                    다운로드 .md
                   </button>
                 </div>
 
                 {saveStatus === 'error' && (
                   <div className="text-xs" style={{ color: '#e74c3c' }}>
-                    Save failed — please select a vault first (⚙️ Settings → Select Vault)
+                    저장 실패 — 볼트를 먼저 선택하세요 (⚙️ Settings → 볼트 선택)
                   </div>
                 )}
               </>

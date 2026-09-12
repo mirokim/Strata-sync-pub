@@ -18,6 +18,12 @@ export default defineConfig({
       reporter: ['text', 'lcov'],
       include: ['src/**/*.{ts,tsx}'],
       exclude: ['src/__tests__/**', 'src/**/*.test.*', 'src/vite-env.d.ts'],
+      thresholds: {
+        statements: 30,
+        branches: 20,
+        functions: 25,
+        lines: 30,
+      },
     },
   },
 })

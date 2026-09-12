@@ -1,7 +1,7 @@
 [project]
-name = "strata-sync-backend"
+name = "rembrandt-backend"
 version = "0.1.0"
-description = "Strata Sync — FastAPI + ChromaDB + LangChain RAG backend"
+description = "Rembrandt MAP — FastAPI + ChromaDB + LangChain RAG backend"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.111.0",

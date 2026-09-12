@@ -7,19 +7,13 @@ import { Send, Paperclip, X, FileText } from 'lucide-react'
 import { useDebateStore } from '@/stores/debateStore'
 import { generateId } from '@/lib/utils'
 import { MAX_FILE_SIZE } from '@/lib/constants'
+import {
+  DEBATE_MAX_FILES,
+  DEBATE_ACCEPTED_TYPES,
+  DEBATE_ACCEPTED_EXTENSIONS,
+  readFileAsDataUrl,
+} from '@/services/debateRoles'
 import type { ReferenceFile } from '@/types'
-const MAX_FILES = 5
-const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf']
-const ACCEPTED_EXTENSIONS = '.png,.jpg,.jpeg,.gif,.webp,.pdf'
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
-}
 
 export function DebateUserInput() {
   const status = useDebateStore((s) => s.status)
@@ -49,9 +43,9 @@ export function DebateUserInput() {
     if (!fileList) return
     const newFiles: ReferenceFile[] = []
     for (const file of Array.from(fileList)) {
-      if (!ACCEPTED_TYPES.includes(file.type)) continue
+      if (!DEBATE_ACCEPTED_TYPES.includes(file.type as typeof DEBATE_ACCEPTED_TYPES[number])) continue
       if (file.size > MAX_FILE_SIZE) continue
-      if (files.length + newFiles.length >= MAX_FILES) break
+      if (files.length + newFiles.length >= DEBATE_MAX_FILES) break
       const dataUrl = await readFileAsDataUrl(file)
       newFiles.push({ id: generateId(), filename: file.name, mimeType: file.type, size: file.size, dataUrl })
     }
@@ -65,14 +59,14 @@ export function DebateUserInput() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    if (!disabled && files.length < MAX_FILES) void handleFileUpload(e.dataTransfer.files)
+    if (!disabled && files.length < DEBATE_MAX_FILES) void handleFileUpload(e.dataTransfer.files)
   }
 
   const placeholder = disabled
     ? (status === 'completed' || status === 'stopped'
-        ? 'Debate has ended'
-        : 'You can intervene once the debate starts')
-    : 'Intervene in the debate... (Enter to send)'
+        ? '토론이 종료되었습니다'
+        : '토론이 시작되면 개입할 수 있습니다')
+    : '토론에 개입하기... (Enter 전송)'
 
   return (
     <div
@@ -121,17 +115,17 @@ export function DebateUserInput() {
       <div className="flex gap-1.5 items-end">
         <button
           onClick={() => {
-            if (disabled || files.length >= MAX_FILES) return
+            if (disabled || files.length >= DEBATE_MAX_FILES) return
             fileInputRef.current?.click()
           }}
-          disabled={disabled || files.length >= MAX_FILES}
+          disabled={disabled || files.length >= DEBATE_MAX_FILES}
           className="p-1.5 rounded-lg transition shrink-0"
           style={{
             color: 'var(--color-text-muted)',
-            opacity: disabled || files.length >= MAX_FILES ? 0.3 : 1,
-            cursor: disabled || files.length >= MAX_FILES ? 'not-allowed' : 'pointer',
+            opacity: disabled || files.length >= DEBATE_MAX_FILES ? 0.3 : 1,
+            cursor: disabled || files.length >= DEBATE_MAX_FILES ? 'not-allowed' : 'pointer',
           }}
-          title="Attach file"
+          title="파일 첨부"
         >
           <Paperclip className="w-3.5 h-3.5" />
         </button>
@@ -170,7 +164,7 @@ export function DebateUserInput() {
       <input
         ref={fileInputRef}
         type="file"
-        accept={ACCEPTED_EXTENSIONS}
+        accept={DEBATE_ACCEPTED_EXTENSIONS}
         multiple
         className="hidden"
         onChange={(e) => {

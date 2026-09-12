@@ -29,18 +29,18 @@ export default function AboutTab() {
   return (
     <div className="flex flex-col gap-6">
 
-      {/* Header */}
+      {/* 헤더 */}
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
         <div>
           <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-text-primary)', letterSpacing: '-0.02em' }}>
-            STRATA SYNC
+            Sandbox Map
           </h2>
           <p style={{ fontSize: 11, color: 'var(--color-accent)', marginTop: 2 }}>
             v0.3.0 &nbsp;·&nbsp; AI Director Proxy System
           </p>
         </div>
         <div style={{ fontSize: 10, color: 'var(--color-text-muted)', textAlign: 'right', lineHeight: 1.6 }}>
-          <div>Developer</div>
+          <div>개발자</div>
           <a
             href="mailto:miro85a@gmail.com"
             style={{ color: 'var(--color-accent)', textDecoration: 'none' }}
@@ -50,18 +50,18 @@ export default function AboutTab() {
         </div>
       </div>
 
-      {/* Overview */}
+      {/* 개요 */}
       <div>
         <p style={{ fontSize: 12, lineHeight: 1.8, color: 'var(--color-text-secondary)' }}>
-          Visualizes your Obsidian vault as a <strong style={{ color: 'var(--color-text-primary)' }}>WikiLink knowledge graph</strong>,
-          with 5 AI director personas traversing the graph via BFS to deliver insights and feedback on the entire project.
-          Designed to support knowledge management and decision-making in a game development studio.
+          Obsidian 볼트를 <strong style={{ color: 'var(--color-text-primary)' }}>위키링크 지식 그래프</strong>로 시각화하고,
+          5명의 AI 디렉터 페르소나가 그래프를 BFS 탐색하며 프로젝트 전반의 인사이트와 피드백을 제공합니다.
+          게임 개발 스튜디오의 지식 관리 및 의사결정 지원을 목적으로 설계되었습니다.
         </p>
       </div>
 
-      {/* Tech Stack */}
+      {/* 기술 스택 */}
       <div>
-        <p style={sectionTitle}>Tech Stack</p>
+        <p style={sectionTitle}>기술 스택</p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 0 }}>
           {[
             'Electron 31', 'React 19', 'TypeScript 5.5', 'Vite 5',
@@ -73,9 +73,9 @@ export default function AboutTab() {
         </div>
       </div>
 
-      {/* Supported LLMs */}
+      {/* LLM 지원 */}
       <div>
-        <p style={sectionTitle}>Supported LLMs</p>
+        <p style={sectionTitle}>지원 LLM</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
           {[
             { provider: 'Anthropic', models: 'Claude Opus / Sonnet / Haiku', vision: true },
@@ -87,41 +87,41 @@ export default function AboutTab() {
               <span style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{provider}</span>
               <span style={{ color: 'var(--color-text-muted)' }}>
                 {models}
-                {vision && <span style={{ ...badge, marginLeft: 6, marginBottom: 0, color: 'var(--color-text-secondary)' }}>Vision</span>}
+                {vision && <span style={{ ...badge, marginLeft: 6, marginBottom: 0, color: 'var(--color-text-secondary)' }}>비전</span>}
               </span>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Core Algorithms */}
+      {/* 핵심 알고리즘 */}
       <div>
-        <p style={sectionTitle}>Core Algorithms</p>
+        <p style={sectionTitle}>핵심 알고리즘</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
           {[
             {
-              name: 'TF-IDF Vector Search',
-              desc: 'Documents are vectorized at vault load time; cosine similarity selects semantic seeds',
+              name: 'TF-IDF 벡터 검색',
+              desc: '볼트 로드 시 문서를 벡터화, 코사인 유사도로 의미적 시드 선택',
             },
             {
-              name: 'BFS Graph Traversal',
-              desc: 'Follows WikiLinks up to 4 hops, collecting up to 35 documents with per-hop budgets',
+              name: 'BFS 그래프 탐색',
+              desc: 'WikiLink를 따라 최대 4홉, 35개 문서를 홉 거리별 예산으로 수집',
             },
             {
               name: 'PageRank',
-              desc: 'O(N+M) reverse-edge algorithm identifies hub documents (25 iterations)',
+              desc: '역방향 엣지 O(N+M) 알고리즘으로 허브 문서 식별 (25회 반복)',
             },
             {
-              name: 'Union-Find Clustering',
-              desc: 'Connected-component detection with path compression; groups documents by cluster',
+              name: 'Union-Find 클러스터링',
+              desc: '경로 압축 포함 연결 컴포넌트 감지, 클러스터별 문서 그룹화',
             },
             {
-              name: 'Korean Morpheme Processing',
-              desc: 'Greedy longest-match suffix stripping (이라는/에서의/으로 etc., 50+ patterns)',
+              name: 'Korean 형태소 처리',
+              desc: '그리디 최장 일치 조사 제거 (이라는/에서의/으로 등 50+종)',
             },
             {
-              name: 'd3-force Physics Simulation',
-              desc: 'Repulsion, tension, and centering forces produce natural 2D/3D graph layouts',
+              name: 'd3-force 물리 시뮬레이션',
+              desc: '반발력·인장력·중심력 균형으로 자연스러운 2D/3D 그래프 레이아웃',
             },
           ].map(({ name, desc }) => (
             <div key={name} style={{ ...row, flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
@@ -132,12 +132,12 @@ export default function AboutTab() {
         </div>
       </div>
 
-      {/* RAG Pipeline */}
+      {/* RAG 파이프라인 */}
       <div>
-        <p style={sectionTitle}>Graph-Augmented RAG Pipeline</p>
+        <p style={sectionTitle}>Graph-Augmented RAG 파이프라인</p>
         <div style={{
           background: 'var(--color-bg-active)',
-          borderRadius: 6,
+          borderRadius: 2,
           padding: '10px 12px',
           fontSize: 10,
           color: 'var(--color-text-muted)',
@@ -145,13 +145,13 @@ export default function AboutTab() {
           fontFamily: 'monospace',
         }}>
           {[
-            '① Intent detection → global/overview keywords → buildGlobalGraphContext()',
-            '② TF-IDF cosine similarity search → top 8 candidates',
-            '③ Score filter (> 0.05) + re-ranking',
-            '④ Fewer than 2 seeds → PageRank hub nodes auto-supplement',
-            '⑤ BFS traversal (3 hops, up to 20 documents)',
-            '⑥ Structural header injection (top PageRank + cluster overview)',
-            '⑦ LLM streaming analysis',
+            '① 인텐트 감지 → 전체/전반 키워드 → buildGlobalGraphContext()',
+            '② TF-IDF 코사인 유사도 검색 → 상위 8개 후보',
+            '③ 스코어 필터 (> 0.05) + 재순위화',
+            '④ 시드 < 2개 → PageRank 허브 노드 자동 보완',
+            '⑤ BFS 탐색 (3홉, 최대 20개 문서)',
+            '⑥ 구조 헤더 주입 (PageRank 상위 + 클러스터 개요)',
+            '⑦ LLM 스트리밍 분석',
           ].map(line => (
             <div key={line}>{line}</div>
           ))}

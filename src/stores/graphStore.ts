@@ -60,17 +60,17 @@ interface GraphState {
   /** True after the initial graph layout (fit-to-view) has been applied */
   graphLayoutReady: boolean
 
-  // Precomputed link maps (updated atomically with links in setLinks)
-  /** nodeId -> link count — for Obsidian-style node sizing */
+  // ── Precomputed link maps (updated atomically with links in setLinks) ──────
+  /** nodeId → link count — for Obsidian-style node sizing */
   degreeMap: Map<string, number>
-  /** Maximum degree across all nodes (>=1) */
+  /** Maximum degree across all nodes (≥1) */
   maxDegree: number
-  /** nodeId -> Set<linkIndex> — for O(1) neighbor lookup in hover/RAG */
+  /** nodeId → Set<linkIndex> — for O(1) neighbor lookup in hover/RAG */
   adjacencyByIndex: Map<string, Set<number>>
 
-  /** Node ID to focus on via search — graph camera moves to this node */
+  /** 검색으로 포커스할 노드 ID — 그래프 카메라가 해당 노드로 이동 */
   focusNodeId: string | null
-  /** 3D cluster mode: tag/folder-based grouping force */
+  /** 3D 클러스터 모드: 태그/폴더 기반 그룹핑 force */
   clusterMode: 'none' | 'tag' | 'folder'
   /** Live simulation positions — written by Graph3D/2D on tick (throttled) */
   simPositions: Record<string, { x: number; y: number }>

@@ -1,8 +1,8 @@
 /**
- * CompareGraphCanvas — lightweight canvas graph for comparison view.
+ * CompareGraphCanvas — 비교 뷰용 경량 캔버스 그래프
  *
- * Receives nodes/links via props and runs its own d3 simulation.
- * Read-only view with no interaction (no focus/selection).
+ * props로 nodes/links를 받아 자체 d3 시뮬레이션을 실행합니다.
+ * 상호작용 없는 읽기 전용 뷰 (포커스/선택 없음).
  */
 import { useEffect, useRef, useCallback } from 'react'
 import {

@@ -1,7 +1,7 @@
 /**
  * DebateSetup — Topic input and start button for a new debate.
  * All other settings (mode, participants, roles, rounds, pacing, reference)
- * are configured in Settings > Debate Settings.
+ * are configured in Settings > 토론 설정.
  */
 import { useState } from 'react'
 import { Play, ArrowLeft, Settings } from 'lucide-react'
@@ -52,7 +52,7 @@ export function DebateSetup({ onBack, onOpenSettings }: DebateSetupProps) {
             style={{ color: 'var(--color-text-muted)' }}
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            Back to chat
+            채팅으로 돌아가기
           </button>
         )}
 
@@ -62,12 +62,12 @@ export function DebateSetup({ onBack, onOpenSettings }: DebateSetupProps) {
             className="block text-[11px] font-semibold uppercase tracking-wider"
             style={{ color: 'var(--color-text-muted)' }}
           >
-            Debate Topic
+            토론 주제
           </label>
           <textarea
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
-            placeholder="Enter debate topic..."
+            placeholder="토론 주제를 입력하세요..."
             className="w-full px-3 py-2.5 text-sm rounded-lg resize-none focus:outline-none transition"
             style={{
               background: 'var(--color-bg-surface)',
@@ -81,21 +81,21 @@ export function DebateSetup({ onBack, onOpenSettings }: DebateSetupProps) {
         {/* Validation messages */}
         {selectedProviders.length < 2 && (
           <p className="text-[11px]" style={{ color: '#ff9800' }}>
-            Please select 2 or more AIs in Settings.{' '}
+            설정에서 2개 이상의 AI를 선택하세요.{' '}
             {onOpenSettings && (
               <button
                 onClick={onOpenSettings}
                 className="underline transition"
                 style={{ color: 'var(--color-accent)' }}
               >
-                Open Debate Settings
+                토론 설정 열기
               </button>
             )}
           </p>
         )}
         {mode === 'battle' && selectedProviders.length >= 2 && selectedProviders.length < 3 && (
           <p className="text-[11px]" style={{ color: '#ff9800' }}>
-            Battle mode requires 3 AIs (2 debaters + 1 judge)
+            결전모드는 3개의 AI가 필요합니다 (토론자 2 + 심판 1)
           </p>
         )}
 
@@ -111,7 +111,7 @@ export function DebateSetup({ onBack, onOpenSettings }: DebateSetupProps) {
           }
         >
           <Play className="w-4 h-4" />
-          {mode === 'battle' ? 'Start Battle' : 'Start Debate'}
+          {mode === 'battle' ? '결전 시작' : '토론 시작'}
         </button>
 
         {/* Settings shortcut */}
@@ -125,7 +125,7 @@ export function DebateSetup({ onBack, onOpenSettings }: DebateSetupProps) {
             }}
           >
             <Settings className="w-3.5 h-3.5" />
-            Debate Settings
+            토론 설정
           </button>
         )}
       </div>

@@ -1,0 +1,11 @@
+[02:10:05] [쿼리정제] '스칼렛 진행 상황과 앞으로 뭘 해야 하는지 알려줘' → '스칼렛 진행 상황과 앞으로 뭘 해야 하는지'
+[02:10:08] [Slack] PM: 스칼렛 진행 상황과 앞으로 뭘 해야 하는지 알려줘
+[02:10:08] [0.7s] [RAG] Electron /ask 호출 중...
+[02:11:25] [77.4s] [RAG] Electron /ask 성공 (2470자)
+[02:11:25] [77.4s] [Image] 자동 이미지 3개
+[02:11:25] [77.6s] [완료] 답변 2504자 전송
+[02:11:26] [chat_update] 실패 (The request to the Slack API failed. (url: https://slack.com/api/chat.update)
+[02:11:26] The server responded with: {'ok': False, 'error': 'msg_too_long'}), say 폴백
+[02:11:29] [Image] 업로드 실패 (프로젝트A_스칼렛_1단계_p10_1.jpg): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAATXgHpNKWnoeCgACGKTc8t9cVmgMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUkpMMUwyUVAACgAEAAAAAAAA8sMACwACAAAAFPGACeam9HbbbkwT3fv8zcMPzAr2AA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[02:11:31] [Image] 업로드 실패 (프로젝트A_스칼렛_1단계_p10_10.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAakuqhIk8MV2CgACGKTc8zCi2ygMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBUkpMMVNTTVYACgAEAAAAAAAADWgACwACAAAAFLnsgyZMeb7LQZfrvXwrl0_5eDacAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+[02:11:32] [Image] 업로드 실패 (프로젝트A_스칼렛_1단계_p10_11.png): HTTPSConnectionPool(host='files.slack.com', port=443): Max retries exceeded with url: /upload/v1/CwABAAAAXAoAAeq9gYv2Oby2CgACGKTc84e1v-gMAAMLAAEAAAALRTA3RzJQV0g3UkQLAAIAAAALVTBBSjcxRUUzU1QLAAMAAAALRjBBU1VCWDZVMkMACgAEAAAAAAAADWgACwACAAAAFMbfaEBskG_RKK8DaVteGhtCmwjxAA (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))

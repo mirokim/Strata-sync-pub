@@ -9,12 +9,12 @@ import { generateChatReport, downloadMarkdown } from '@/lib/chatReport'
 import { streamAIReport } from '@/services/reportClient'
 
 /**
- * ReportViewer — Editor view that previews chat conversation as a markdown report.
- * Rendered when editingDocId = 'report:latest'.
- * Download only — cannot save to vault.
+ * ReportViewer — 채팅 대화를 마크다운 보고서로 미리 보여주는 에디터 뷰.
+ * editingDocId = 'report:latest' 형태일 때 렌더링됨.
+ * 볼트에 저장하지 않고 다운로드만 가능.
  *
- * When reportModelId is set: AI streaming report generation
- * When reportModelId is empty: uses generateChatReport() static format
+ * reportModelId 가 설정된 경우: AI 스트리밍 보고서 생성
+ * reportModelId 가 비어있는 경우: generateChatReport() 정적 포맷 사용
  */
 export default function ReportViewer() {
   const { closeEditor } = useUIStore()
@@ -53,7 +53,7 @@ export default function ReportViewer() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
+      {/* 헤더 */}
       <div
         className="shrink-0 flex items-center justify-between px-4 py-3"
         style={{ borderBottom: '1px solid var(--color-border)' }}
@@ -62,7 +62,7 @@ export default function ReportViewer() {
           className="text-xs font-mono"
           style={{ color: 'var(--color-text-secondary)' }}
         >
-          📄 Conversation Report{reportModelId ? ' (AI)' : ''}
+          📄 대화 보고서{reportModelId ? ' (AI)' : ''}
         </span>
 
         <div className="flex items-center gap-1">
@@ -71,7 +71,7 @@ export default function ReportViewer() {
               className="text-[10px] px-2"
               style={{ color: 'var(--color-text-muted)' }}
             >
-              Generating…
+              생성 중…
             </span>
           )}
 
@@ -84,45 +84,45 @@ export default function ReportViewer() {
               border: '1px solid var(--color-accent, #60a5fa)',
               background: 'transparent',
             }}
-            title="Download as markdown file"
+            title="마크다운 파일로 다운로드"
           >
             <Download size={11} />
-            Download
+            다운로드
           </button>
 
           <button
             onClick={closeEditor}
             className="p-1 rounded transition-colors hover:bg-[var(--color-bg-hover)]"
             style={{ color: 'var(--color-text-muted)' }}
-            aria-label="Close report"
+            aria-label="보고서 닫기"
           >
             <X size={14} />
           </button>
         </div>
       </div>
 
-      {/* Error banner */}
+      {/* 오류 배너 */}
       {error && (
         <div
           className="shrink-0 px-4 py-2 text-xs"
           style={{
-            background: 'rgba(239,68,68,0.08)',
-            borderBottom: '1px solid rgba(239,68,68,0.25)',
-            color: '#f87171',
+            background: 'var(--color-error-bg)',
+            borderBottom: '1px solid var(--color-error-border)',
+            color: 'var(--color-error)',
           }}
         >
-          AI generation failed — falling back to static format: {error}
+          AI 생성 실패 — 기본 형식으로 대체: {error}
         </div>
       )}
 
-      {/* Report body */}
+      {/* 보고서 본문 */}
       <div
         className="flex-1 overflow-y-auto px-6 py-5"
         style={{ color: 'var(--color-text-primary)', wordBreak: 'keep-all', overflowWrap: 'break-word' }}
       >
         {!markdown && isStreaming ? (
           <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-            Generating report…
+            보고서를 생성하고 있습니다…
           </div>
         ) : (
           <ReactMarkdown
@@ -167,7 +167,7 @@ export default function ReportViewer() {
                 </strong>
               ),
               code: ({ children }) => (
-                <code style={{ fontFamily: 'monospace', fontSize: 11, background: 'var(--color-bg-surface)', padding: '1px 4px', borderRadius: 3 }}>
+                <code style={{ fontFamily: 'var(--ea-font-mono)', fontSize: 11, background: 'var(--color-bg-surface)', padding: '1px 4px', borderRadius: 3 }}>
                   {children}
                 </code>
               ),

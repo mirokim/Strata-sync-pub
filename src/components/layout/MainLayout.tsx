@@ -10,11 +10,11 @@ import ConverterEditor from '@/components/converter/ConverterEditor'
 import MarkdownEditor from '@/components/editor/MarkdownEditor'
 import ImageViewer from '@/components/editor/ImageViewer'
 import ReportViewer from '@/components/editor/ReportViewer'
+import SlackLogViewer from '@/components/slackLog/SlackLogViewer'
 import PhysicsControls from '@/components/graph/PhysicsControls'
 import StatusBar from './StatusBar'
 import ToastContainer from '@/components/shared/ToastContainer'
 import CommandPalette from '@/components/shared/CommandPalette'
-import ErrorBoundary from '@/components/shared/ErrorBoundary'
 import { useUIStore, RIGHT_PANEL_AGENT_MIN } from '@/stores/uiStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 
@@ -45,7 +45,6 @@ export default function MainLayout() {
     background: 'var(--color-bg-secondary)',
     overflow: 'hidden' as const,
   }
-
   // Auto-expand right panel when edit agent opens, if currently too narrow
   useEffect(() => {
     if (editAgentPanelVisible) {
@@ -74,21 +73,12 @@ export default function MainLayout() {
         overflow: 'hidden',
       }}
     >
-      {/* Graph — fills full viewport as persistent background */}
+      {/* ── Graph — fills full viewport as persistent background ── */}
       <div style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
-        <ErrorBoundary fallback={
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            height: '100%', color: 'var(--color-text-muted)', fontSize: '0.875rem',
-          }}>
-            Graph rendering failed. Click to retry.
-          </div>
-        }>
-          <GraphPanel />
-        </ErrorBoundary>
+        <GraphPanel />
       </div>
 
-      {/* Floating UI shell — pointer-events:none so clicks fall through to graph */}
+      {/* ── Floating UI shell — pointer-events:none so clicks fall through to graph ── */}
       <div
         style={{
           position: 'absolute',
@@ -114,10 +104,10 @@ export default function MainLayout() {
           <TopBar />
         </motion.div>
 
-        {/* Main content row */}
+        {/* Main content row — fills remaining height */}
         <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
 
-          {/* Left panel — File tree */}
+          {/* Left panel — File tree, flush left */}
           <motion.div
             initial={isFast ? false : { x: -leftWidth, opacity: 0 }}
             animate={{
@@ -149,7 +139,7 @@ export default function MainLayout() {
           {/* Center — transparent (graph shows through) */}
           <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
             {/* Physics controls */}
-            {centerTab !== 'editor' && centerTab !== 'settings' && !isFast && (
+            {centerTab !== 'editor' && centerTab !== 'settings' && centerTab !== 'slack-logs' && !isFast && (
               <div
                 style={{
                   position: 'absolute',
@@ -163,10 +153,10 @@ export default function MainLayout() {
               </div>
             )}
 
-            {/* Editor / Settings overlay */}
-            {(centerTab === 'editor' || centerTab === 'settings') && (
+            {/* Editor / Settings / Slack logs overlay */}
+            {(centerTab === 'editor' || centerTab === 'settings' || centerTab === 'slack-logs') && (
               <motion.div
-                key={centerTab === 'settings' ? 'settings' : (editingDocId ?? 'converter')}
+                key={centerTab === 'settings' ? 'settings' : centerTab === 'slack-logs' ? 'slack-logs' : (editingDocId ?? 'converter')}
                 initial={isFast ? false : { opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={overlayTransition}
@@ -181,13 +171,15 @@ export default function MainLayout() {
               >
                 {centerTab === 'settings'
                   ? <SettingsPanel />
-                  : editingDocId?.startsWith('gallery:')
-                    ? <ImageViewer />
-                    : editingDocId?.startsWith('report:')
-                      ? <ReportViewer />
-                      : editingDocId
-                        ? <MarkdownEditor />
-                        : <ConverterEditor />
+                  : centerTab === 'slack-logs'
+                    ? <SlackLogViewer />
+                    : editingDocId?.startsWith('gallery:')
+                      ? <ImageViewer />
+                      : editingDocId?.startsWith('report:')
+                        ? <ReportViewer />
+                        : editingDocId
+                          ? <MarkdownEditor />
+                          : <ConverterEditor />
                 }
               </motion.div>
             )}
@@ -200,7 +192,7 @@ export default function MainLayout() {
             </div>
           )}
 
-          {/* Right panel — Chat + EditAgent */}
+          {/* Right panel — Chat, flush right */}
           <motion.div
             initial={isFast ? false : { x: rightWidth, opacity: 0 }}
             animate={{

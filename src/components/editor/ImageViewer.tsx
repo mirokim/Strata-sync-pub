@@ -4,13 +4,13 @@ import { useUIStore } from '@/stores/uiStore'
 import { useVaultStore } from '@/stores/vaultStore'
 
 /**
- * ImageViewer — Viewer displayed in the editor area when an image gallery node is double-clicked.
- * Rendered when editingDocId = 'gallery:{docId}'.
+ * ImageViewer — 이미지 갤러리 노드 더블클릭 시 에디터 영역에 표시되는 뷰어.
+ * editingDocId = 'gallery:{docId}' 형태일 때 렌더링됨.
  *
- * One gallery node per document; displays all imageRefs from that document as a gallery.
+ * 문서 하나당 갤러리 노드가 1개이며, 그 문서의 imageRefs 전체를 갤러리로 표시.
  *
- * First attempt: strata-img:// custom protocol (direct disk load, no encoding needed)
- * Second attempt: vault:find-image-by-name IPC fallback (returns base64 data URL)
+ * 1차 시도: rembrandt-img:// 커스텀 프로토콜 (디스크 직접 로드, 인코딩 불필요)
+ * 2차 시도: vault:find-image-by-name IPC fallback (base64 data URL 반환)
  */
 
 /** Basename of an imageRef path, normalized (spaces→underscores, lowercase) */
@@ -20,7 +20,7 @@ function normalizeRef(ref: string): string {
 }
 
 // ── Per-image IPC hook ─────────────────────────────────────────────────────
-// Using IPC directly as the primary method (protocol approach removed — unstable in Electron dev environment)
+// IPC를 1차로 직접 사용 (protocol 방식 제거 — Electron 개발환경에서 불안정)
 
 function useImageSrc(normalizedName: string | null): {
   src: string | null
@@ -42,8 +42,8 @@ function useImageSrc(normalizedName: string | null): {
         })
         .catch(() => setHasError(true))
     } else {
-      // Fallback for non-Electron environments (browser, etc.)
-      setSrc(`strata-img:///${encodeURIComponent(normalizedName)}`)
+      // 비-Electron 환경(브라우저 등) fallback
+      setSrc(`rembrandt-img:///${encodeURIComponent(normalizedName)}`)
     }
   }, [normalizedName])
 
@@ -129,7 +129,7 @@ export default function ImageViewer() {
 
   // Display name for the currently active image
   const activeDisplayName = useMemo(() => {
-    if (!activeRef) return 'Image'
+    if (!activeRef) return '이미지'
     const origKey = Object.keys(imagePathRegistry ?? {}).find(
       k => k.toLowerCase().replace(/\s+/g, '_') === activeRef
     )
@@ -141,7 +141,7 @@ export default function ImageViewer() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
+      {/* 헤더 */}
       <div
         className="shrink-0 flex items-center justify-between px-4 py-3"
         style={{ borderBottom: '1px solid var(--color-border)' }}
@@ -158,13 +158,13 @@ export default function ImageViewer() {
           onClick={closeEditor}
           className="p-1 rounded transition-colors hover:bg-[var(--color-bg-hover)]"
           style={{ color: 'var(--color-text-muted)' }}
-          aria-label="Close image viewer"
+          aria-label="이미지 뷰어 닫기"
         >
           <X size={14} />
         </button>
       </div>
 
-      {/* Main image area */}
+      {/* 메인 이미지 영역 */}
       <div className="flex-1 flex items-center justify-center p-6 overflow-auto">
         {activeSrc && !activeError ? (
           <img
@@ -175,18 +175,18 @@ export default function ImageViewer() {
               maxWidth: '100%',
               maxHeight: '100%',
               objectFit: 'contain',
-              borderRadius: 6,
+              borderRadius: 2,
             }}
           />
         ) : (
           <div className="text-sm text-center" style={{ color: 'var(--color-text-muted)' }}>
-            <div>Unable to load image</div>
+            <div>이미지를 불러올 수 없습니다</div>
             <div className="text-xs mt-1 font-mono opacity-60">{activeDisplayName}</div>
           </div>
         )}
       </div>
 
-      {/* Gallery thumbnail row */}
+      {/* 갤러리 썸네일 행 */}
       {isGallery && (
         <div
           className="shrink-0 px-4 py-2"

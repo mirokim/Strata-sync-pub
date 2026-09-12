@@ -172,7 +172,7 @@ export function buildHighlightPlugin() {
   )
 }
 
-// ── %% comment %% decorator ───────────────────────────────────────────────────
+// ── %% 주석 %% decorator ──────────────────────────────────────────────────────
 
 export function buildCommentPlugin() {
   return ViewPlugin.fromClass(

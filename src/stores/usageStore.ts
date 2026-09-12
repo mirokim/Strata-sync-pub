@@ -52,7 +52,7 @@ export interface UsageLogEntry {
   caller: string          // e.g. 'chat', 'editAgent', 'debate', 'graphInsight'
 }
 
-const STORAGE_KEY = 'strata-sync:usage-log'
+const STORAGE_KEY = 'sandbox-map:usage-log'
 const MAX_LOG_ENTRIES = 500
 
 function loadLog(): UsageLogEntry[] {

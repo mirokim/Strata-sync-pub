@@ -1,19 +1,18 @@
 /**
- * SettingsPanel — Centered modal popup with sidebar navigation.
+ * SettingsPanel — Full-area tab panel (replaces old modal popup).
  *
- * Layout: backdrop + centered modal (720×540)
- *   Left  186px : nav sidebar (Tools / Settings / Other groups)
+ * Layout: fills its container (center editor area in MainLayout)
+ *   Left  186px : nav sidebar (도구 / 설정 / 기타 groups)
  *   Right rest  : content area (header + scrollable body + footer)
  */
 
 import { useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 import {
   X, BarChart2, Trash2,
   Settings, Cpu, GitMerge, Keyboard, Info,
-  Layers, Bot, Database,
-  Users, Tag, Download,
-  DollarSign, FolderOpen, MessageSquare, Fish, Search,
+  Layers, Clock,
+  Users, Tag, Download, Bot, Database, Search, Fish, Pencil, Coins, Send,
+  Link2, Wand2, HardDrive, Sparkles,
 } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
@@ -28,21 +27,25 @@ import StatsTab from './tabs/StatsTab'
 import TrashTab from './tabs/TrashTab'
 import ShortcutsTab from './tabs/ShortcutsTab'
 import ConfluenceTab from './tabs/ConfluenceTab'
-import UsageTab from './tabs/UsageTab'
-import VaultManagerTab from './tabs/VaultManagerTab'
 import SlackBotTab from './tabs/SlackBotTab'
-import MirofishTab from './tabs/MirofishTab'
+import JiraTab from './tabs/JiraTab'
+import VaultManagerTab from './tabs/VaultManagerTab'
 import SearchTab from './tabs/SearchTab'
-import EditAgentTab from './tabs/EditAgentTab'
 import VectorEmbedTab from './tabs/VectorEmbedTab'
+import MirofishTab from './tabs/MirofishTab'
+import EditAgentTab from './tabs/EditAgentTab'
+import UsageTab from './tabs/UsageTab'
+import JiraDispatchTab from './tabs/JiraDispatchTab'
+import ConfluencePublishTab from './tabs/ConfluencePublishTab'
+import CronJobTab from './tabs/CronJobTab'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type SettingsTab =
-  | 'stats' | 'trash' | 'usage' | 'vault-manager'
-  | 'general' | 'ai' | 'search' | 'personas' | 'debate' | 'shortcuts' | 'project' | 'tags' | 'edit-agent' | 'vector-embed'
-  | 'slack-bot' | 'mirofish'
-  | 'confluence'
+  | 'stats' | 'trash'
+  | 'general' | 'ai' | 'search' | 'vector-embed' | 'personas' | 'debate' | 'shortcuts' | 'project' | 'tags'
+  | 'confluence' | 'confluence-publish' | 'slack-bot' | 'jira' | 'jira-dispatch' | 'vault-manager' | 'mirofish'
+  | 'edit-agent' | 'cron-jobs' | 'usage'
   | 'about'
 
 type NavItem = { id: SettingsTab; icon: React.ElementType; label: string }
@@ -52,80 +55,83 @@ type NavGroup = { label: string; items: NavItem[] }
 
 const NAV: NavGroup[] = [
   {
-    label: 'Tools',
+    label: '연동',
     items: [
-      { id: 'stats',         icon: BarChart2,      label: 'Statistics' },
-      { id: 'usage',         icon: DollarSign,     label: 'Usage' },
-      { id: 'vault-manager', icon: FolderOpen,     label: 'Vault Manager' },
-      { id: 'trash',         icon: Trash2,         label: 'Trash' },
+      { id: 'confluence',         icon: Download, label: 'Confluence 가져오기' },
+      { id: 'confluence-publish', icon: Send,     label: 'Confluence 발행' },
+      { id: 'jira',               icon: Download, label: 'Jira 가져오기' },
+      { id: 'jira-dispatch',      icon: Send,     label: 'Jira 일감 발행' },
+      { id: 'slack-bot',          icon: Bot,      label: 'Slack 봇' },
     ],
   },
   {
-    label: 'Settings',
+    label: '에이전트',
     items: [
-      { id: 'general',   icon: Settings,  label: 'General' },
-      { id: 'ai',        icon: Cpu,       label: 'AI Settings' },
-      { id: 'search',    icon: Search,    label: 'Search / RAG' },
-      { id: 'tags',      icon: Tag,       label: 'Tags' },
-      { id: 'personas',  icon: Users,     label: 'Personas' },
-      { id: 'project',   icon: Layers,    label: 'Project' },
-      { id: 'debate',       icon: GitMerge,  label: 'Debate' },
-      { id: 'edit-agent',   icon: Bot,       label: 'Edit Agent' },
-      { id: 'vector-embed', icon: Database,  label: 'Vector Embed' },
-      { id: 'shortcuts',    icon: Keyboard,  label: 'Shortcuts' },
+      { id: 'edit-agent', icon: Wand2, label: '편집 에이전트' },
+      { id: 'cron-jobs',  icon: Clock, label: '크론잡' },
+      { id: 'mirofish',   icon: Fish,  label: 'MiroFish' },
     ],
   },
   {
-    label: 'Integrations',
+    label: '볼트',
     items: [
-      { id: 'slack-bot',  icon: MessageSquare, label: 'Slack Bot' },
-      { id: 'mirofish',   icon: Fish,          label: 'MiroFish' },
+      { id: 'stats',         icon: BarChart2, label: '통계' },
+      { id: 'vault-manager', icon: HardDrive, label: '볼트 관리자' },
+      { id: 'usage',         icon: Coins,     label: '토큰 사용량' },
+      { id: 'trash',         icon: Trash2,    label: '휴지통' },
     ],
   },
   {
-    label: 'Other',
+    label: '설정',
     items: [
-      { id: 'about', icon: Info, label: 'About' },
+      { id: 'general',   icon: Settings,  label: '일반' },
+      { id: 'ai',        icon: Cpu,       label: 'AI 설정' },
+      { id: 'search',       icon: Search,    label: '검색 튜닝' },
+      { id: 'vector-embed', icon: Sparkles,  label: '벡터 임베딩' },
+      { id: 'tags',      icon: Tag,       label: '태그' },
+      { id: 'personas',  icon: Users,     label: '페르소나' },
+      { id: 'project',   icon: Layers,    label: '프로젝트' },
+      { id: 'debate',    icon: GitMerge,  label: '토론' },
+      { id: 'shortcuts', icon: Keyboard,  label: '단축키' },
+    ],
+  },
+  {
+    label: '기타',
+    items: [
+      { id: 'about', icon: Info, label: '정보' },
     ],
   },
 ]
 
 const ALL_ITEMS = NAV.flatMap(g => g.items)
 
-// ── Placeholder for unimplemented tabs ────────────────────────────────────────
-
-function PlaceholderContent({ label }: { label: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center h-full gap-3 py-20">
-      <span style={{ fontSize: 32, opacity: 0.2 }}>🚧</span>
-      <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{label} — Coming soon</p>
-    </div>
-  )
-}
-
 // ── Tab content dispatcher ────────────────────────────────────────────────────
 
 function renderTabContent(tab: SettingsTab) {
   switch (tab) {
-    case 'stats':     return <StatsTab />
-    case 'trash':     return <TrashTab />
-    case 'general':   return <GeneralTab />
-    case 'ai':        return <AITab />
-    case 'personas':  return <PersonasTab />
-    case 'project':   return <ProjectTab />
-    case 'debate':    return <DebateTab />
-    case 'tags':      return <TagsTab />
-    case 'shortcuts':      return <ShortcutsTab />
-    case 'confluence':     return <ConfluenceTab />
-    case 'usage':          return <UsageTab />
-    case 'vault-manager':  return <VaultManagerTab />
-    case 'slack-bot':      return <SlackBotTab />
-    case 'mirofish':       return <MirofishTab />
-    case 'search':         return <SearchTab />
-    case 'edit-agent':     return <EditAgentTab />
-    case 'vector-embed':   return <VectorEmbedTab />
-    case 'about':          return <AboutTab />
-    default:          return <PlaceholderContent label={ALL_ITEMS.find(i => i.id === tab)?.label ?? tab} />
+    case 'stats':      return <StatsTab />
+    case 'trash':      return <TrashTab />
+    case 'general':    return <GeneralTab />
+    case 'ai':         return <AITab />
+    case 'search':        return <SearchTab />
+    case 'vector-embed':  return <VectorEmbedTab />
+    case 'personas':   return <PersonasTab />
+    case 'project':    return <ProjectTab />
+    case 'debate':     return <DebateTab />
+    case 'tags':       return <TagsTab />
+    case 'shortcuts':  return <ShortcutsTab />
+    case 'confluence':         return <ConfluenceTab />
+    case 'confluence-publish': return <ConfluencePublishTab />
+    case 'jira':               return <JiraTab />
+    case 'jira-dispatch': return <JiraDispatchTab />
+    case 'slack-bot':     return <SlackBotTab />
+    case 'vault-manager': return <VaultManagerTab />
+    case 'mirofish':   return <MirofishTab />
+    case 'edit-agent': return <EditAgentTab />
+    case 'cron-jobs':  return <CronJobTab />
+    case 'usage':      return <UsageTab />
+    case 'about':      return <AboutTab />
+    default:           return null
   }
 }
 
@@ -133,179 +139,126 @@ function renderTabContent(tab: SettingsTab) {
 
 export default function SettingsPanel() {
   const { resetPersonaModels } = useSettingsStore()
-  const centerTab = useUIStore((s) => s.centerTab)
-  const setCenterTab = useUIStore((s) => s.setCenterTab)
-  const settingsPanelOpen = centerTab === 'settings'
-  const setSettingsPanelOpen = (open: boolean) => setCenterTab(open ? 'settings' : 'graph')
-  // Default to 'ai' so all persona/vault tests pass without navigating
+  const setCenterTab = useUIStore(s => s.setCenterTab)
   const [activeTab, setActiveTab] = useState<SettingsTab>('ai')
 
   const activeLabel = ALL_ITEMS.find(i => i.id === activeTab)?.label ?? ''
-
-  const handleNavClick = (id: SettingsTab) => {
-    setActiveTab(id)
-  }
+  const close = () => setCenterTab('graph')
 
   return (
-    <AnimatePresence>
-      {settingsPanelOpen && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            key="backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="fixed inset-0 z-40"
-            style={{ background: 'rgba(0,0,0,0.55)' }}
-            onClick={() => setSettingsPanelOpen(false)}
-            data-testid="settings-backdrop"
-          />
+    <div className="flex h-full overflow-hidden" data-testid="settings-panel">
 
-          {/* Modal wrapper — flex center */}
-          <motion.div
-            key="panel"
-            initial={{ opacity: 0, scale: 0.97, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.97, y: 8 }}
-            transition={{ type: 'spring' as const, stiffness: 360, damping: 32 }}
-            className="fixed inset-0 z-50 flex items-center justify-center"
-            style={{ pointerEvents: 'none' }}
-          >
-            {/* Modal card */}
-            <div
-              className="flex overflow-hidden"
-              style={{
-                width: 760,
-                height: 680,
-                background: 'var(--color-bg-secondary)',
-                border: '1px solid var(--color-border)',
-                borderRadius: 12,
-                boxShadow: '0 24px 80px rgba(0,0,0,0.55)',
-                pointerEvents: 'auto',
-              }}
-              data-testid="settings-panel"
-            >
+      {/* ── Left sidebar ──────────────────────────────────────────── */}
+      <div
+        className="flex flex-col shrink-0"
+        style={{
+          width: 210,
+          borderRight: '1px solid var(--color-border)',
+          background: 'var(--color-bg-primary)',
+        }}
+      >
+        {/* Sidebar header */}
+        <div
+          className="flex items-center px-4 h-11 shrink-0"
+          style={{ borderBottom: '1px solid var(--color-border)' }}
+        >
+          <span className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+            설정
+          </span>
+        </div>
 
-              {/* ── Left sidebar ─────────────────────────────────────── */}
+        {/* Nav groups */}
+        <div className="flex-1 overflow-y-auto py-2">
+          {NAV.map((group, gi) => (
+            <div key={group.label} className={gi > 0 ? 'mt-3' : ''}>
               <div
-                className="flex flex-col shrink-0"
-                style={{
-                  width: 186,
-                  borderRight: '1px solid var(--color-border)',
-                  background: 'var(--color-bg-primary)',
-                }}
+                className="px-4 pb-1 text-xs font-semibold tracking-wider uppercase"
+                style={{ color: 'var(--color-text-muted)' }}
               >
-                {/* Sidebar header */}
-                <div
-                  className="flex items-center px-4 h-10 shrink-0"
-                  style={{ borderBottom: '1px solid var(--color-border)' }}
-                >
-                  <span className="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
-                    Settings
-                  </span>
-                </div>
-
-                {/* Nav groups */}
-                <div className="flex-1 overflow-y-auto py-2">
-                  {NAV.map((group, gi) => (
-                    <div key={group.label} className={gi > 0 ? 'mt-3' : ''}>
-                      {/* Group label */}
-                      <div
-                        className="px-4 pb-1 text-[10px] font-semibold tracking-wider uppercase"
-                        style={{ color: 'var(--color-text-muted)' }}
-                      >
-                        {group.label}
-                      </div>
-
-                      {/* Nav items */}
-                      {group.items.map(item => {
-                        const Icon = item.icon
-                        const active = activeTab === item.id
-                        return (
-                          <button
-                            key={item.id}
-                            onClick={() => handleNavClick(item.id)}
-                            className="w-full flex items-center gap-2.5 px-4 py-1.5 text-xs transition-colors text-left"
-                            style={{
-                              background: active ? 'var(--color-bg-hover)' : 'transparent',
-                              color: active ? 'var(--color-accent)' : 'var(--color-text-muted)',
-                              fontWeight: active ? 500 : 400,
-                            }}
-                          >
-                            <Icon size={13} />
-                            {item.label}
-                          </button>
-                        )
-                      })}
-
-                      {/* Divider between groups (except after last) */}
-                      {gi < NAV.length - 1 && (
-                        <div
-                          className="mx-4 mt-3"
-                          style={{ borderTop: '1px solid var(--color-border)' }}
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
+                {group.label}
               </div>
 
-              {/* ── Right content ─────────────────────────────────────── */}
-              <div className="flex-1 flex flex-col min-w-0">
-
-                {/* Content header */}
-                <div
-                  className="flex items-center justify-between px-6 h-10 shrink-0"
-                  style={{ borderBottom: '1px solid var(--color-border)' }}
-                >
-                  <span className="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-                    {activeLabel}
-                  </span>
+              {group.items.map(item => {
+                const Icon = item.icon
+                const active = activeTab === item.id
+                return (
                   <button
-                    onClick={() => setSettingsPanelOpen(false)}
-                    className="p-1 rounded transition-colors hover:bg-[var(--color-bg-hover)]"
-                    style={{ color: 'var(--color-text-muted)' }}
-                    aria-label="Close"
-                    data-testid="settings-close"
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    className="w-full flex items-center gap-2.5 py-2 text-[13px] transition-colors text-left"
+                    style={{
+                      paddingLeft: active ? 14 : 16,
+                      paddingRight: 16,
+                      background: active ? 'var(--color-bg-hover)' : 'transparent',
+                      color: active ? 'var(--color-accent)' : 'var(--color-text-muted)',
+                      fontWeight: active ? 500 : 400,
+                      borderLeft: active ? '2px solid var(--color-accent)' : '2px solid transparent',
+                    }}
                   >
-                    <X size={14} />
+                    <Icon size={14} />
+                    {item.label}
                   </button>
-                </div>
+                )
+              })}
 
-                {/* Scrollable body */}
-                <div className="flex-1 overflow-y-auto px-6 py-5">
-                  {renderTabContent(activeTab)}
-                </div>
-
-                {/* Footer */}
-                <div
-                  className="px-6 py-3 shrink-0 flex items-center justify-between"
-                  style={{ borderTop: '1px solid var(--color-border)' }}
-                >
-                  <button
-                    onClick={resetPersonaModels}
-                    className="text-xs px-3 py-1.5 rounded transition-colors hover:bg-[var(--color-bg-hover)]"
-                    style={{ color: 'var(--color-text-muted)' }}
-                    data-testid="settings-reset"
-                  >
-                    Reset to Defaults
-                  </button>
-                  <button
-                    onClick={() => setSettingsPanelOpen(false)}
-                    className="text-xs px-4 py-1.5 rounded transition-colors"
-                    style={{ background: 'var(--color-accent)', color: '#fff' }}
-                    data-testid="settings-save"
-                  >
-                    Save
-                  </button>
-                </div>
-              </div>
+              {gi < NAV.length - 1 && (
+                <div className="mx-4 mt-3" style={{ borderTop: '1px solid var(--color-border)' }} />
+              )}
             </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Right content ─────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col min-w-0">
+
+        {/* Content header */}
+        <div
+          className="flex items-center justify-between px-6 h-11 shrink-0"
+          style={{ borderBottom: '1px solid var(--color-border)' }}
+        >
+          <span className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+            {activeLabel}
+          </span>
+          <button
+            onClick={close}
+            className="p-1 rounded transition-colors hover:bg-[var(--color-bg-hover)]"
+            style={{ color: 'var(--color-text-muted)' }}
+            aria-label="닫기"
+            data-testid="settings-close"
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          {renderTabContent(activeTab)}
+        </div>
+
+        {/* Footer */}
+        <div
+          className="px-6 py-3 shrink-0 flex items-center justify-between"
+          style={{ borderTop: '1px solid var(--color-border)' }}
+        >
+          <button
+            onClick={resetPersonaModels}
+            className="text-[13px] px-3 py-2 rounded transition-colors hover:bg-[var(--color-bg-hover)]"
+            style={{ color: 'var(--color-text-muted)' }}
+            data-testid="settings-reset"
+          >
+            기본값으로 초기화
+          </button>
+          <button
+            onClick={close}
+            className="text-[13px] px-4 py-2 rounded transition-colors"
+            style={{ background: 'var(--color-accent)', color: '#fff' }}
+            data-testid="settings-save"
+          >
+            닫기
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }

@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ChevronRight, ChevronDown, Tag } from 'lucide-react'
-import type { MockDocument, LoadedDocument } from '@/types'
+import type { LoadedDocument } from '@/types'
 import FileTreeItem from './FileTreeItem'
 import type { ContextMenuState } from './ContextMenu'
 import { useSettingsStore } from '@/stores/settingsStore'
 
 interface TagGroupProps {
-  tag: string  // '' = no tag
-  docs: MockDocument[]
+  tag: string  // '' = 태그 없음
+  docs: LoadedDocument[]
   /** null/undefined = local state; true/false = controlled open state */
   isOpenOverride?: boolean | null
   onContextMenu?: (state: ContextMenuState) => void
@@ -38,7 +38,7 @@ export default function TagGroup({
 
   if (docs.length === 0) return null
 
-  const displayName = tag === '' ? 'Untagged' : `#${tag}`
+  const displayName = tag === '' ? '태그 없음' : `#${tag}`
 
   return (
     <div>
@@ -75,7 +75,7 @@ export default function TagGroup({
       {isOpen && (
         <div>
           {docs.map(doc => (
-            <FileTreeItem key={(doc as LoadedDocument).absolutePath ?? doc.id} doc={doc} onContextMenu={onContextMenu} />
+            <FileTreeItem key={doc.absolutePath || doc.id} doc={doc} onContextMenu={onContextMenu} />
           ))}
         </div>
       )}

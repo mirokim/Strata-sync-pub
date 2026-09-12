@@ -12,39 +12,39 @@ interface ShortcutGroup {
 
 const GROUPS: ShortcutGroup[] = [
   {
-    label: 'Editor',
+    label: '에디터',
     rows: [
-      { keys: ['Ctrl', 'S'],           desc: 'Save' },
-      { keys: ['Ctrl', 'B'],           desc: 'Bold' },
-      { keys: ['Ctrl', 'I'],           desc: 'Italic' },
-      { keys: ['Ctrl', 'Shift', 'S'],  desc: 'Strikethrough' },
-      { keys: ['Ctrl', 'Shift', 'H'],  desc: 'Highlight' },
-      { keys: ['Ctrl', 'Shift', 'C'],  desc: 'Inline Code' },
-      { keys: ['Ctrl', 'Z'],           desc: 'Undo' },
-      { keys: ['Ctrl', 'Y'],           desc: 'Redo' },
-      { keys: ['Ctrl', 'A'],           desc: 'Select All' },
+      { keys: ['Ctrl', 'S'],           desc: '저장' },
+      { keys: ['Ctrl', 'B'],           desc: '굵게 (Bold)' },
+      { keys: ['Ctrl', 'I'],           desc: '기울임 (Italic)' },
+      { keys: ['Ctrl', 'Shift', 'S'],  desc: '취소선 (Strikethrough)' },
+      { keys: ['Ctrl', 'Shift', 'H'],  desc: '하이라이트 (Highlight)' },
+      { keys: ['Ctrl', 'Shift', 'C'],  desc: '인라인 코드 (Inline Code)' },
+      { keys: ['Ctrl', 'Z'],           desc: '실행 취소 (Undo)' },
+      { keys: ['Ctrl', 'Y'],           desc: '다시 실행 (Redo)' },
+      { keys: ['Ctrl', 'A'],           desc: '전체 선택' },
     ],
   },
   {
-    label: 'Chat',
+    label: '채팅',
     rows: [
-      { keys: ['Enter'],              desc: 'Send message' },
-      { keys: ['Shift', 'Enter'],     desc: 'New line' },
+      { keys: ['Enter'],              desc: '메시지 전송' },
+      { keys: ['Shift', 'Enter'],     desc: '줄바꿈' },
     ],
   },
   {
-    label: 'Graph',
+    label: '그래프',
     rows: [
-      { keys: ['Scroll'],             desc: 'Zoom in / out' },
-      { keys: ['Drag'],               desc: 'Pan view' },
-      { keys: ['Click'],              desc: 'Select node' },
-      { keys: ['Double Click'],       desc: 'Open node in editor' },
+      { keys: ['Scroll'],             desc: '줌 인 / 아웃' },
+      { keys: ['Drag'],               desc: '뷰 이동 (Pan)' },
+      { keys: ['Click'],              desc: '노드 선택' },
+      { keys: ['Double Click'],       desc: '노드 에디터로 열기' },
     ],
   },
   {
-    label: 'General',
+    label: '일반',
     rows: [
-      { keys: ['Escape'],             desc: 'Close popup / menu' },
+      { keys: ['Escape'],             desc: '팝업 / 메뉴 닫기' },
     ],
   },
 ]
@@ -56,7 +56,7 @@ function Kbd({ children }: { children: string }) {
       padding: '1px 6px',
       borderRadius: 4,
       fontSize: 10,
-      fontFamily: 'ui-monospace, monospace',
+      fontFamily: 'var(--ea-font-mono)',
       background: 'var(--color-bg-active)',
       border: '1px solid var(--color-border)',
       color: 'var(--color-text-primary)',

@@ -1,11 +1,11 @@
 /**
- * InsightsPanel — Vault graph insights panel
+ * InsightsPanel — 볼트 그래프 인사이트 패널
  *
- * Displays results from computeInsights():
- * - Bridge nodes: highly referenced hub documents
- * - Orphan documents: documents with no links at all
- * - Gap topics: topics referenced in multiple places but with no backing file
- * - Clusters: connected group summaries
+ * computeInsights()로 분석한 결과를 표시:
+ * - 브리지 노드: 많이 참조되는 허브 문서
+ * - 고립 문서: 링크가 전혀 없는 문서
+ * - 빈틈 주제: 여러 곳에서 참조되지만 파일이 없는 주제
+ * - 클러스터: 연결 그룹 요약
  */
 
 import { useMemo, useState } from 'react'
@@ -33,10 +33,10 @@ export default function InsightsPanel({ onClose }: Props) {
   }, [loadedDocuments, rev])
 
   const TABS = [
-    { id: 'bridge',  label: 'Hub Nodes',       count: insights.bridgeNodes.length,  color: '#60a5fa' },
-    { id: 'orphan',  label: 'Orphan Docs',     count: insights.orphanDocs.length,   color: 'var(--color-error)' },
-    { id: 'gap',     label: 'Gap Topics',      count: insights.gapTopics.length,    color: '#fbbf24' },
-    { id: 'cluster', label: 'Clusters',        count: insights.clusters.length,     color: '#a78bfa' },
+    { id: 'bridge',  label: '허브 노드',  count: insights.bridgeNodes.length,  color: '#60a5fa' },
+    { id: 'orphan',  label: '고립 문서',  count: insights.orphanDocs.length,   color: 'var(--color-error)' },
+    { id: 'gap',     label: '빈틈 주제',  count: insights.gapTopics.length,    color: '#fbbf24' },
+    { id: 'cluster', label: '클러스터',   count: insights.clusters.length,     color: '#a78bfa' },
   ] as const
 
   const highlightNode = (docId: string) => {
@@ -59,12 +59,12 @@ export default function InsightsPanel({ onClose }: Props) {
         borderBottom: '1px solid var(--color-border)',
       }}>
         <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-primary)', flex: 1 }}>
-          Vault Insights
+          볼트 인사이트
         </span>
         <button
           onClick={() => setRev(r => r + 1)}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', padding: 4 }}
-          title="Re-analyze"
+          title="재분석"
         >
           <RefreshCw size={11} />
         </button>
@@ -111,15 +111,15 @@ export default function InsightsPanel({ onClose }: Props) {
         {tab === 'bridge' && (
           <>
             {insights.bridgeNodes.length === 0 ? (
-              <EmptyState msg="No hubs with 3+ inbound links" />
+              <EmptyState msg="인바운드 링크 3개 이상인 허브 없음" />
             ) : insights.bridgeNodes.map(n => (
               <InsightRow
                 key={n.docId}
                 label={n.filename.replace(/\.md$/i, '')}
-                badge={`in:${n.inboundCount} out:${n.outboundCount}`}
+                badge={`↙${n.inboundCount} ↗${n.outboundCount}`}
                 color="#60a5fa"
                 onClick={() => highlightNode(n.docId)}
-                tooltip="Highlight in graph"
+                tooltip="그래프에서 강조 표시"
               />
             ))}
           </>
@@ -128,11 +128,11 @@ export default function InsightsPanel({ onClose }: Props) {
         {tab === 'orphan' && (
           <>
             {insights.orphanDocs.length === 0 ? (
-              <EmptyState msg="No orphan documents — all docs have links" isGood />
+              <EmptyState msg="고립 문서 없음 — 모든 문서에 링크 있음" isGood />
             ) : (
               <>
                 <div style={{ padding: '0 12px 6px', fontSize: 11, color: 'var(--color-text-muted)' }}>
-                  Documents with no inbound or outbound links
+                  인바운드/아웃바운드 링크가 모두 없는 문서
                 </div>
                 {insights.orphanDocs.map(n => (
                   <InsightRow
@@ -140,7 +140,7 @@ export default function InsightsPanel({ onClose }: Props) {
                     label={n.filename.replace(/\.md$/i, '')}
                     color="var(--color-error)"
                     onClick={() => highlightNode(n.docId)}
-                    tooltip="Highlight in graph"
+                    tooltip="그래프에서 강조 표시"
                   />
                 ))}
               </>
@@ -151,17 +151,17 @@ export default function InsightsPanel({ onClose }: Props) {
         {tab === 'gap' && (
           <>
             {insights.gapTopics.length === 0 ? (
-              <EmptyState msg="No gap topics found" isGood />
+              <EmptyState msg="작성 필요 주제 없음" isGood />
             ) : (
               <>
                 <div style={{ padding: '0 12px 6px', fontSize: 11, color: 'var(--color-text-muted)' }}>
-                  Topics referenced in multiple docs but with no backing file (consider creating them)
+                  여러 문서에서 참조되지만 파일이 없는 주제 (작성 권장)
                 </div>
                 {insights.gapTopics.map(g => (
                   <InsightRow
                     key={g.topic}
                     label={g.topic}
-                    badge={`${g.referenceCount} refs`}
+                    badge={`${g.referenceCount}회 참조`}
                     color="#fbbf24"
                   />
                 ))}
@@ -173,12 +173,12 @@ export default function InsightsPanel({ onClose }: Props) {
         {tab === 'cluster' && (
           <>
             {insights.clusters.length === 0 ? (
-              <EmptyState msg="No separate clusters — vault is fully connected" isGood />
+              <EmptyState msg="분리된 클러스터 없음 — 볼트가 단일 연결" isGood />
             ) : insights.clusters.map((c, i) => (
               <InsightRow
                 key={c.clusterIdx}
-                label={`Cluster ${i + 1}: ${c.representative.replace(/\.md$/i, '')}`}
-                badge={`${c.size} docs`}
+                label={`클러스터 ${i + 1}: ${c.representative.replace(/\.md$/i, '')}`}
+                badge={`${c.size}개 문서`}
                 color="#a78bfa"
               />
             ))}
@@ -237,7 +237,7 @@ function EmptyState({ msg, isGood }: { msg: string; isGood?: boolean }) {
       padding: '20px 16px', textAlign: 'center', fontSize: 11,
       color: isGood ? 'var(--color-success)' : 'var(--color-text-muted)',
     }}>
-      {msg}
+      {isGood ? '✅ ' : ''}{msg}
     </div>
   )
 }

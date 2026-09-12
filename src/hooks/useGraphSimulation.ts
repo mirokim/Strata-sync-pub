@@ -76,14 +76,21 @@ export function useGraphSimulation({ width, height, onTick, onComplete }: Option
       .force('center', forceCenter<SimNode>(width / 2, height / 2).strength(physics.centerForce))
 
     if (isFastRef.current) {
-      // Fast mode: stop D3's auto-timer, then run 150 ticks synchronously after React
-      // has had one frame to render the initial SVG elements (so positions are applied).
+      // Fast mode: stop D3's auto-timer, then run 150 ticks in chunks of 50
+      // with setTimeout(0) between chunks to yield to the UI thread.
       sim.stop()
-      const tid = setTimeout(() => {
-        sim.tick(150)
-        onTickRef.current(simNodesRef.current, simLinksRef.current)
-        onCompleteRef.current?.(simNodesRef.current)
-      }, 50)
+      const tickChunk = (remaining: number) => {
+        const batch = Math.min(remaining, 50)
+        sim.tick(batch)
+        const left = remaining - batch
+        if (left > 0) {
+          setTimeout(() => tickChunk(left), 0)
+        } else {
+          onTickRef.current(simNodesRef.current, simLinksRef.current)
+          onCompleteRef.current?.(simNodesRef.current)
+        }
+      }
+      const tid = setTimeout(() => tickChunk(150), 50)
       simRef.current = sim
       return () => { clearTimeout(tid); simRef.current = null }
     }
@@ -100,6 +107,7 @@ export function useGraphSimulation({ width, height, onTick, onComplete }: Option
 
     simRef.current = sim
     return () => {
+      sim.on('tick', null)
       sim.stop()
       simRef.current = null
     }

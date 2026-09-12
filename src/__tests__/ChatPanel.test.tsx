@@ -26,9 +26,19 @@ describe('ChatPanel — structure', () => {
     expect(screen.getByTestId('chat-panel')).toBeInTheDocument()
   })
 
+  it('renders persona chips', () => {
+    render(<ChatPanel />)
+    expect(screen.getByTestId('persona-chips')).toBeInTheDocument()
+  })
+
   it('renders message list', () => {
     render(<ChatPanel />)
     expect(screen.getByTestId('message-list')).toBeInTheDocument()
+  })
+
+  it('renders quick questions', () => {
+    render(<ChatPanel />)
+    expect(screen.getByTestId('quick-questions')).toBeInTheDocument()
   })
 
   it('renders chat input', () => {
@@ -36,6 +46,20 @@ describe('ChatPanel — structure', () => {
     expect(screen.getByTestId('chat-input-container')).toBeInTheDocument()
   })
 
+})
+
+describe('PersonaChips — PM only', () => {
+  it('renders exactly 1 persona chip (PM)', () => {
+    render(<ChatPanel />)
+    const chips = screen.getAllByTestId(/^persona-chip-/)
+    expect(chips.length).toBe(1)
+  })
+
+  it('PM chip is always active', () => {
+    render(<ChatPanel />)
+    const chip = screen.getByTestId('persona-chip-chief_director')
+    expect(chip).toHaveAttribute('data-active', 'true')
+  })
 })
 
 describe('ChatInput — send', () => {
@@ -59,19 +83,19 @@ describe('ChatInput — send', () => {
   it('pressing Enter sends the message and adds user message', async () => {
     render(<ChatPanel />)
     const textarea = screen.getByTestId('chat-textarea')
-    fireEvent.change(textarea, { target: { value: 'test question' } })
+    fireEvent.change(textarea, { target: { value: '테스트 질문' } })
     fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false })
 
     const msgs = useChatStore.getState().messages
     expect(msgs.length).toBeGreaterThanOrEqual(1)
     expect(msgs[0].role).toBe('user')
-    expect(msgs[0].content).toBe('test question')
+    expect(msgs[0].content).toBe('테스트 질문')
   })
 
   it('pressing Shift+Enter does not send (allows newline)', () => {
     render(<ChatPanel />)
     const textarea = screen.getByTestId('chat-textarea')
-    fireEvent.change(textarea, { target: { value: 'newline test' } })
+    fireEvent.change(textarea, { target: { value: '줄바꿈 테스트' } })
     fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true })
     // Message should NOT be sent
     expect(useChatStore.getState().messages.length).toBe(0)
@@ -94,17 +118,17 @@ describe('MessageList — messages', () => {
   it('shows user message after sending', async () => {
     render(<ChatPanel />)
     const textarea = screen.getByTestId('chat-textarea')
-    fireEvent.change(textarea, { target: { value: 'hello' } })
+    fireEvent.change(textarea, { target: { value: '안녕하세요' } })
     fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false })
 
     const msgs = useChatStore.getState().messages
-    expect(msgs.some(m => m.role === 'user' && m.content === 'hello')).toBe(true)
+    expect(msgs.some(m => m.role === 'user' && m.content === '안녕하세요')).toBe(true)
   })
 
   it('shows assistant message after delay', async () => {
     render(<ChatPanel />)
     const textarea = screen.getByTestId('chat-textarea')
-    fireEvent.change(textarea, { target: { value: 'test' } })
+    fireEvent.change(textarea, { target: { value: '테스트' } })
     fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false })
 
     // Advance timers past the mock response delay
@@ -115,3 +139,19 @@ describe('MessageList — messages', () => {
   })
 })
 
+describe('QuickQuestions', () => {
+  it('renders a single quick question button (random pick)', () => {
+    render(<ChatPanel />)
+    const buttons = screen.getAllByTestId(/^quick-q-/)
+    expect(buttons.length).toBe(1)
+  })
+
+  it('clicking a quick question sends a message', async () => {
+    render(<ChatPanel />)
+    const firstQ = screen.getByTestId('quick-q-0')
+    fireEvent.click(firstQ)
+    const msgs = useChatStore.getState().messages
+    expect(msgs.length).toBeGreaterThanOrEqual(1)
+    expect(msgs[0].role).toBe('user')
+  })
+})

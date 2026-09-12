@@ -9,10 +9,10 @@ import type { EditorState } from '@codemirror/state'
 
 // ── List item line detection regex ───────────────────────────────────────────
 
-/** Regex for detecting list item lines */
+/** 리스트 항목 줄 탐지 정규식 */
 export const LIST_RE = /^(\s*)([-*+]|\d+\.)( \[[ xX]\])? /
 
-/** Ordered list: returns the number of the item directly above at a given indent level (0 if none) */
+/** 번호 목록: 특정 인덴트 레벨에서 바로 위의 항목 번호 반환 (없으면 0) */
 export function prevNumAtIndent(state: EditorState, fromLine: number, indentLen: number): number {
   for (let n = fromLine - 1; n >= 1; n--) {
     const text = state.doc.line(n).text
@@ -21,15 +21,15 @@ export function prevNumAtIndent(state: EditorState, fromLine: number, indentLen:
     if (m) {
       const d = m[1].length
       if (d === indentLen) return parseInt(m[2])
-      if (d < indentLen) return 0  // upper level — no same-level item found
+      if (d < indentLen) return 0  // 상위 레벨 — 같은 레벨 없음
     } else if (!LIST_RE.test(text)) {
-      return 0  // non-list line — stop searching
+      return 0  // 리스트 아닌 줄 — 탐색 중단
     }
   }
   return 0
 }
 
-/** Tab: indent list item (+2 spaces), ordered lists recalculate number per level */
+/** Tab: 리스트 항목 들여쓰기 (+2 spaces), 번호 목록은 레벨별 번호 재계산 */
 export function mdIndentList(view: EditorView): boolean {
   const { state } = view
   const { from, to } = state.selection.main
@@ -37,7 +37,7 @@ export function mdIndentList(view: EditorView): boolean {
   const line = state.doc.lineAt(from)
   if (!LIST_RE.test(line.text)) return false
 
-  // Ordered list: calculate number for new indent level
+  // 번호 목록: 새 인덴트 레벨에 맞는 번호 계산
   const numM = line.text.match(/^(\s*)(\d+\.)( .*)/)
   if (numM) {
     const newIndentLen = numM[1].length + 2
@@ -54,7 +54,7 @@ export function mdIndentList(view: EditorView): boolean {
     return true
   }
 
-  // Bullet list: add 2 spaces
+  // 불릿 목록: 2 spaces 추가
   view.dispatch({
     changes: { from: line.from, insert: '  ' },
     selection: { anchor: from + 2 },
@@ -63,7 +63,7 @@ export function mdIndentList(view: EditorView): boolean {
   return true
 }
 
-/** Shift-Tab: dedent list item (-2 spaces) */
+/** Shift-Tab: 리스트 항목 내어쓰기 (-2 spaces) */
 export function mdDedentList(view: EditorView): boolean {
   const { state } = view
   const { from, to } = state.selection.main
@@ -81,7 +81,7 @@ export function mdDedentList(view: EditorView): boolean {
   return true
 }
 
-/** Enter: continue list item / exit list if item is empty */
+/** Enter: 리스트 항목 연속 생성 / 빈 항목이면 리스트 탈출 */
 export function mdContinueList(view: EditorView): boolean {
   const { state } = view
   const { from, to } = state.selection.main
@@ -91,7 +91,7 @@ export function mdContinueList(view: EditorView): boolean {
   if (!m) return false
   const [, indent, marker, checkbox = '', content] = m
 
-  // Empty item + cursor at line end → exit list (remove bullet prefix)
+  // 빈 항목 + 커서가 줄 끝 → 리스트 탈출 (불릿 프리픽스 제거)
   if (!content.trim() && from === line.to) {
     const prefixLen = indent.length + marker.length + checkbox.length + 1
     view.dispatch({
@@ -102,10 +102,10 @@ export function mdContinueList(view: EditorView): boolean {
     return true
   }
 
-  // Cursor is mid-line — delegate to default Enter handling
+  // 커서가 줄 중간이면 기본 Enter 처리로 위임
   if (from < line.to) return false
 
-  // Ordered list: next number at same indent level
+  // 번호 목록: 같은 인덴트 레벨의 다음 번호
   let nextMarker = marker
   const numMatch = marker.match(/^(\d+)\.$/)
   if (numMatch) {
@@ -114,7 +114,7 @@ export function mdContinueList(view: EditorView): boolean {
     nextMarker = `${base + 1}.`
   }
 
-  // Checkbox: new item starts unchecked
+  // 체크박스: 새 항목은 미완료로
   const nextCheckbox = checkbox ? ' [ ]' : ''
   const newLine = `\n${indent}${nextMarker}${nextCheckbox} `
 
@@ -126,14 +126,14 @@ export function mdContinueList(view: EditorView): boolean {
   return true
 }
 
-/** Ctrl+B / Ctrl+I: toggle inline mark (** or *) */
+/** Ctrl+B / Ctrl+I: 인라인 마크 토글 (** 또는 *) */
 export function mdToggleMark(view: EditorView, mark: string): boolean {
   const { state } = view
   const { from, to } = state.selection.main
   const mlen = mark.length
 
   if (from === to) {
-    // No selection: insert mark pair and place cursor in between
+    // 선택 없음: 마크 쌍 삽입 후 커서를 가운데
     view.dispatch({
       changes: { from, insert: mark + mark },
       selection: { anchor: from + mlen },
@@ -142,7 +142,7 @@ export function mdToggleMark(view: EditorView, mark: string): boolean {
     return true
   }
 
-  // Already wrapped — remove the marks
+  // 이미 감싸져 있으면 제거
   const before = state.doc.sliceString(from - mlen, from)
   const after  = state.doc.sliceString(to, to + mlen)
   if (before === mark && after === mark) {
@@ -164,18 +164,18 @@ export function mdToggleMark(view: EditorView, mark: string): boolean {
   return true
 }
 
-/** Enter: continue blockquote (>) / exit blockquote if item is empty */
+/** Enter: 인용구(>) 연속 생성 / 빈 항목이면 인용구 탈출 */
 export function mdContinueBlockquote(view: EditorView): boolean {
   const { state } = view
   const { from, to } = state.selection.main
   if (from !== to) return false
   const line = state.doc.lineAt(from)
-  // Nested blockquote pattern: `> ` or `>> ` etc.
+  // `> ` 또는 `>> ` 등 중첩 인용구 패턴
   const m = line.text.match(/^((?:> ?)+)(.*)$/)
   if (!m) return false
   const [, prefix, content] = m
 
-  // Empty item + cursor at line end → exit blockquote (remove prefix)
+  // 빈 항목 + 커서 줄 끝 → 인용구 탈출 (프리픽스 제거)
   if (!content.trim() && from === line.to) {
     view.dispatch({
       changes: { from: line.from, to: line.to, insert: '' },
@@ -185,7 +185,7 @@ export function mdContinueBlockquote(view: EditorView): boolean {
     return true
   }
 
-  // Cursor is mid-line — delegate to default Enter handling
+  // 커서가 줄 중간이면 기본 Enter 처리로 위임
   if (from < line.to) return false
 
   const newLine = `\n${prefix}`

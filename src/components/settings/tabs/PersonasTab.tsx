@@ -4,28 +4,19 @@ import { useSettingsStore, type CustomPersona } from '@/stores/settingsStore'
 import { useVaultStore } from '@/stores/vaultStore'
 import { PERSONA_PROMPTS } from '@/lib/personaPrompts'
 import { DEFAULT_PERSONA_MODELS } from '@/lib/modelConfig'
-import { SPEAKER_CONFIG, SPEAKER_IDS } from '@/lib/speakerConfig'
+import { SPEAKER_CONFIG, SPEAKER_IDS, computeDarkBg } from '@/lib/speakerConfig'
 import { GROUPED_OPTIONS, PROVIDER_LABELS, fieldInputStyle, fieldLabelStyle } from '../settingsShared'
 
 // ── Local helpers ─────────────────────────────────────────────────────────────
 
-/** Compute a dark background chip color from a foreground hex color */
-function computeDarkBg(hex: string): string {
-  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return '#1a1a2e'
-  const r = Math.floor(parseInt(hex.slice(1, 3), 16) * 0.18)
-  const g = Math.floor(parseInt(hex.slice(3, 5), 16) * 0.18)
-  const b = Math.floor(parseInt(hex.slice(5, 7), 16) * 0.18)
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
-}
-
 const DEFAULT_SYSTEM_PROMPT_TEMPLATE = (label: string) =>
-  `You are the ${label} Director of a game development studio.\n\nRoles & Responsibilities:\n- \n\nCommunication Style:\n- `
+  `당신은 게임 개발 스튜디오의 ${label} 디렉터입니다.\n\n역할과 책임:\n- \n\n커뮤니케이션 스타일:\n- `
 
 // ── DocPickerField ─────────────────────────────────────────────────────────────
 
 /**
- * Search+select UI for attaching a vault document to a specific persona.
- * The selected document's content is injected into that persona's system prompt.
+ * 특정 페르소나에 볼트 문서를 연결하는 검색+선택 UI.
+ * 선택된 문서의 내용이 해당 페르소나의 시스템 프롬프트에 주입됩니다.
  */
 function DocPickerField({ personaId }: { personaId: string }) {
   const loadedDocuments = useVaultStore(s => s.loadedDocuments)
@@ -54,15 +45,15 @@ function DocPickerField({ personaId }: { personaId: string }) {
   if (!loadedDocuments) {
     return (
       <div style={{ marginBottom: 10 }}>
-        <label style={fieldLabelStyle}>Persona Reference Document</label>
-        <p style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>Please load a vault first.</p>
+        <label style={fieldLabelStyle}>페르소나 참고 문서</label>
+        <p style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>볼트를 먼저 로드하세요.</p>
       </div>
     )
   }
 
   return (
     <div style={{ marginBottom: 10 }}>
-      <label style={fieldLabelStyle}>Persona Reference Document</label>
+      <label style={fieldLabelStyle}>페르소나 참고 문서</label>
       {selectedDoc ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span
@@ -71,7 +62,7 @@ function DocPickerField({ personaId }: { personaId: string }) {
               fontSize: 11,
               padding: '4px 8px',
               border: '1px solid var(--color-accent)',
-              borderRadius: 5,
+              borderRadius: 2,
               background: 'rgba(59,130,246,0.07)',
               color: 'var(--color-accent)',
               fontFamily: 'monospace',
@@ -86,7 +77,7 @@ function DocPickerField({ personaId }: { personaId: string }) {
           <button
             onClick={() => setPersonaDocumentId(personaId, null)}
             style={{ flexShrink: 0, background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', padding: '2px 4px' }}
-            title="Unlink document"
+            title="연결 해제"
           >
             <X size={12} />
           </button>
@@ -99,7 +90,7 @@ function DocPickerField({ personaId }: { personaId: string }) {
             onChange={e => { setQuery(e.target.value); setOpen(true) }}
             onFocus={() => setOpen(true)}
             onBlur={() => setTimeout(() => setOpen(false), 150)}
-            placeholder="Search by filename or keyword..."
+            placeholder="문서 파일명 또는 키워드 검색..."
             style={{ ...fieldInputStyle, paddingRight: 8 }}
           />
           {open && filtered.length > 0 && (
@@ -111,7 +102,7 @@ function DocPickerField({ personaId }: { personaId: string }) {
                 right: 0,
                 zIndex: 50,
                 border: '1px solid var(--color-border)',
-                borderRadius: 5,
+                borderRadius: 2,
                 background: 'var(--color-bg-surface)',
                 boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
                 maxHeight: 180,
@@ -157,7 +148,7 @@ function DocPickerField({ personaId }: { personaId: string }) {
         </div>
       )}
       <p style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 3 }}>
-        The selected document's content will be injected into this persona's system prompt.
+        선택한 문서의 내용이 이 페르소나의 시스템 프롬프트에 주입됩니다.
       </p>
     </div>
   )
@@ -191,7 +182,7 @@ export default function PersonasTab() {
     addPersona({
       id,
       label,
-      role: newRole.trim() || 'Custom Director',
+      role: newRole.trim() || '커스텀 디렉터',
       color,
       darkBg,
       systemPrompt: DEFAULT_SYSTEM_PROMPT_TEMPLATE(label),
@@ -221,10 +212,10 @@ export default function PersonasTab() {
       {/* ── Built-in personas ── */}
       <section>
         <h3 className="text-xs font-semibold mb-1" style={{ color: 'var(--color-text-secondary)' }}>
-          Built-in Personas
+          PM 페르소나
         </h3>
         <p className="text-xs mb-3" style={{ color: 'var(--color-text-muted)' }}>
-          You can edit or disable each director's AI system prompt.
+          AI 시스템 프롬프트를 수정할 수 있습니다.
         </p>
 
         {/* Active built-in personas */}
@@ -239,7 +230,7 @@ export default function PersonasTab() {
             return (
               <div
                 key={id}
-                style={{ border: '1px solid var(--color-border)', borderRadius: 6, overflow: 'hidden' }}
+                style={{ border: '1px solid var(--color-border)', borderRadius: 2, overflow: 'hidden' }}
               >
                 {/* Row header */}
                 <div style={{ display: 'flex', alignItems: 'center', background: 'var(--color-bg-surface)' }}>
@@ -255,14 +246,14 @@ export default function PersonasTab() {
                     <span className="text-xs flex-1" style={{ color: 'var(--color-text-muted)' }}>{meta.role}</span>
                     {isOverridden && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(59,130,246,0.15)', color: 'var(--color-accent)' }}>
-                        Modified
+                        수정됨
                       </span>
                     )}
                   </button>
-                  {/* Disable built-in persona */}
+                  {/* Delete built-in persona */}
                   <button
                     onClick={() => {
-                      if (window.confirm(`Disable the "${meta.label}" persona?\nYou can restore it at any time from the Personas tab.`)) {
+                      if (window.confirm(`"${meta.label}" 페르소나를 비활성화하시겠습니까?\n페르소나 탭에서 언제든 복원할 수 있습니다.`)) {
                         disableBuiltInPersona(id)
                         if (expandedId === id) setExpandedId(null)
                       }
@@ -278,7 +269,7 @@ export default function PersonasTab() {
                       alignItems: 'center',
                       height: '100%',
                     }}
-                    title="Disable persona"
+                    title="페르소나 비활성화"
                   >
                     <Trash size={12} />
                   </button>
@@ -289,7 +280,7 @@ export default function PersonasTab() {
                   <div style={{ padding: '10px 12px 12px', borderTop: '1px solid var(--color-border)', background: 'var(--color-bg-primary)' }}>
                     {/* Model selector */}
                     <div style={{ marginBottom: 10 }}>
-                      <label style={fieldLabelStyle}>Model</label>
+                      <label style={fieldLabelStyle}>모델</label>
                       <div style={{ position: 'relative' }}>
                         <select
                           value={selectedModel}
@@ -297,7 +288,7 @@ export default function PersonasTab() {
                           style={{ ...fieldInputStyle, appearance: 'none', paddingRight: 24 }}
                         >
                           {Object.entries(GROUPED_OPTIONS).map(([provider, models]) => (
-                            <optgroup key={provider} label={(PROVIDER_LABELS as Record<string, string>)[provider] ?? provider}>
+                            <optgroup key={provider} label={PROVIDER_LABELS[provider as keyof typeof PROVIDER_LABELS] ?? provider}>
                               {models.map(m => (
                                 <option key={m.id} value={m.id}>{m.label}</option>
                               ))}
@@ -310,11 +301,11 @@ export default function PersonasTab() {
 
                     {/* Director bio */}
                     <div style={{ marginBottom: 10 }}>
-                      <label style={fieldLabelStyle}>Personal Bio & Traits</label>
+                      <label style={fieldLabelStyle}>개인 소개 · 성향</label>
                       <textarea
                         value={directorBios[id] ?? ''}
                         onChange={e => setDirectorBio(id, e.target.value)}
-                        placeholder={`${meta.label} Director's traits, expertise, priorities, etc. (added to the AI prompt)`}
+                        placeholder={`${meta.label} 디렉터의 성향, 전문성, 우선순위 등... (AI 프롬프트에 추가로 반영됩니다)`}
                         rows={3}
                         style={{ ...fieldInputStyle, resize: 'vertical', lineHeight: 1.6 }}
                       />
@@ -326,7 +317,7 @@ export default function PersonasTab() {
                     {/* System prompt editor */}
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
                       <div style={{ flex: 1 }}>
-                        <label style={fieldLabelStyle}>System Prompt</label>
+                        <label style={fieldLabelStyle}>시스템 프롬프트</label>
                         <textarea
                           value={prompt}
                           onChange={e => setPersonaPromptOverride(id, e.target.value)}
@@ -342,14 +333,14 @@ export default function PersonasTab() {
                             flexShrink: 0,
                             background: 'transparent',
                             border: '1px solid var(--color-border)',
-                            borderRadius: 5,
+                            borderRadius: 2,
                             padding: '5px 7px',
                             color: 'var(--color-text-muted)',
                             cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
                           }}
-                          title="Restore prompt to default"
+                          title="프롬프트 기본값으로 복원"
                         >
                           <RotateCcw size={12} />
                         </button>
@@ -365,7 +356,7 @@ export default function PersonasTab() {
         {/* Disabled built-in personas */}
         {disabledPersonaIds.filter(id => SPEAKER_IDS.includes(id as typeof SPEAKER_IDS[number])).length > 0 && (
           <div>
-            <p className="text-[10px] mb-1.5" style={{ color: 'var(--color-text-muted)' }}>Disabled Personas</p>
+            <p className="text-[10px] mb-1.5" style={{ color: 'var(--color-text-muted)' }}>비활성화된 페르소나</p>
             <div className="flex flex-col gap-1">
               {SPEAKER_IDS.filter(id => disabledPersonaIds.includes(id)).map(id => {
                 const meta = SPEAKER_CONFIG[id]
@@ -378,7 +369,7 @@ export default function PersonasTab() {
                       gap: 8,
                       padding: '6px 10px',
                       border: '1px dashed var(--color-border)',
-                      borderRadius: 6,
+                      borderRadius: 2,
                       opacity: 0.6,
                     }}
                   >
@@ -399,10 +390,10 @@ export default function PersonasTab() {
                         cursor: 'pointer',
                         fontSize: 10,
                       }}
-                      title="Restore persona"
+                      title="페르소나 복원"
                     >
                       <RotateCcw size={10} />
-                      Restore
+                      복원
                     </button>
                   </div>
                 )
@@ -418,9 +409,9 @@ export default function PersonasTab() {
       <section>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <div>
-            <h3 className="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Custom Personas</h3>
+            <h3 className="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>커스텀 페르소나</h3>
             <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
-              Add new director roles and configure dedicated AI prompts.
+              새 디렉터 역할을 추가하고 전용 AI 프롬프트를 설정하세요.
             </p>
           </div>
           <button
@@ -432,7 +423,7 @@ export default function PersonasTab() {
               gap: 4,
               background: 'var(--color-accent)',
               border: 'none',
-              borderRadius: 5,
+              borderRadius: 2,
               padding: '5px 10px',
               color: '#fff',
               cursor: 'pointer',
@@ -440,7 +431,7 @@ export default function PersonasTab() {
             }}
           >
             <Plus size={11} />
-            Add Persona
+            페르소나 추가
           </button>
         </div>
 
@@ -449,53 +440,53 @@ export default function PersonasTab() {
           <div
             style={{
               border: '1px dashed var(--color-accent)',
-              borderRadius: 6,
+              borderRadius: 2,
               padding: '10px 12px',
               marginBottom: 10,
               background: 'rgba(59,130,246,0.04)',
             }}
           >
-            <p className="text-xs font-medium mb-3" style={{ color: 'var(--color-accent)' }}>New Persona</p>
+            <p className="text-xs font-medium mb-3" style={{ color: 'var(--color-accent)' }}>새 페르소나</p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px' }}>
               <div>
-                <label style={fieldLabelStyle}>Name *</label>
+                <label style={fieldLabelStyle}>이름 *</label>
                 <input
                   type="text"
                   value={newLabel}
                   onChange={e => setNewLabel(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleAddPersona()}
-                  placeholder="e.g. QA, Sound, Producer..."
+                  placeholder="예: QA, Sound, Producer..."
                   style={fieldInputStyle}
                   autoFocus
                 />
               </div>
               <div>
-                <label style={fieldLabelStyle}>Role Description</label>
+                <label style={fieldLabelStyle}>역할 설명</label>
                 <input
                   type="text"
                   value={newRole}
                   onChange={e => setNewRole(e.target.value)}
-                  placeholder="e.g. Quality Assurance · Bug Reports"
+                  placeholder="예: 품질 관리 · 버그 리포트"
                   style={fieldInputStyle}
                 />
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
               <div>
-                <label style={fieldLabelStyle}>Color</label>
+                <label style={fieldLabelStyle}>색상</label>
                 <input
                   type="color"
                   value={newColor}
                   onChange={e => setNewColor(e.target.value)}
-                  style={{ width: 40, height: 28, padding: 2, border: '1px solid var(--color-border)', borderRadius: 5, background: 'var(--color-bg-surface)', cursor: 'pointer' }}
+                  style={{ width: 40, height: 28, padding: 2, border: '1px solid var(--color-border)', borderRadius: 2, background: 'var(--color-bg-surface)', cursor: 'pointer' }}
                 />
               </div>
               <div style={{ flex: 1 }} />
               <button
                 onClick={() => setShowAddForm(false)}
-                style={{ background: 'transparent', border: '1px solid var(--color-border)', borderRadius: 5, padding: '5px 10px', color: 'var(--color-text-muted)', cursor: 'pointer', fontSize: 11 }}
+                style={{ background: 'transparent', border: '1px solid var(--color-border)', borderRadius: 2, padding: '5px 10px', color: 'var(--color-text-muted)', cursor: 'pointer', fontSize: 11 }}
               >
-                Cancel
+                취소
               </button>
               <button
                 onClick={handleAddPersona}
@@ -503,7 +494,7 @@ export default function PersonasTab() {
                 style={{
                   background: newLabel.trim() ? 'var(--color-accent)' : 'var(--color-bg-surface)',
                   border: '1px solid var(--color-border)',
-                  borderRadius: 5,
+                  borderRadius: 2,
                   padding: '5px 12px',
                   color: newLabel.trim() ? '#fff' : 'var(--color-text-muted)',
                   cursor: newLabel.trim() ? 'pointer' : 'not-allowed',
@@ -511,7 +502,7 @@ export default function PersonasTab() {
                   opacity: newLabel.trim() ? 1 : 0.5,
                 }}
               >
-                Add
+                추가
               </button>
             </div>
           </div>
@@ -520,7 +511,7 @@ export default function PersonasTab() {
         {/* Custom persona list */}
         {customPersonas.length === 0 && !showAddForm ? (
           <p className="text-xs" style={{ color: 'var(--color-text-muted)', opacity: 0.6 }}>
-            No custom personas yet.
+            아직 커스텀 페르소나가 없습니다.
           </p>
         ) : (
           <div className="flex flex-col gap-1">
@@ -529,7 +520,7 @@ export default function PersonasTab() {
               return (
                 <div
                   key={persona.id}
-                  style={{ border: '1px solid var(--color-border)', borderRadius: 6, overflow: 'hidden' }}
+                  style={{ border: '1px solid var(--color-border)', borderRadius: 2, overflow: 'hidden' }}
                 >
                   {/* Row header */}
                   <div style={{ display: 'flex', alignItems: 'center', background: 'var(--color-bg-surface)' }}>
@@ -546,7 +537,7 @@ export default function PersonasTab() {
                     </button>
                     <button
                       onClick={() => {
-                        if (window.confirm(`Delete the "${persona.label}" persona?`)) {
+                        if (window.confirm(`"${persona.label}" 페르소나를 삭제하시겠습니까?`)) {
                           removePersona(persona.id)
                           if (expandedId === persona.id) setExpandedId(null)
                         }
@@ -562,7 +553,7 @@ export default function PersonasTab() {
                         alignItems: 'center',
                         height: '100%',
                       }}
-                      title="Delete persona"
+                      title="페르소나 삭제"
                     >
                       <Trash size={12} />
                     </button>
@@ -573,7 +564,7 @@ export default function PersonasTab() {
                     <div style={{ padding: '10px 12px 12px', borderTop: '1px solid var(--color-border)', background: 'var(--color-bg-primary)' }}>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px', marginBottom: 10 }}>
                         <div>
-                          <label style={fieldLabelStyle}>Name</label>
+                          <label style={fieldLabelStyle}>이름</label>
                           <input
                             type="text"
                             value={persona.label}
@@ -582,7 +573,7 @@ export default function PersonasTab() {
                           />
                         </div>
                         <div>
-                          <label style={fieldLabelStyle}>Role Description</label>
+                          <label style={fieldLabelStyle}>역할 설명</label>
                           <input
                             type="text"
                             value={persona.role}
@@ -593,7 +584,7 @@ export default function PersonasTab() {
                       </div>
                       <div style={{ display: 'flex', gap: 12, marginBottom: 10 }}>
                         <div>
-                          <label style={fieldLabelStyle}>Color</label>
+                          <label style={fieldLabelStyle}>색상</label>
                           <input
                             type="color"
                             value={persona.color}
@@ -601,11 +592,11 @@ export default function PersonasTab() {
                               const color = e.target.value
                               updatePersona(persona.id, { color, darkBg: computeDarkBg(color) })
                             }}
-                            style={{ width: 40, height: 28, padding: 2, border: '1px solid var(--color-border)', borderRadius: 5, background: 'var(--color-bg-surface)', cursor: 'pointer' }}
+                            style={{ width: 40, height: 28, padding: 2, border: '1px solid var(--color-border)', borderRadius: 2, background: 'var(--color-bg-surface)', cursor: 'pointer' }}
                           />
                         </div>
                         <div style={{ flex: 1 }}>
-                          <label style={fieldLabelStyle}>Model</label>
+                          <label style={fieldLabelStyle}>모델</label>
                           <div style={{ position: 'relative' }}>
                             <select
                               value={persona.modelId}
@@ -613,7 +604,7 @@ export default function PersonasTab() {
                               style={{ ...fieldInputStyle, appearance: 'none', paddingRight: 24 }}
                             >
                               {Object.entries(GROUPED_OPTIONS).map(([provider, models]) => (
-                                <optgroup key={provider} label={(PROVIDER_LABELS as Record<string, string>)[provider] ?? provider}>
+                                <optgroup key={provider} label={PROVIDER_LABELS[provider as keyof typeof PROVIDER_LABELS] ?? provider}>
                                   {models.map(m => (
                                     <option key={m.id} value={m.id}>{m.label}</option>
                                   ))}
@@ -629,7 +620,7 @@ export default function PersonasTab() {
                       <DocPickerField personaId={persona.id} />
 
                       <div>
-                        <label style={fieldLabelStyle}>System Prompt</label>
+                        <label style={fieldLabelStyle}>시스템 프롬프트</label>
                         <textarea
                           value={persona.systemPrompt}
                           onChange={e => updatePersona(persona.id, { systemPrompt: e.target.value })}

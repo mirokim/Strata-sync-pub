@@ -59,6 +59,46 @@ declare global {
       writeMcp(patch: Record<string, unknown>): Promise<{ ok: boolean }>
     }
 
+    // ── settingsAPI (Zustand persist → file storage) ─────────────────────────
+    settingsAPI?: {
+      read(filename: string): Promise<Record<string, unknown> | null>
+      write(filename: string, data: Record<string, unknown>): Promise<{ ok: boolean }>
+    }
+
+    // ── cronAPI (Cron Job Scheduler) ─────────────────────────────────────────
+    cronAPI?: {
+      getState(): Promise<{
+        jobs: Record<string, {
+          id: string; enabled: boolean; cronExpression: string; intervalMinutes: number; schedulable: boolean
+          status: string; lastRunAt: string | null; lastResult: string | null
+          nextRunAt: string | null; runCount: number; errorCount: number
+        }>
+        logs: Array<Record<string, unknown>>
+        runs?: Array<Record<string, unknown>>
+      }>
+      updateConfig(jobId: string, patch: Record<string, unknown>): Promise<{ ok: boolean }>
+      runNow(jobId: string): Promise<{ ok: boolean }>
+      getLogs(): Promise<Array<{ id: string; timestamp: string; jobId: string; level: string; message: string } & Record<string, unknown>>>
+      getRuns(): Promise<Array<{ runId: string; jobId: string; startedAt: string; endedAt: string; durationMs: number; status: string } & Record<string, unknown>>>
+      listLogFiles(): Promise<Array<{ date: string; path: string; size: number }>>
+      loadLogFile(date: string): Promise<Array<{ id: string; timestamp: string; jobId: string; level: string; message: string } & Record<string, unknown>>>
+      appendLog(
+        jobId: string,
+        level: 'info' | 'warn' | 'error',
+        message: string,
+        extra?: Record<string, unknown>,
+      ): Promise<{ ok: boolean }>
+      onStateUpdate(callback: (data: Record<string, unknown>) => void): () => void
+      onLogAppend(callback: (entry: Record<string, unknown>) => void): () => void
+      /** @deprecated — onStateUpdate 와 동일 채널로 매핑됨 */
+      onJobStatus(callback: (data: Record<string, unknown>) => void): () => void
+      onExecuteJob(
+        jobType: string,
+        callback: (data: { requestId: string; runId?: string }) => void,
+      ): () => void
+      sendResult(requestId: string, result: { error?: string; [key: string]: unknown }): void
+    }
+
     // ── ragAPI (Slack RAG bridge) ─────────────────────────────────────────────
     ragAPI?: {
       onSearch(callback: (data: { requestId: string; query: string; topN: number }) => void): () => void
@@ -119,7 +159,7 @@ declare global {
       rollback(files: string[], dirs: string[]): Promise<{ ok: boolean }>
     }
 
-    // ── reportAPI (PDF report export) ──────────────────────────────────────────
+    // ── reportAPI (PDF 보고서 내보내기) ──────────────────────────────────────────
     reportAPI?: {
       exportPdf(html: string, suggestedName?: string): Promise<{ ok: boolean; filePath?: string; reason?: string }>
     }

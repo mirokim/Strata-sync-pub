@@ -60,7 +60,7 @@ export default function DocViewer() {
             'hover:bg-[var(--color-bg-hover)]'
           )}
           style={{ color: 'var(--color-text-muted)' }}
-          aria-label="Back to graph"
+          aria-label="그래프로 돌아가기"
         >
           <ChevronLeft size={12} />
           Graph
@@ -81,8 +81,8 @@ export default function DocViewer() {
           style={{ color: 'var(--color-text-muted)', fontSize: 12 }}
           data-testid="doc-viewer-empty"
         >
-          <div style={{ marginBottom: 8 }}>← Select a document from the file tree</div>
-          <div style={{ fontSize: 11, opacity: 0.5 }}>or click a node in the graph</div>
+          <div style={{ marginBottom: 8 }}>← 파일 트리에서 문서를 선택하세요</div>
+          <div style={{ fontSize: 11, opacity: 0.5 }}>또는 그래프에서 노드를 클릭하세요</div>
         </div>
       )}
 
@@ -177,20 +177,20 @@ export default function DocViewer() {
                   >
                     <div className="flex items-center gap-2 mb-3">
                       {higherPriority.length > 0 && (
-                        <AlertTriangle size={12} style={{ color: '#f59e0b' }} />
+                        <AlertTriangle size={12} style={{ color: 'var(--color-warning)' }} />
                       )}
                       <span
                         className="text-xs font-semibold tracking-wide"
                         style={{ color: 'var(--color-text-muted)' }}
                       >
-                        Priority Reference
+                        우선순위 참조
                       </span>
                       {higherPriority.length > 0 && (
                         <span
                           className="text-xs px-1.5 py-0.5 rounded"
-                          style={{ background: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}
+                          style={{ background: 'rgba(245,158,11,0.15)', color: 'var(--color-warning)' }}
                         >
-                          {higherPriority.length} higher-priority doc{higherPriority.length !== 1 ? 's' : ''}
+                          상위 문서 {higherPriority.length}개
                         </span>
                       )}
                     </div>
@@ -223,15 +223,15 @@ export default function DocViewer() {
                               {d.filename}
                             </span>
                             {isHigher && (
-                              <span className="shrink-0 flex items-center gap-0.5" style={{ color: '#f59e0b' }}>
+                              <span className="shrink-0 flex items-center gap-0.5" style={{ color: 'var(--color-warning)' }}>
                                 <ArrowUp size={10} />
-                                <span>Higher</span>
+                                <span>우선</span>
                               </span>
                             )}
                             {isLower && (
                               <span className="shrink-0 flex items-center gap-0.5" style={{ color: 'var(--color-text-muted)' }}>
                                 <ArrowDown size={10} />
-                                <span>Lower</span>
+                                <span>하위</span>
                               </span>
                             )}
                           </div>

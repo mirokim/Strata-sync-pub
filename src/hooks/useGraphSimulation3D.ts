@@ -3,7 +3,7 @@ import { useGraphStore } from '@/stores/graphStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { GraphNode } from '@/types'
 
-/** Compute cluster group key — tag uses first tag, folder uses top-level folder name */
+/** 클러스터 그룹 키 계산 — 태그는 첫 번째 태그, 폴더는 상위 폴더명 */
 function getClusterKey(node: GraphNode, mode: 'tag' | 'folder'): string {
   if (mode === 'tag') return node.tags?.[0] ?? '__none__'
   if (mode === 'folder') return node.folderPath?.split(/[/\\]/)[0] ?? '__root__'
@@ -144,7 +144,8 @@ export function useGraphSimulation3D({ onTick }: Options) {
     return () => {
       cancelled = true
       if (simRef.current) {
-        (simRef.current as any).stop?.()
+        ;(simRef.current as any).on('tick', null)
+        ;(simRef.current as any).stop?.()
         simRef.current = null
       }
     }

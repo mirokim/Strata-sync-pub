@@ -2,14 +2,18 @@
 conftest.py — pytest fixtures for backend tests
 
 Uses an in-memory (ephemeral) ChromaDB client so tests are fully isolated
-from the production ~/.strata-sync/chroma database and from each other.
+from the production ~/.rembrandt/chroma database and from each other.
 """
+
+import uuid
 
 import pytest
 from httpx import AsyncClient, ASGITransport
 from unittest.mock import patch, MagicMock
 import chromadb
 from chromadb.utils import embedding_functions
+
+from backend.config import settings
 
 
 # ── Ephemeral ChromaDB fixture ─────────────────────────────────────────────────
@@ -25,18 +29,24 @@ def isolated_chroma(monkeypatch):
     """
     from backend.services import chroma_service as cs_module
 
+    # EphemeralClient은 프로세스 내에서 상태를 공유하므로 테스트마다 고유 컬렉션명 사용.
+    # clear()가 settings.collection_name을 지우므로 이름을 여기서 맞춰야 한다.
+    monkeypatch.setattr(settings, "collection_name", f"test_vault_{uuid.uuid4().hex[:8]}")
+
     # Fresh service instance per test
     from backend.services.chroma_service import ChromaService
     fresh_service = ChromaService()
 
-    # Patch _ensure_ready to use EphemeralClient + DeterministicEF
+    # Patch _ensure_ready to use EphemeralClient + DeterministicEF.
+    # 실제 구현과 동일한 가드 — clear() 후 _collection이 None이면 재생성해야 한다.
     def _mock_ensure_ready(self):
-        if self._client is not None:
+        if self._client is not None and self._collection is not None:
             return
-        self._client = chromadb.EphemeralClient()
+        if self._client is None:
+            self._client = chromadb.EphemeralClient()
         ef = embedding_functions.DefaultEmbeddingFunction()
         self._collection = self._client.get_or_create_collection(
-            name="test_vault_documents",
+            name=settings.collection_name,
             embedding_function=ef,
             metadata={"hnsw:space": "cosine"},
         )

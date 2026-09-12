@@ -73,7 +73,7 @@ vi.mock('three', () => {
       render() {}
       dispose() {}
     },
-    Scene: class { add() {} },
+    Scene: class { add() {} remove() {} clear() {} },
     PerspectiveCamera: class {
       position = new V3()
       aspect = 1
@@ -90,10 +90,35 @@ vi.mock('three', () => {
     Mesh,
     SphereGeometry: class { dispose() {} },
     OctahedronGeometry: class { dispose() {} },
-    MeshBasicMaterial: class { opacity = 1; transparent = true },
-    LineBasicMaterial: class {},
-    LineDashedMaterial: class { color = { setHex() {} } },
-    PointsMaterial: class { color = { setHex() {} } },
+    MeshBasicMaterial: class { opacity = 1; transparent = true; color = { setHex() {} }; dispose() {} },
+    Object3D: class {
+      position = new V3()
+      scale = { setScalar(_s: number) {} }
+      matrix = {}
+      updateMatrix() {}
+      add() {}
+    },
+    InstancedMesh: class {
+      instanceMatrix = { setUsage() {}, needsUpdate: false }
+      instanceColor = null
+      count = 0
+      setMatrixAt() {}
+      setColorAt() {}
+      getColorAt() {}
+      dispose() {}
+      constructor(_geo: any, _mat: any, count: number) { this.count = count }
+    },
+    DynamicDrawUsage: 35048,
+    Color: class {
+      r = 1; g = 1; b = 1
+      constructor(_c?: any) {}
+      set(_c: any) { return this }
+      setHex(_h: number) { return this }
+      getHex() { return 0xffffff }
+    },
+    LineBasicMaterial: class { dispose() {} },
+    LineDashedMaterial: class { color = { setHex() {} }; dispose() {} },
+    PointsMaterial: class { color = { setHex() {} }; dispose() {} },
     LineSegments: class {},
     Line,
     Points,
@@ -105,7 +130,13 @@ vi.mock('three', () => {
         },
       }
       setFromCamera() {}
-      intersectObjects() { return _intersectResult }
+      intersectObjects(meshes: any[]) {
+        if (_intersectResult.length > 0 && meshes.length > 0) {
+          // Attach the actual first mesh so nodeIdFromHit can match sphereInstancedRef.current
+          return _intersectResult.map(r => ({ ...r, object: meshes[0], instanceId: 0 }))
+        }
+        return _intersectResult
+      }
     },
   }
 })
@@ -236,42 +267,45 @@ describe('Graph3D — simulation', () => {
 })
 
 describe('Graph3D — click handling', () => {
-  it('mousedown with no raycaster hit does not change selectedNodeId', async () => {
+  it('pointerdown with no raycaster hit does not change selectedNodeId', async () => {
     _intersectResult = []
     render(<Graph3D width={800} height={600} />)
     await act(async () => { vi.advanceTimersByTime(50) })
     const el = screen.getByTestId('graph-3d')
-    fireEvent.mouseDown(el, { clientX: 400, clientY: 300 })
-    fireEvent.mouseUp(el, { clientX: 400, clientY: 300 })
+    fireEvent.pointerDown(el, { clientX: 400, clientY: 300 })
+    fireEvent.pointerUp(el, { clientX: 400, clientY: 300 })
     expect(useGraphStore.getState().selectedNodeId).toBeNull()
   })
 
-  it('mousedown+mouseup with a raycaster hit selects the node and switches to document tab', async () => {
+  it('double-click on canvas with a raycaster hit opens editor', async () => {
     const firstNode = MOCK_NODES[0]
     _intersectResult = [{
-      object: { userData: { nodeId: firstNode.id, docId: firstNode.docId } },
+      object: {},
       point: { x: 0, y: 0, z: 0 },
     }]
 
     render(<Graph3D width={800} height={600} />)
     await act(async () => { vi.advanceTimersByTime(50) })
     const el = screen.getByTestId('graph-3d')
-    // mouseDown starts drag, mouseUp with no actual movement → treated as click
-    fireEvent.mouseDown(el, { clientX: 400, clientY: 300 })
-    fireEvent.mouseUp(el, { clientX: 400, clientY: 300 })
+    // Events are bound to renderer.domElement (canvas), not the outer div.
+    // First click: selects node + starts 300ms double-click timer.
+    // Second click (before timer fires): treated as double-click → opens editor.
+    const canvas = el.querySelector('canvas') ?? el
+    fireEvent.click(canvas, { clientX: 400, clientY: 300 })
+    fireEvent.click(canvas, { clientX: 400, clientY: 300 })
 
     expect(useGraphStore.getState().selectedNodeId).toBe(firstNode.id)
-    // Graph3D uses openInEditor on node click → centerTab becomes 'editor'
+    // Double-click calls openInEditor → centerTab becomes 'editor'
     expect(useUIStore.getState().centerTab).toBe('editor')
     expect(useUIStore.getState().editingDocId).toBe(firstNode.id)
   })
 })
 
 describe('Graph3D — graphMode routing', () => {
-  it('calls useFrameRate to enable auto-switch to 2D on low FPS', async () => {
+  it('mounts successfully with 3D graphMode (WebGLRenderer created)', async () => {
     render(<Graph3D width={800} height={600} />)
     await act(async () => { vi.advanceTimersByTime(50) })
-    expect(_useFrameRateCalled).toBe(true)
+    expect(_webGLRendererCreated).toBe(true)
   })
 
   it('setGraphMode("2d") switches store to 2D mode', () => {

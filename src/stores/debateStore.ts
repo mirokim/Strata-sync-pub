@@ -1,6 +1,6 @@
 /**
  * Debate store — manages debate/discussion state and settings.
- * Adapted from Onion_flow's debateStore.ts for STRATA SYNC.
+ * Adapted from Onion_flow's debateStore.ts for Sandbox MAP.
  *
  * Key difference: no aiStore dependency — API keys come from VITE_*_API_KEY env vars
  * read directly inside debateEngine.ts.
@@ -63,6 +63,8 @@ interface DebateState {
   toggleProvider: (provider: string) => void
   updateRole: (provider: string, role: string) => void
 }
+
+const DEFAULT_ROLE = '중립'
 
 const DEFAULT_SETTINGS: DebateSettings = {
   mode: 'roundRobin',
@@ -134,7 +136,18 @@ export const useDebateStore = create<DebateState>()(
             },
             waitForNextTurn: () =>
               new Promise<void>((resolve) => {
-                set({ _nextTurnResolver: resolve, waitingForNext: true })
+                const signal = get().abortController?.signal
+                // Resolve immediately if already aborted (race condition guard)
+                if (signal?.aborted) { resolve(); return }
+                const onAbort = () => resolve()
+                signal?.addEventListener('abort', onAbort, { once: true })
+                set({
+                  _nextTurnResolver: () => {
+                    signal?.removeEventListener('abort', onAbort)
+                    resolve()
+                  },
+                  waitingForNext: true,
+                })
               }),
             getStatus: () => get().status,
             getMessages: () => get().messages,
@@ -211,7 +224,7 @@ export const useDebateStore = create<DebateState>()(
             ? prev.filter((p) => p !== provider)
             : [...prev, provider]
           const existing = new Map(state.settings.roles.map((r) => [r.provider, r]))
-          const roles = next.map((p) => existing.get(p) || { provider: p, role: 'Neutral' })
+          const roles = next.map((p) => existing.get(p) || { provider: p, role: DEFAULT_ROLE })
           const judgeProvider =
             state.settings.judgeProvider && next.includes(state.settings.judgeProvider)
               ? state.settings.judgeProvider
@@ -234,7 +247,7 @@ export const useDebateStore = create<DebateState>()(
       },
     }),
     {
-      name: 'strata-sync-debate-settings',
+      name: 'rembrandt-debate-settings',
       partialize: (state) => ({
         settings: {
           mode: state.settings.mode,

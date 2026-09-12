@@ -36,9 +36,9 @@ export interface ConfluenceExportPage {
 interface ParsedHtml {
   /** Text from <h1> in the HTML */
   title: string
-  /** "Created:" date from .meta div (YYYY-MM-DD) */
+  /** "생성:" date from .meta div (YYYY-MM-DD) */
   created: string
-  /** "Modified:" date from .meta div (YYYY-MM-DD) */
+  /** "수정:" date from .meta div (YYYY-MM-DD) */
   modified: string
   /** Body converted to Markdown */
   content: string
@@ -357,7 +357,7 @@ export async function convertConfluenceExportPage(page: ConfluenceExportPage): P
   const htmlContent = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(reader.result as string)
-    reader.onerror = () => reject(new Error('HTML read failed'))
+    reader.onerror = () => reject(new Error('HTML 읽기 실패'))
     reader.readAsText(page.htmlFile, 'utf-8')
   })
 
@@ -373,8 +373,8 @@ export async function convertConfluenceExportPage(page: ConfluenceExportPage): P
     `date: ${created || new Date().toISOString().split('T')[0]}`,
     ...(modified && modified !== created ? [`modified: ${modified}`] : []),
     `speaker: unknown`,
-    `tags: [misc]`,
-    `type: misc`,
+    `tags: [기타]`,
+    `type: 기타`,
     '---',
   ].join('\n')
 
@@ -387,10 +387,10 @@ export async function convertConfluenceExportPage(page: ConfluenceExportPage): P
   const imgAttachments = page.attachments.filter(a => a.type === 'image')
 
   if (docAttachments.length > 0 || imgAttachments.length > 0) {
-    md += '\n\n---\n\n### 📎 Attachments\n\n'
+    md += '\n\n---\n\n### 📎 첨부파일\n\n'
 
     if (imgAttachments.length > 0) {
-      md += `**Images (${imgAttachments.length})**\n\n`
+      md += `**이미지 (${imgAttachments.length}개)**\n\n`
       md += imgAttachments.map(a => `- \`${a.file.name}\``).join('\n') + '\n\n'
     }
 
@@ -405,13 +405,13 @@ export async function convertConfluenceExportPage(page: ConfluenceExportPage): P
 
         if (text.trim()) {
           md += text.slice(0, MAX_ATTACH_CHARS)
-          if (text.length > MAX_ATTACH_CHARS) md += '\n\n_(content partially omitted)_'
+          if (text.length > MAX_ATTACH_CHARS) md += '\n\n_(내용 일부 생략)_'
           md += '\n\n'
         } else {
-          md += '_Text extraction not possible_\n\n'
+          md += '_텍스트 추출 불가_\n\n'
         }
       } catch {
-        md += '_Conversion failed_\n\n'
+        md += '_변환 실패_\n\n'
       }
     }
   }

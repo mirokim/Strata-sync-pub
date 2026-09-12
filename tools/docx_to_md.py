@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-docx_to_md.py — Graph RAG data refinement manual v3.8 §4.5 implementation
-DOCX → Obsidian-compatible Markdown conversion
+docx_to_md.py — Graph RAG 데이터 정제 매뉴얼 v3.8 §4.5 구현
+DOCX → Obsidian 호환 Markdown 변환
 
-Usage:
+사용법:
   python docx_to_md.py <docx_path> --active <active_dir> --attachments <att_dir>
   python docx_to_md.py <docx_dir>  --active <active_dir> --attachments <att_dir>
 """
@@ -49,7 +49,7 @@ def detect_tags(filename: str) -> list:
 
 
 def heading_level(para) -> int:
-    """Return heading level from paragraph style (0=not a heading)."""
+    """단락 스타일에서 헤딩 레벨 반환 (0=헤딩 아님)."""
     style_name = para.style.name if para.style else ''
     if style_name.startswith('Heading '):
         try:
@@ -61,7 +61,7 @@ def heading_level(para) -> int:
 
 
 def para_to_md(para) -> str:
-    """Paragraph → Markdown text."""
+    """단락 → Markdown 텍스트."""
     style_name = para.style.name if para.style else ''
 
     # 헤딩 처리
@@ -75,17 +75,17 @@ def para_to_md(para) -> str:
 
     # 리스트 (List Paragraph 스타일)
     if 'List' in style_name:
-        # Estimate indentation level
+        # 들여쓰기 레벨 추정
         num_pr = para._p.find(qn('w:numPr'))
         indent = 0
         if num_pr is not None:
             ilvl = num_pr.find(qn('w:ilvl'))
             if ilvl is not None:
                 indent = int(ilvl.get(qn('w:val'), 0))
-        # Bullet/number distinction (simplified: always bullet)
+        # 불릿/번호 구분 (간단화: 항상 불릿)
         return '  ' * indent + f"- {text}"
 
-    # Apply inline formatting
+    # 인라인 포맷 적용
     parts = []
     for run in para.runs:
         run_text = run.text
@@ -103,7 +103,7 @@ def para_to_md(para) -> str:
 
 
 def table_to_md(table) -> str:
-    """DOCX table → Markdown table."""
+    """DOCX 테이블 → Markdown 테이블."""
     rows = []
     for i, row in enumerate(table.rows):
         cells = []
@@ -111,13 +111,13 @@ def table_to_md(table) -> str:
             cell_text = cell.text.strip().replace('|', '\\|').replace('\n', ' ')
             cells.append(cell_text)
         rows.append('| ' + ' | '.join(cells) + ' |')
-        if i == 0:  # Header separator
+        if i == 0:  # 헤더 구분선
             rows.append('|' + '---|' * len(row.cells))
     return '\n'.join(rows)
 
 
 def extract_images(doc, stem: str, attachments_dir: Path) -> list:
-    """Extract inline images → save to attachments/."""
+    """인라인 이미지 추출 → attachments/ 저장."""
     image_links = []
     img_counter = 0
 
@@ -128,7 +128,7 @@ def extract_images(doc, stem: str, attachments_dir: Path) -> list:
             try:
                 img_data = rel.target_part.blob
                 content_type = rel.target_part.content_type
-                # Determine extension
+                # 확장자 결정
                 ext_map = {
                     'image/png': 'png', 'image/jpeg': 'jpg',
                     'image/gif': 'gif', 'image/bmp': 'bmp',
@@ -146,7 +146,7 @@ def extract_images(doc, stem: str, attachments_dir: Path) -> list:
 
 
 def docx_to_md(docx_path: Path, active_dir: Path, attachments_dir: Path) -> dict:
-    """Convert a single DOCX file."""
+    """단일 DOCX 파일 변환."""
     stem = sanitize_filename(docx_path.stem)
     title = docx_path.stem
     doc_type = detect_type(title)
@@ -162,10 +162,10 @@ def docx_to_md(docx_path: Path, active_dir: Path, attachments_dir: Path) -> dict
     except Exception:
         mtime = datetime.now().strftime('%Y-%m-%d')
 
-    # Extract images
+    # 이미지 추출
     image_links = extract_images(doc, stem, attachments_dir)
 
-    # Convert body
+    # 본문 변환
     body_parts = []
     has_heading = False
 
@@ -191,7 +191,7 @@ def docx_to_md(docx_path: Path, active_dir: Path, attachments_dir: Path) -> dict
     if not has_heading and body_parts:
         body_parts.insert(0, '## 개요')
 
-    # Add image links at end of body (inclusion priority over position accuracy)
+    # 이미지 링크 본문 끝에 추가 (위치 정확도보다 포함 여부 우선)
     for img in image_links:
         body_parts.append(f'\n![[{img}]]')
 
@@ -245,7 +245,7 @@ def main():
         elif p.suffix.lower() == '.docx':
             docx_files.append(p)
 
-    print(f"DOCX {len(docx_files)}개 변환 starting...")
+    print(f"DOCX {len(docx_files)}개 변환 시작...")
     ok, errors = 0, 0
     for docx_path in docx_files:
         r = docx_to_md(docx_path, active_dir, attachments_dir)
@@ -256,7 +256,7 @@ def main():
             errors += 1
             print(f"  ✗ {docx_path.name} — {r.get('msg', '')}")
 
-    print(f"\nComplete: 성공 {ok}개, 오류 {errors}개")
+    print(f"\n완료: 성공 {ok}개, 오류 {errors}개")
 
 
 if __name__ == '__main__':

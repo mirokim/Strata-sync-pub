@@ -1,0 +1,36 @@
+[05:38:54] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[05:38:54] [READY] Slack bot started
+[07:28:32] [쿼리정제] '미하일 컨셉과 관련해서 디렉터 피드백을 정리해봐' → '미하일 컨셉과 관련해서 디렉터 피드백을'
+[07:28:33] [Slack] PM: 미하일 컨셉과 관련해서 디렉터 피드백을 정리해봐
+[07:28:33] [0.4s] [RAG] Electron /ask 호출 중...
+[07:30:34] [120.8s] [RAG] Electron 미실행 → 서브 에이전트 RAG
+[07:30:34] [120.8s] [모델] claude-sonnet-4-6
+[07:30:36] [쿼리리라이팅] '미하일 컨셉과 관련해서 디렉터 피드백을' → '좀 더 구체적인 내용을 알려주시면 도움이 될 것 같습니다! 😊
+[07:30:36] 
+[07:30:36] **다'
+[07:30:42] [128.8s] [RAG] Electron TF-IDF (10건)
+[07:30:46] [멀티쿼리] 분해: ['제공해주신 내용이 없어서 정리가 어렵습니다. 😊', '**미하일 컨셉 관련 디렉터 피드백 내용을 붙여']
+[07:30:56] [멀티쿼리] 병합 후 18건
+[07:30:56] [143.2s] [핫스코어] 재랭킹 완료 (top: 프로젝트A_미하일 컨셉 레퍼런스_1차_최종)
+[07:30:57] [서브에이전트] 6개 병렬 분석 시작...
+[07:31:04] [서브에이전트 #1] JSON 파싱 실패: Unterminated string starting at: line 7 column 5 (char 353)
+[07:31:04] [ERR] [서브에이전트 #1] JSON 파싱 실패 (시도 1): Unterminated string starting at: line 7 column 5 (char 353)
+[07:31:04] [서브에이전트 #2] JSON 파싱 실패: Unterminated string starting at: line 1 column 347 (char 346)
+[07:31:04] [ERR] [서브에이전트 #2] JSON 파싱 실패 (시도 1): Unterminated string starting at: line 1 column 347 (char 346)
+[07:31:04] [서브에이전트 #0] JSON 파싱 실패: Unterminated string starting at: line 1 column 389 (char 388)
+[07:31:04] [ERR] [서브에이전트 #0] JSON 파싱 실패 (시도 1): Unterminated string starting at: line 1 column 389 (char 388)
+[07:31:05] [서브에이전트] 완료. 최고 점수: 8.0/10 — 프로젝트A_미하일_3단계_키워드_링크_20240106
+[07:31:05] [메인에이전트] 최고 점수 문서 재검토 중...
+[07:31:28] [175.1s] [웹검색] 볼트 정보 충분 → 스킵
+[07:31:49] [196.4s] [2-pass] 자기 검토 적용
+[07:31:49] [196.5s] [완료] 답변 814자 전송
+[08:03:09] [쿼리정제] '미하일 컨셉과 관련해서 디렉터 피드백을 정리해봐' → '미하일 컨셉과 관련해서 디렉터 피드백을'
+[08:03:09] [Slack] PM: 미하일 컨셉과 관련해서 디렉터 피드백을 정리해봐
+[08:03:10] [0.4s] [RAG] Electron /ask 호출 중...
+[08:03:50] [41.2s] [RAG] Electron /ask 성공 (2255자)
+[08:03:50] [41.2s] [Image] 자동 이미지 3개
+[08:03:50] [41.2s] [완료] 답변 2267자 전송
+[08:03:51] [chat_update] 실패 (The request to the Slack API failed. (url: https://slack.com/api/chat.update)
+[08:03:51] The server responded with: {'ok': False, 'error': 'msg_too_long'}), say 폴백
+[11:35:08] 🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름
+[11:35:08] [READY] Slack bot started

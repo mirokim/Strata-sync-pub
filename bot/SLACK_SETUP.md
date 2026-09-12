@@ -1,4 +1,4 @@
-# Strata Sync Slack Bot 설정 가이드
+# Sandbox Map Slack Bot 설정 가이드
 
 ## 사전 요구사항
 
@@ -11,7 +11,7 @@
 ## 1. Slack 앱 생성
 
 1. [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
-2. App Name: `Strata Sync` (또는 원하는 이름)
+2. App Name: `Rembrandt` (또는 원하는 이름)
 3. 워크스페이스 선택 후 **Create App**
 
 ---
@@ -75,7 +75,7 @@
 
 ---
 
-## 7. Strata Sync 설정
+## 7. Sandbox Map 설정
 
 앱 내 설정 → **Slack 봇** 탭:
 
@@ -93,9 +93,9 @@
 
 ### 채널에서
 ```
-@StrataSync 캐릭터A의 컨셉은 뭐야?
-@StrataSync [art] 아트 방향 알려줘
-@StrataSync 캐릭터A 이미지 보여줘
+@Rembrandt 캐릭터A의 컨셉은 뭐야?
+@Rembrandt [art] 아트 방향 알려줘
+@Rembrandt 캐릭터A 이미지 보여줘
 ```
 
 ### DM에서
@@ -131,7 +131,7 @@
 
 | 증상 | 원인 | 해결 |
 |---|---|---|
-| 봇이 응답 없음 | Electron 앱이 꺼져 있음 | Strata Sync 앱 실행 후 볼트 로드 |
+| 봇이 응답 없음 | Electron 앱이 꺼져 있음 | Sandbox Map 앱 실행 후 볼트 로드 |
 | `❌ 시작 실패` | 토큰 오류 | Bot/App Token 재확인 |
 | 이미지 업로드 실패 | `files:write` 스코프 없음 | 2단계 스코프 추가 후 재설치 |
 | Vision 분석 안 됨 | Anthropic API 키 없음 | 설정 → AI 탭에서 키 입력 |

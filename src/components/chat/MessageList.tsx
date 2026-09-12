@@ -5,14 +5,18 @@ import { useUIStore } from '@/stores/uiStore'
 import MessageBubble from './MessageBubble'
 
 export default function MessageList() {
-  const { messages, isLoading } = useChatStore()
-  const { openInEditor } = useUIStore()
+  const messages  = useChatStore(s => s.messages)
+  const isLoading = useChatStore(s => s.isLoading)
+  const openInEditor = useUIStore(s => s.openInEditor)
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll to bottom when a new message is added or loading state changes.
+  // Intentionally NOT on [messages] — that fires on every streaming chunk, causing
+  // hundreds of scrollIntoView calls per response.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, isLoading])
+  }, [messages.length, isLoading])
 
   const hasMessages = messages.length > 0
 
@@ -26,7 +30,7 @@ export default function MessageList() {
           className="flex items-center justify-center h-full text-xs"
           style={{ color: 'var(--color-text-muted)' }}
         >
-          Start a conversation or select a quick question
+          대화를 시작하거나 빠른 질문을 선택하세요
         </div>
       ) : (
         <>
@@ -67,10 +71,10 @@ export default function MessageList() {
                   background: 'var(--color-bg-surface)',
                   cursor: 'pointer',
                 }}
-                title="View conversation as report"
+                title="대화 내용을 보고서로 보기"
               >
                 <FileText size={10} />
-                View Report
+                보고서 보기
               </button>
             </div>
           )}
