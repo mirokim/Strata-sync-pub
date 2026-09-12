@@ -4,7 +4,8 @@
  * talks to the in-browser remote vault adapter (window.syncAPI shim).
  */
 import { useEffect, useState } from 'react'
-import { Cloud, RefreshCw, AlertTriangle, GitBranch, LogOut, Terminal } from 'lucide-react'
+import { Cloud, RefreshCw, AlertTriangle, GitBranch, LogOut, Terminal, Database, Play, Loader2 } from 'lucide-react'
+import type { BatchStatus } from '@/web/remoteClient'
 import { fieldInputStyle } from '../settingsShared'
 import { clearWebConfig, loadWebConfig } from '@/web/config'
 import { currentRemoteVault } from '@/web/remoteVault'
@@ -27,6 +28,12 @@ const button: React.CSSProperties = {
   border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text-primary)', cursor: 'pointer',
 }
 
+function when(ms: number): string {
+  const d = new Date(ms)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getMonth() + 1}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 function relative(ms: number | null): string {
   if (!ms) return 'never'
   const s = Math.floor((Date.now() - ms) / 1000)
@@ -40,7 +47,26 @@ export default function ServerTab() {
   const api = window.syncAPI
   const [state, setState] = useState<SyncState | null>(null)
   const [author, setAuthor] = useState('')
-  const [busy, setBusy] = useState<'save' | 'sync' | null>(null)
+  const [busy, setBusy] = useState<'save' | 'sync' | 'batch' | null>(null)
+  const [batch, setBatch] = useState<BatchStatus | null>(null)
+  const [batchError, setBatchError] = useState<string | null>(null)
+
+  const loadBatch = async () => {
+    const client = currentRemoteVault()?.client
+    if (!client) return
+    try { setBatch(await client.batchStatus()); setBatchError(null) }
+    catch (e) { setBatchError(e instanceof Error ? e.message : String(e)) }
+  }
+  useEffect(() => { void loadBatch() }, [])
+
+  const runBatch = async () => {
+    const client = currentRemoteVault()?.client
+    if (!client) return
+    setBusy('batch'); setBatchError(null)
+    try { await client.runBatch() }
+    catch (e) { setBatchError(e instanceof Error ? e.message : String(e)) }
+    finally { setBusy(null); void loadBatch() }
+  }
 
   useEffect(() => {
     if (!api) return
@@ -117,6 +143,37 @@ export default function ServerTab() {
             <code style={{ fontSize: 11, lineHeight: 1.6, wordBreak: 'break-all', color: 'var(--color-text-primary)' }} data-testid="server-mcp-command">{mcpCommand}</code>
           </div>
           <div style={hint}>{signedIn ? 'Claude Code opens the Google sign-in the first time you use it.' : 'Same server, same token.'} Gives Claude Code <code>vault_search</code>, <code>graph_lint</code>, <code>vault_propose</code> and friends.</div>
+        </div>
+      </div>
+
+      <div>
+        <div style={sectionLabel}>Nightly batch — lint report + vector index</div>
+        <div style={card}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <Database size={14} style={{ flexShrink: 0, color: 'var(--color-accent)' }} />
+            <div style={{ flex: 1, fontSize: 12, color: 'var(--color-text-primary)' }} data-testid="batch-coverage">
+              {batch
+                ? <>Vector index covers <b>{batch.embeddedDocs}</b> / {batch.totalDocs} documents{batch.pendingDocs > 0 ? <span style={{ color: 'var(--color-warning)' }}> · {batch.pendingDocs} waiting for the next run</span> : ''}</>
+                : batchError ? <span style={{ color: 'var(--color-error)' }}>{batchError}</span> : 'Loading…'}
+            </div>
+            <button onClick={runBatch} disabled={busy !== null} data-testid="batch-run" style={{ ...button, opacity: busy ? 0.5 : 1 }}>
+              {busy === 'batch' ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} />} {busy === 'batch' ? 'Running…' : 'Run now'}
+            </button>
+          </div>
+          <div style={hint}>Runs every night at 04:00 (Asia/Seoul): writes <code>_reports/lint-&lt;date&gt;.md</code> and embeds changed documents for <code>vault_search</code>. Large backlogs finish over several runs.</div>
+          {batch && batch.runs.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }} data-testid="batch-log">
+              {batch.runs.slice().reverse().slice(0, 10).map((r, i) => (
+                <div key={i} style={{ display: 'grid', gridTemplateColumns: '84px 52px 1fr', gap: 8, fontSize: 11, alignItems: 'baseline' }}>
+                  <span style={{ color: 'var(--color-text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{when(r.startedAt)}</span>
+                  <span style={{ color: 'var(--color-text-muted)' }}>{r.trigger}</span>
+                  <span style={{ color: r.embeddings.error ? 'var(--color-error)' : 'var(--color-text-muted)' }}>
+                    {r.docs} docs · lint {r.lint.errors}E/{r.lint.warnings}W · embedded {r.embeddings.docsEmbedded}{r.embeddings.pending > 0 ? ` (+${r.embeddings.pending} left)` : ''} · {Math.round(r.durationMs / 1000)}s{r.embeddings.error ? ` · ${r.embeddings.error}` : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

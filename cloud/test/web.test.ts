@@ -401,6 +401,11 @@ describe('routes', () => {
     expect(sent[0].etag).toBe(meta.rows.get('active/Reviewed.md')!.etag)
   })
 
+  it('GET /v1/batch reports index coverage and the run log', async () => {
+    const res = await (await call('/v1/batch')).json() as { totalDocs: number; embeddedDocs: number; pendingDocs: number; runs: unknown[] }
+    expect(res).toEqual({ totalDocs: 3, embeddedDocs: 0, pendingDocs: 3, runs: [] })
+  })
+
   it('/mcp is reachable through the router with the same token', async () => {
     const res = await call('/mcp', {
       method: 'POST',

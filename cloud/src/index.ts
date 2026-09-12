@@ -11,7 +11,7 @@
  */
 import { D1MetaStore, R2BlobStore } from './stores.js'
 import { getManifest, getFile, putFile, deleteFile, parseIfMatch, type FileRow, type SyncDeps } from './sync.js'
-import { runNightly, semanticSearch, type NightlyDeps, type VectorStore, type VectorQuery } from './nightly.js'
+import { runNightly, batchStatus, semanticSearch, type NightlyDeps, type VectorStore, type VectorQuery } from './nightly.js'
 import { applyR2Events, type R2EventMessage } from './r2events.js'
 import { reviewDocument, shouldEnqueueReview, type ReviewJob, type LlmCall } from './review.js'
 import Anthropic from '@anthropic-ai/sdk'
@@ -286,8 +286,11 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
     }
     if (url.pathname === '/v1/lint/run' && req.method === 'POST') {
       // Manual trigger of the nightly batch (same code the cron runs)
-      const result = await runNightly(nightlyDeps(env))
+      const result = await runNightly(nightlyDeps(env), 'manual')
       return json(200, result)
+    }
+    if (url.pathname === '/v1/batch' && req.method === 'GET') {
+      return json(200, await batchStatus(deps))
     }
     if (url.pathname === '/v1/manifest' && req.method === 'GET') {
       const since = Number(url.searchParams.get('since') ?? '0')

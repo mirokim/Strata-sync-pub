@@ -16,6 +16,9 @@ import { putFile, deleteFile, type FileRow, type SyncDeps } from './sync.js'
 
 export const SNAPSHOT_KEY = '_system/lint-snapshot.json'
 export const EMBED_INDEX_KEY = '_system/embed-index.json'
+/** Last runs of the batch (cron or manual), newest last; shown in the app's Server tab. */
+export const BATCH_LOG_KEY = '_system/batch-log.json'
+const BATCH_LOG_MAX = 30
 export const REPORT_FOLDER = '_reports'
 export const BOT_AUTHOR = 'strata-bot'
 /** Reports older than this are tombstoned each night so the folder does not grow forever. */
@@ -58,12 +61,27 @@ export interface NightlyDeps extends SyncDeps {
 }
 
 export interface NightlyResult {
+  /** ms since epoch when the run started, and how long it took. */
+  startedAt: number
+  durationMs: number
+  trigger: 'cron' | 'manual'
   docs: number
   lint: { reportPath: string; errors: number; warnings: number; skipped: string[]; prunedReports: number }
   embeddings: { skipped: boolean; docsEmbedded: number; chunksUpserted: number; docsRemoved: number; chunksDeleted: number; pending: number; error?: string }
 }
 
 interface EmbedIndex { version: 1; docs: Record<string, { etag: string; chunks: number }> }
+
+/** What the app shows: how much of the vault the vector index covers, and the recent runs. */
+export interface BatchStatus {
+  /** Live markdown documents that are candidates for the index. */
+  totalDocs: number
+  /** Documents whose current version is in the vector index. */
+  embeddedDocs: number
+  /** Documents the next run still has to (re)embed. */
+  pendingDocs: number
+  runs: NightlyResult[]
+}
 
 const enc = new TextEncoder()
 const dec = new TextDecoder()
@@ -135,8 +153,9 @@ export async function pruneOldReports(deps: SyncDeps, rows: FileRow[], now: numb
   return pruned
 }
 
-export async function runNightly(deps: NightlyDeps): Promise<NightlyResult> {
+export async function runNightly(deps: NightlyDeps, trigger: 'cron' | 'manual' = 'cron'): Promise<NightlyResult> {
   const now = (deps.now ?? Date.now)()
+  const wallStart = Date.now()
   const log = deps.log ?? (() => {})
   const rows = await listLiveRows(deps.meta)
   const docs = await loadVaultDocs(deps, rows)
@@ -242,11 +261,37 @@ export async function runNightly(deps: NightlyDeps): Promise<NightlyResult> {
     log('[nightly] embeddings skipped (no AI / Vectorize binding)')
   }
 
-  return {
+  const result: NightlyResult = {
+    startedAt: now,
+    durationMs: Date.now() - wallStart,
+    trigger,
     docs: docs.size,
     lint: { reportPath, errors: report.summary.bySeverity.error, warnings: report.summary.bySeverity.warn, skipped: report.skipped.map(s => s.rule), prunedReports },
     embeddings,
   }
+  // Append to the run log (bounded); a failure here must not fail the run
+  try {
+    const runs = (await readJson<NightlyResult[]>(deps, BATCH_LOG_KEY)) ?? []
+    runs.push(result)
+    await writeJson(deps, BATCH_LOG_KEY, runs.slice(-BATCH_LOG_MAX))
+  } catch (e) {
+    log(`[nightly] could not write the run log: ${e instanceof Error ? e.message : String(e)}`)
+  }
+  return result
+}
+
+/** Coverage of the vector index plus the recent run log — no embedding work is done here. */
+export async function batchStatus(deps: SyncDeps): Promise<BatchStatus> {
+  const rows = await listLiveRows(deps.meta)
+  const index = (await readJson<EmbedIndex>(deps, EMBED_INDEX_KEY)) ?? { version: 1, docs: {} }
+  const runs = (await readJson<NightlyResult[]>(deps, BATCH_LOG_KEY)) ?? []
+  let totalDocs = 0, embeddedDocs = 0
+  for (const row of rows) {
+    if (!row.path.toLowerCase().endsWith('.md') || row.path.startsWith(`${REPORT_FOLDER}/`)) continue
+    totalDocs++
+    if (index.docs[row.path]?.etag === row.etag) embeddedDocs++
+  }
+  return { totalDocs, embeddedDocs, pendingDocs: totalDocs - embeddedDocs, runs }
 }
 
 // ── Chunking / ids ───────────────────────────────────────────────────────────

@@ -28,6 +28,22 @@ export interface RemoteDoc extends RemoteRow {
   content: string | null
 }
 
+export interface BatchRun {
+  startedAt: number
+  durationMs: number
+  trigger: 'cron' | 'manual'
+  docs: number
+  lint: { reportPath: string; errors: number; warnings: number; skipped: string[]; prunedReports: number }
+  embeddings: { skipped: boolean; docsEmbedded: number; chunksUpserted: number; docsRemoved: number; chunksDeleted: number; pending: number; error?: string }
+}
+
+export interface BatchStatus {
+  totalDocs: number
+  embeddedDocs: number
+  pendingDocs: number
+  runs: BatchRun[]
+}
+
 export class RemoteError extends Error {
   constructor(public status: number, message: string, public current?: RemoteRow) {
     super(message)
@@ -141,6 +157,20 @@ export class RemoteClient {
     if (!res.ok) throw new RemoteError(res.status, `search failed (${res.status})`)
     const body = await res.json() as { hits: { path: string; docId: string; heading: string; score: number }[] }
     return body.hits
+  }
+
+  /** Vector-index coverage and the recent nightly/manual runs. */
+  async batchStatus(): Promise<BatchStatus> {
+    const res = await this.request('/v1/batch')
+    if (!res.ok) throw new RemoteError(res.status, `batch status failed (${res.status})`)
+    return res.json()
+  }
+
+  /** Run the lint + embedding batch now (can take a minute on a large vault). */
+  async runBatch(): Promise<BatchRun> {
+    const res = await this.request('/v1/lint/run', { method: 'POST' })
+    if (!res.ok) throw new RemoteError(res.status, `batch run failed (${res.status})`)
+    return res.json()
   }
 
   async propose(input: { title: string; body: string; tags?: string[]; links?: string[]; source?: string }): Promise<{ path: string; title: string }> {

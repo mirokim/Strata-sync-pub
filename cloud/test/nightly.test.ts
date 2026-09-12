@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { runNightly, chunkDocument, chunkId, semanticSearch, localDate, pruneOldReports, SNAPSHOT_KEY, EMBED_INDEX_KEY, type NightlyDeps, type VectorItem } from '../src/nightly.js'
+import { runNightly, batchStatus, chunkDocument, chunkId, semanticSearch, localDate, pruneOldReports, SNAPSHOT_KEY, EMBED_INDEX_KEY, type NightlyDeps, type VectorItem } from '../src/nightly.js'
 import { applyR2Events } from '../src/r2events.js'
 import { putFile, deleteFile, type SyncDeps } from '../src/sync.js'
 import { parseVaultDoc, parseFrontmatter, docIdFromPath } from '../../mcp/src/lint/vaultDoc.js'
@@ -143,6 +143,30 @@ long enough body to make one chunk for ${n}.`)
     expect(r4.embeddings.docsEmbedded).toBe(1)
     expect(r4.embeddings.pending).toBe(2)
     expect(r4.embeddings.error).toBeUndefined()
+  })
+
+  it('keeps a bounded run log and reports index coverage', async () => {
+    await seed('A.md', '# A\n\nlong enough body to make one chunk for A.')
+    await seed('B.md', '# B\n\nlong enough body to make one chunk for B.')
+    const r1 = await runNightly({ ...deps, maxEmbedDocsPerRun: 1 }, 'manual')
+    expect(r1.trigger).toBe('manual')
+    expect(r1.startedAt).toBe(NOW)
+    let st = await batchStatus(deps as SyncDeps)
+    expect(st).toMatchObject({ totalDocs: 2, embeddedDocs: 1, pendingDocs: 1 })
+    expect(st.runs).toHaveLength(1)
+    expect(st.runs[0].embeddings.pending).toBe(1)
+
+    await runNightly(deps)
+    st = await batchStatus(deps as SyncDeps)
+    expect(st).toMatchObject({ totalDocs: 2, embeddedDocs: 2, pendingDocs: 0 })
+    expect(st.runs.map(r => r.trigger)).toEqual(['manual', 'cron'])
+    // the lint report is a vault file but never an embedding candidate
+    expect((await meta.get(st.runs[1].lint.reportPath))?.deleted).toBe(false)
+
+    // an edit makes the document pending again until the next run
+    const a = await meta.get('A.md')
+    await putFile(deps as SyncDeps, { path: 'A.md', body: enc('# A\n\nchanged, still long enough to embed.'), mtime: NOW, author: 'ann', ifMatch: a!.etag })
+    expect((await batchStatus(deps as SyncDeps)).pendingDocs).toBe(1)
   })
 
   it('re-embeds an edited document and removes vectors of a deleted one', async () => {
