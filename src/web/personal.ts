@@ -39,11 +39,21 @@ export class PersonalMapper {
     return { path: physical, personal: false }
   }
 
-  /** Virtual → physical: the personal copy when one exists, else the path as given. */
+  /**
+   * Virtual → physical: the personal copy when one exists *and* no team document occupies the
+   * path (a colliding personal copy keeps its physical path in the app, so a plain path always
+   * means the team document).
+   */
   physicalOf(virtual: string): string {
-    if (!this.root || virtual.startsWith(PERSONAL_PREFIX)) return virtual
+    if (!this.root || virtual.startsWith(PERSONAL_PREFIX) || this.exists(virtual)) return virtual
     const personal = this.root + virtual
     return this.exists(personal) ? personal : virtual
+  }
+
+  /** `_personal` and `_personal/<owner>` are storage, not folders the owner should see. */
+  isRootFolder(virtualFolder: string): boolean {
+    const f = virtualFolder.replace(/\/+$/, '')
+    return f === PERSONAL_PREFIX.slice(0, -1) || (this.root !== null && f + '/' === this.root)
   }
 
   /** The personal path for a new document of this owner; null without a signed-in owner. */

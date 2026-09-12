@@ -164,7 +164,7 @@ describe('setVisibility edge cases', () => {
     await deleteFile(deps, 'design/Gone.md', row!.etag, 'kim')
     expect((await setVisibility(deps, { path: 'design/Gone.md', personal: true, viewer: asKim, author: 'kim' })).status).toBe(404)
     expect((await setVisibility(deps, { path: 'design/Missing.md', personal: true, viewer: asKim, author: 'kim' })).status).toBe(404)
-    await putFile(deps, { path: 'design/Hollow.md', body: enc('# Hollow'), mtime: 1, author: 'kim' })
+    await putFile(deps, { path: 'design/Hollow.md', body: enc('# Hollow'), mtime: 1, author: 'kim', authorSub: '1001' })
     blobs.objects.delete('design/Hollow.md')
     const hollow = await setVisibility(deps, { path: 'design/Hollow.md', personal: true, viewer: asKim, author: 'kim' })
     expect(hollow).toMatchObject({ status: 404, body: { error: 'content missing' } })
@@ -172,9 +172,9 @@ describe('setVisibility edge cases', () => {
   })
 
   it('a colleague\'s save in the history blocks withdrawal even when the last save is the owner\'s', async () => {
-    await putFile({ ...deps, now: () => 1_000 }, { path: 'design/Shared.md', body: enc('v1'), mtime: 1, author: 'kim' })
-    await putFile({ ...deps, now: () => 2_000 }, { path: 'design/Shared.md', body: enc('v2 by lee'), mtime: 2, author: 'lee' })
-    await putFile({ ...deps, now: () => 3_000 }, { path: 'design/Shared.md', body: enc('v3 by kim'), mtime: 3, author: 'kim' })
+    await putFile({ ...deps, now: () => 1_000 }, { path: 'design/Shared.md', body: enc('v1'), mtime: 1, author: 'kim', authorSub: '1001' })
+    await putFile({ ...deps, now: () => 2_000 }, { path: 'design/Shared.md', body: enc('v2 by lee'), mtime: 2, author: 'lee', authorSub: '2002' })
+    await putFile({ ...deps, now: () => 3_000 }, { path: 'design/Shared.md', body: enc('v3 by kim'), mtime: 3, author: 'kim', authorSub: '1001' })
     expect(meta.rows.get('design/Shared.md')!.author).toBe('kim')
     const r = await setVisibility(deps, { path: 'design/Shared.md', personal: true, viewer: asKim, author: 'kim' })
     expect(r.status).toBe(403)
@@ -187,7 +187,7 @@ describe('setVisibility edge cases', () => {
     // Tombstone: kim once had a personal copy at this path and deleted it
     await putFile(deps, { path: `${KIM}design/Stamina.md`, body: enc('# old shadow'), mtime: 1, author: 'kim' })
     await deleteFile(deps, `${KIM}design/Stamina.md`, (await meta.get(`${KIM}design/Stamina.md`))!.etag, 'kim')
-    await putFile({ ...deps, now: () => 1_000 }, { path: 'design/Mine.md', body: enc('# Mine'), mtime: 7, author: 'kim' })
+    await putFile({ ...deps, now: () => 1_000 }, { path: 'design/Mine.md', body: enc('# Mine'), mtime: 7, author: 'kim', authorSub: '1001' })
     const moved = await setVisibility(deps, { path: 'design/Mine.md', personal: true, viewer: asKim, author: 'kim' })
     expect(moved.status).toBe(200)
     const body = moved.body as { from: string; path: string; row: { mtime: number; author: string }; personal: boolean }
@@ -205,7 +205,7 @@ describe('setVisibility edge cases', () => {
 
   it('an OAuth sub with unsafe characters is sanitised consistently on both sides of the move', async () => {
     const odd = { sub: 'google|a b/c@d' }
-    await putFile(deps, { path: 'design/Odd.md', body: enc('# Odd'), mtime: 1, author: 'odd' })
+    await putFile(deps, { path: 'design/Odd.md', body: enc('# Odd'), mtime: 1, author: 'odd', authorSub: 'google|a b/c@d' })
     const r = await setVisibility(deps, { path: 'design/Odd.md', personal: true, viewer: odd, author: 'odd' })
     expect(r.status).toBe(200)
     const dest = (r.body as { path: string }).path
@@ -236,5 +236,82 @@ describe('setVisibility edge cases', () => {
     expect(mine.isError).toBeUndefined()
     expect(mine.content[0]).toMatchObject({ type: 'image', mimeType: 'image/png' })
     expect((mine.content[1] as { text: string }).text).toContain(`${KIM}attachments/secret.md`)
+  })
+})
+
+describe('review fixes — nothing leaks through side doors', () => {
+  const env = { TEAM_TOKEN: 'secret' } as unknown as Env
+  const ctx = { waitUntil() {}, passThroughOnException() {}, props: {} } as unknown as ExecutionContext
+  const as = (id: Identity | undefined, path: string, init: RequestInit = {}) => route(new Request(`https://w${path}`, { ...init, headers: { authorization: 'Bearer secret', ...(init.headers as Record<string, string> | undefined) } }), env, ctx, deps, id)
+
+  it('the personal root and owner folders are nobody\'s, so history under them cannot be enumerated', async () => {
+    // A second version of kim's personal doc puts one archived version under _system/history/_personal/…
+    await putFile({ ...deps, now: () => 2_000 }, { path: `${KIM}design/Stamina rethink.md`, body: enc('# v2 secret'), mtime: 2, author: 'kim', authorSub: '1001' })
+    expect(canSee('_personal', lee)).toBe(false)
+    expect(canSee('_personal/', kim)).toBe(false)
+    expect(canSee('_personal/1001', kim)).toBe(false)
+    expect(canSee('_personal/1001/', kim)).toBe(false)
+    for (const p of ['_personal', '_personal%2F1001', '_personal/1001/']) {
+      expect((await as(lee, `/v1/history?path=${p}`)).status).toBe(400)   // not a document path
+      expect((await as(undefined, `/v1/history?path=${p}`)).status).toBe(400)
+    }
+    expect((await callTool(mcp(lee), 'vault_history', { path: '_personal' })).isError).toBe(true)
+    expect((await callTool(mcp(lee), 'vault_history', { path: '_personal/1001' })).isError).toBe(true)
+  })
+
+  it('_system/ is not a vault path: it cannot be written, read or listed through the API or MCP', async () => {
+    expect((await as(kim, '/v1/file?path=_system%2Fvault-snapshot.json', { method: 'PUT', headers: { 'x-mtime': '1' }, body: '{}' })).status).toBe(400)
+    expect((await as(kim, `/v1/file?path=${encodeURIComponent('_system/history/design/Stamina.md/0000000000001.' + 'a'.repeat(64) + '.Alice.')}`, { method: 'PUT', headers: { 'x-mtime': '1' }, body: 'forged' })).status).toBe(400)
+    expect((await as(kim, '/v1/file?path=_system%2Fmembers.json')).status).toBe(400)
+    expect((await callTool(mcp(kim), 'vault_write', { path: '_system/history/x.md', content: 'forged' })).isError).toBe(true)
+    expect((await callTool(mcp(kim), 'vault_read', { path: '_system/members.json' })).isError).toBe(true)
+    expect(blobs.objects.has('_system/vault-snapshot.json')).toBe(false)
+  })
+
+  it('a proposal cannot be promoted into someone\'s personal space or into _system', async () => {
+    await callTool(mcp(lee), 'vault_propose', { title: 'Gift', body: 'a proposal body that is long enough to be a proposal' })
+    const path = (await deps.meta.listSince(0, 1000)).find(r => r.path.startsWith('_agent/'))!.path
+    expect((await callTool(mcp(lee), 'vault_promote', { path, destFolder: `${KIM}inbox` })).isError).toBe(true)
+    expect((await callTool(mcp(lee), 'vault_promote', { path, destFolder: '_system' })).isError).toBe(true)
+    expect([...meta.rows.keys()].some(p => p.startsWith(KIM + 'inbox'))).toBe(false)
+  })
+
+  it('withdrawal is decided by identity, not by a display name', async () => {
+    // "kim" the display name, but written by a different account (lee's sub) — kim cannot pull it in
+    await putFile({ ...deps, now: () => 1_000 }, { path: 'design/Named.md', body: enc('# Named'), mtime: 1, author: 'kim', authorSub: '2002' })
+    expect((await setVisibility(deps, { path: 'design/Named.md', personal: true, viewer: { sub: '1001' }, author: 'kim' })).status).toBe(403)
+    // Legacy rows without a sub are treated as someone else's
+    await putFile({ ...deps, now: () => 1_000 }, { path: 'design/Legacy.md', body: enc('# Legacy'), mtime: 1, author: 'kim' })
+    expect((await setVisibility(deps, { path: 'design/Legacy.md', personal: true, viewer: { sub: '1001' }, author: 'kim' })).status).toBe(403)
+  })
+
+  it('taking a document back moves its team-era history with it; a deleted team path has no readable past', async () => {
+    await putFile({ ...deps, now: () => 1_000 }, { path: 'design/Mine.md', body: enc('# Mine v1 secret'), mtime: 1, author: 'kim', authorSub: '1001' })
+    await putFile({ ...deps, now: () => 2_000 }, { path: 'design/Mine.md', body: enc('# Mine v2'), mtime: 2, author: 'kim', authorSub: '1001' })
+    const r = await setVisibility(deps, { path: 'design/Mine.md', personal: true, viewer: { sub: '1001' }, author: 'kim' })
+    expect(r.status).toBe(200)
+    expect(await blobs.list('_system/history/design/Mine.md/')).toEqual([])
+    expect((await blobs.list(`_system/history/${KIM}design/Mine.md/`)).length).toBeGreaterThanOrEqual(2)
+    expect((await as(lee, '/v1/history?path=design%2FMine.md')).status).toBe(404)
+    expect((await callTool(mcp(lee), 'vault_history', { path: 'design/Mine.md' })).isError).toBe(true)
+    const own = parse(await callTool(mcp(kim), 'vault_history', { path: `${KIM}design/Mine.md` }))
+    expect(own.versions.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('proposals and memory notes refuse text copied from the caller\'s personal documents', async () => {
+    const secret = 'This paragraph is private thinking about the stamina economy and must never reach the team through a side door.'
+    await putFile(deps, { path: `${KIM}notes/Secret.md`, body: enc(`# Secret\n\n${secret}`), mtime: 1, author: 'kim', authorSub: '1001' })
+    const p = await callTool(mcp(kim), 'vault_propose', { title: 'Idea', body: `Some framing.\n${secret}` })
+    expect(p.isError).toBe(true)
+    expect(textOf(p)).toContain(`${KIM}notes/Secret.md`)
+    expect((await callTool(mcp(kim), 'member_remember', { member: 'librarian', text: secret })).isError).toBe(true)
+    // Other people's text and short overlaps are fine
+    expect((await callTool(mcp(lee), 'vault_propose', { title: 'Idea', body: secret })).isError).toBeFalsy()
+    expect((await callTool(mcp(kim), 'vault_propose', { title: 'Idea', body: 'stamina economy thoughts, unrelated' })).isError).toBeFalsy()
+  })
+
+  it('the team token cannot rewrite the AI members', async () => {
+    const res = await as(undefined, '/v1/members', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: 1, members: [] }) })
+    expect(res.status).toBe(403)
   })
 })

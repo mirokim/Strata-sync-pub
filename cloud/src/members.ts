@@ -2,14 +2,14 @@
  * AI members — the roles a team hands to an AI, each with a lens, a patch of the vault it looks
  * after, standing routines and a memory note of its own.
  *
- * A member is not a reviewer that reacts once and forgets. It keeps `_members/<Name>.md` in the
+ * A member is not a reviewer that reacts once and forgets. It keeps `_members/<Name> (memory).md` in the
  * vault (positions it has taken, questions it is waiting on, a log), it reacts when a document in
  * its scope is saved, and it runs its routines when someone's MCP client takes on its identity
  * (`/mcp__strata__member name=…`). Everything it wants the team to adopt goes through
  * proposals; only its own note is written directly.
  *
  * The server stores the configuration (`_system/members.json`) and hands members out over MCP;
- * save reactions run on the server when ANTHROPIC_API_KEY is set (see review.ts).
+ * save reactions run on the server when ANTHROPIC_API_KEY is set (see reactions.ts).
  */
 import type { SyncDeps } from './sync.js'
 

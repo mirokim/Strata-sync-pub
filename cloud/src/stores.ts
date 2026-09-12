@@ -4,12 +4,12 @@
 import type { BlobStore, FileRow, MetaStore } from './sync.js'
 
 interface FileRecord {
-  path: string; etag: string; size: number; mtime: number; author: string
+  path: string; etag: string; size: number; mtime: number; author: string; author_sub: string | null
   deleted: number; seq: number; updated_at: number
 }
 
 function toRow(r: FileRecord): FileRow {
-  return { path: r.path, etag: r.etag, size: r.size, mtime: r.mtime, author: r.author, deleted: r.deleted === 1, seq: r.seq, updatedAt: r.updated_at }
+  return { path: r.path, etag: r.etag, size: r.size, mtime: r.mtime, author: r.author, authorSub: r.author_sub ?? '', deleted: r.deleted === 1, seq: r.seq, updatedAt: r.updated_at }
 }
 
 export class D1MetaStore implements MetaStore {
@@ -44,12 +44,12 @@ export class D1MetaStore implements MetaStore {
     const results = await this.db.batch([
       this.db.prepare("UPDATE counters SET value = value + 1 WHERE name = 'seq' RETURNING value"),
       this.db.prepare(`
-        INSERT INTO files (path, etag, size, mtime, author, deleted, seq, updated_at)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, (SELECT value FROM counters WHERE name = 'seq'), ?7)
+        INSERT INTO files (path, etag, size, mtime, author, author_sub, deleted, seq, updated_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, (SELECT value FROM counters WHERE name = 'seq'), ?8)
         ON CONFLICT(path) DO UPDATE SET
-          etag = excluded.etag, size = excluded.size, mtime = excluded.mtime, author = excluded.author,
+          etag = excluded.etag, size = excluded.size, mtime = excluded.mtime, author = excluded.author, author_sub = excluded.author_sub,
           deleted = excluded.deleted, seq = excluded.seq, updated_at = excluded.updated_at
-        RETURNING *`).bind(row.path, row.etag, row.size, row.mtime, row.author, row.deleted ? 1 : 0, row.updatedAt),
+        RETURNING *`).bind(row.path, row.etag, row.size, row.mtime, row.author, row.authorSub ?? '', row.deleted ? 1 : 0, row.updatedAt),
     ])
     const stored = results[1].results?.[0] as FileRecord | undefined
     if (!stored) throw new Error('upsert returned no row')

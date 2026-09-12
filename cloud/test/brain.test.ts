@@ -55,7 +55,9 @@ describe('history', () => {
 
   it('history keys round-trip authors with odd characters', () => {
     const key = historyKey('a/b c.md', 5, 'e'.repeat(64), '김 미로/ok')
-    expect(parseHistoryKey(key, 3)).toEqual({ path: 'a/b c.md', at: 5, etag: 'e'.repeat(64), author: '김 미로/ok', size: 3, key })
+    expect(parseHistoryKey(key, 3)).toEqual({ path: 'a/b c.md', at: 5, etag: 'e'.repeat(64), author: '김 미로/ok', authorSub: '', size: 3, key })
+    const withSub = historyKey('a.md', 5, 'e'.repeat(64), 'J. Kim', 'google|1.2')
+    expect(parseHistoryKey(withSub)).toMatchObject({ author: 'J. Kim', authorSub: 'google|1.2' })   // dots in either segment survive
     expect(parseHistoryKey('_system/history/x.md/garbage')).toBeNull()
   })
 
@@ -336,8 +338,8 @@ describe('history edge cases', () => {
 
   it('history keys: clamps timestamps, rejects malformed etags, survives broken percent-encoding', () => {
     const E = 'e'.repeat(64)
-    expect(historyKey('x.md', -5, E, 'a')).toBe(`${HISTORY_PREFIX}x.md/0000000000000.${E}.a`)
-    expect(historyKey('x.md', 1.9, E, 'a')).toBe(`${HISTORY_PREFIX}x.md/0000000000001.${E}.a`)
+    expect(historyKey('x.md', -5, E, 'a')).toBe(`${HISTORY_PREFIX}x.md/0000000000000.${E}.a.`)
+    expect(historyKey('x.md', 1.9, E, 'a')).toBe(`${HISTORY_PREFIX}x.md/0000000000001.${E}.a.`)
     expect(parseHistoryKey(`${HISTORY_PREFIX}x.md/0000000000001.${'g'.repeat(64)}.a`)).toBeNull()   // not hex
     expect(parseHistoryKey(`${HISTORY_PREFIX}x.md/0000000000001.${'a'.repeat(63)}.a`)).toBeNull()   // too short
     expect(parseHistoryKey(`${HISTORY_PREFIX}x.md/000000001.${E}.a`)).toBeNull()                    // timestamp not 13 digits
@@ -499,13 +501,13 @@ describe('image document edge cases', () => {
 
 describe('vault view edge cases', () => {
   it('a corrupt or foreign snapshot is ignored and replaced', async () => {
-    const { VAULT_SNAPSHOT_KEY } = await import('../src/vaultIndex.js')
+    const { VAULT_SNAPSHOT_KEY, decodeSnapshot } = await import('../src/vaultIndex.js')
     for (let i = 0; i < 3; i++) await putFile(deps, { path: `d/${i}.md`, body: enc(`# ${i}\n\nbody ${i}`), mtime: 1, author: 'a' })
     blobs.objects.set(VAULT_SNAPSHOT_KEY, enc('{not json'))
     invalidateVaultView()
     const v1 = await loadVaultView(deps, true)
     expect(v1.docs.size).toBe(3)
-    const rewritten = JSON.parse(dec(blobs.objects.get(VAULT_SNAPSHOT_KEY)!)) as { version: number; docs: { path: string }[] }
+    const rewritten = JSON.parse(await decodeSnapshot(blobs.objects.get(VAULT_SNAPSHOT_KEY)!)) as { version: number; docs: { path: string }[] }
     expect(rewritten.version).toBe(1)
     expect(rewritten.docs.map(d => d.path).sort()).toEqual(['d/0.md', 'd/1.md', 'd/2.md'])
     // A snapshot of a future format is not trusted either: everything is read from R2 again
@@ -528,7 +530,7 @@ describe('vault view edge cases', () => {
   it('caps R2 reads per load at 800 and catches up on the next forced load', async () => {
     const n = 810
     const rows: Promise<unknown>[] = []
-    for (let i = 0; i < n; i++) rows.push(meta.upsert({ path: `big/${i}.md`, etag: `e${i}`, size: 1, mtime: 1, author: 'a', deleted: false, updatedAt: 1 }).then(() => blobs.put(`big/${i}.md`, enc(`# ${i}`))))
+    for (let i = 0; i < n; i++) rows.push(meta.upsert({ path: `big/${i}.md`, etag: `e${i}`, size: 1, mtime: 1, author: 'a', authorSub: '', deleted: false, updatedAt: 1 }).then(() => blobs.put(`big/${i}.md`, enc(`# ${i}`))))
     await Promise.all(rows)
     invalidateVaultView()
     const reads: string[] = []

@@ -23,9 +23,17 @@ export interface VaultView {
   graph(): LintGraph
   /** The BM25 index if this view has built one (the next view starts from it). */
   builtIndex(): Bm25 | null
+  /** Documents by id, built on first use. */
+  byId(): Map<string, ParsedVaultDoc>
+  /** True when more documents changed than one load may fetch; the next load catches up. */
+  partial: boolean
 }
 
 let _cache: { view: VaultView; builtAt: number } | null = null
+/** Concurrent callers (a client issuing tool calls in parallel) share one load. */
+let _inflight: Promise<VaultView> | null = null
+/** When this isolate last wrote the snapshot and at which head, to keep rewrites rare. */
+let _snapshotWritten: { at: number; head: number } = { at: 0, head: -1 }
 
 /**
  * One R2 object holding every document's text, keyed by content hash. A cold isolate reads it
@@ -35,17 +43,39 @@ let _cache: { view: VaultView; builtAt: number } | null = null
  * nightly batch.
  */
 export const VAULT_SNAPSHOT_KEY = '_system/vault-snapshot.json'
+/** A load that fetched at least this many documents rewrites the snapshot (subject to the interval). */
 const SNAPSHOT_REWRITE_AFTER = 40
+/** …but not more often than this while the vault churns; a big backlog rewrites regardless. */
+const SNAPSHOT_MIN_INTERVAL_MS = 10 * 60 * 1000
+const SNAPSHOT_REWRITE_FORCE = 300
 /** Hard cap on per-load R2 reads; documents beyond it wait for the next load (the snapshot catches up). */
 const MAX_READS_PER_LOAD = 800
 
+/** Snapshot bytes: gzip when the runtime has CompressionStream, plain JSON otherwise (tests). */
 interface VaultSnapshot { version: 1; head: number; docs: { path: string; etag: string; content: string }[] }
+const GZIP_MAGIC = [0x1f, 0x8b]
+async function gzip(bytes: Uint8Array): Promise<Uint8Array> {
+  if (typeof CompressionStream === 'undefined') return bytes
+  const stream = new Blob([bytes as unknown as ArrayBuffer]).stream().pipeThrough(new CompressionStream('gzip'))
+  return new Uint8Array(await new Response(stream).arrayBuffer())
+}
+/** Snapshot bytes → JSON text (transparently gunzipped); exported for tests and tooling. */
+export async function decodeSnapshot(bytes: Uint8Array): Promise<string> { return dec.decode(await gunzip(bytes)) }
+async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
+  if (bytes[0] !== GZIP_MAGIC[0] || bytes[1] !== GZIP_MAGIC[1] || typeof DecompressionStream === 'undefined') return bytes
+  const stream = new Blob([bytes as unknown as ArrayBuffer]).stream().pipeThrough(new DecompressionStream('gzip'))
+  return new Uint8Array(await new Response(stream).arrayBuffer())
+}
 
 const dec = new TextDecoder()
 const enc = new TextEncoder()
 
-/** Current documents. Reuses the isolate cache while the sequence head is unchanged and fresh. */
-export async function loadVaultView(deps: SyncDeps, force = false): Promise<VaultView> {
+/** Current documents. Reuses the isolate cache while the sequence head is unchanged. */
+export function loadVaultView(deps: SyncDeps, force = false): Promise<VaultView> {
+  return _inflight ??= buildVaultView(deps, force).finally(() => { _inflight = null })
+}
+
+async function buildVaultView(deps: SyncDeps, force: boolean): Promise<VaultView> {
   const head = await deps.meta.head()
   const now = Date.now()
   // The D1 head moves on every write (API, bridge, batch), so an unchanged head means an unchanged vault
@@ -60,10 +90,12 @@ export async function loadVaultView(deps: SyncDeps, force = false): Promise<Vaul
   // Base to reuse from: this isolate's previous view, else the stored snapshot
   let snapshot: Map<string, { etag: string; content: string }> | null = null
   if (!_cache) {
-    const raw = await deps.blobs.get(VAULT_SNAPSHOT_KEY)
+    let raw = await deps.blobs.get(VAULT_SNAPSHOT_KEY)
     if (raw) {
       try {
-        const parsed = JSON.parse(dec.decode(raw)) as VaultSnapshot
+        const text = dec.decode(await gunzip(raw))
+        raw = null                                                  // the bytes are not needed past this point
+        const parsed = JSON.parse(text) as VaultSnapshot
         if (parsed.version === 1 && Array.isArray(parsed.docs)) snapshot = new Map(parsed.docs.map(d => [d.path, { etag: d.etag, content: d.content }]))
       } catch { snapshot = null }
     }
@@ -91,27 +123,41 @@ export async function loadVaultView(deps: SyncDeps, force = false): Promise<Vaul
   }
   let index: Bm25 | null = null
   let graph: LintGraph | null = null
-  const previous = _cache?.view
+  let byId: Map<string, ParsedVaultDoc> | null = null
+  // Only the previous index is carried over — never the previous view, or every view built in
+  // this isolate would stay reachable through the chain of closures
+  let base: Bm25 | null = _cache?.view.builtIndex() ?? null
   const view: VaultView = {
     head, docs, rows: rowMap, contents,
-    // Built on top of the previous isolate view's index when there is one: unchanged documents keep their tokens
-    bm25: () => (index ??= new Bm25(docs, previous?.builtIndex() ?? undefined)),
+    bm25: () => {
+      if (!index) { index = new Bm25(docs, base ?? undefined); base = null }
+      return index
+    },
     graph: () => (graph ??= buildLintGraph([...docs.values()])),
+    byId: () => (byId ??= new Map([...docs.values()].map(d => [d.id, d]))),
     builtIndex: () => index,
-  }
-  // Persist when this load did real work, so the next cold isolate does not repeat it
-  if (reads.length >= SNAPSHOT_REWRITE_AFTER || (reads.length > 0 && !snapshot && !_cache)) {
-    await writeVaultSnapshot(deps, view).catch(e => console.error('[vault-view] snapshot write failed', e))
+    partial: toRead.length > reads.length,
   }
   _cache = { view, builtAt: now }
+  // Persist when this load did real work, so the next cold isolate does not repeat it — but
+  // not on every call while a sync push is landing, and never a partial view
+  const firstEver = reads.length > 0 && !snapshot
+  const overdue = now - _snapshotWritten.at >= SNAPSHOT_MIN_INTERVAL_MS
+  if (!view.partial && (firstEver || reads.length >= SNAPSHOT_REWRITE_FORCE || (reads.length >= SNAPSHOT_REWRITE_AFTER && overdue))) {
+    await writeVaultSnapshot(deps, view).catch(e => console.error('[vault-view] snapshot write failed', e))
+  }
   return view
 }
 
 export function invalidateVaultView(): void { _cache = null }
 
+/** Whether the snapshot on the server already reflects this view's head (written by this isolate). */
+export function snapshotIsCurrent(view: VaultView): boolean { return _snapshotWritten.head === view.head }
+
 export async function writeVaultSnapshot(deps: SyncDeps, view: VaultView): Promise<void> {
   const body: VaultSnapshot = { version: 1, head: view.head, docs: [...view.contents.entries()].map(([path, content]) => ({ path, etag: view.rows.get(path)?.etag ?? '', content })) }
-  await deps.blobs.put(VAULT_SNAPSHOT_KEY, enc.encode(JSON.stringify(body)))
+  await deps.blobs.put(VAULT_SNAPSHOT_KEY, await gzip(enc.encode(JSON.stringify(body))))
+  _snapshotWritten = { at: Date.now(), head: view.head }
 }
 
 // ── Tokeniser + BM25 ─────────────────────────────────────────────────────────
@@ -124,7 +170,7 @@ export function tokenize(text: string): string[] {
   const out: string[] = []
   for (const m of text.toLowerCase().matchAll(/[a-z0-9_]+|[가-힣]+/g)) {
     const t = m[0]
-    if (/^[가-힣]+$/.test(t)) {
+    if (t.charCodeAt(0) >= 0xac00) {
       if (t.length <= 2) { out.push(t); continue }
       out.push(t)
       for (let i = 0; i + 2 <= t.length; i++) out.push(t.slice(i, i + 2))
@@ -153,7 +199,8 @@ export class Bm25 {
   constructor(docs: Map<string, ParsedVaultDoc>, base?: Bm25, private readonly k1 = 1.5, private readonly b = 0.75) {
     let total = 0
     if (base) {
-      this.df = new Map(base.df)
+      // The base belongs to a superseded view: take its term table over instead of copying it
+      this.df = base.df
       for (const [path, d] of docs) {
         const prev = base.docs.get(path)
         if (prev === d) {

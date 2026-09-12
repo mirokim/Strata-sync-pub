@@ -58,11 +58,9 @@ describe('PersonalMapper.physicalOf', () => {
     expect(m.physicalOf(m.virtualOf(`${ROOT}design/Draft.md`).path)).toBe(`${ROOT}design/Draft.md`)
   })
 
-  // BUG (src/web/personal.ts physicalOf): when a team document and the owner's personal copy share a
-  // virtual path, virtualOf keeps the personal copy at its physical path — but physicalOf still
-  // redirects the *team* path to the personal copy, so the team document cannot be read, saved or
-  // deleted through the app (see the it.fails in remoteVault.test.ts for the user-visible effect).
-  it.fails('round-trips with virtualOf when a team document collides with a personal copy', () => {
+  // When a team document and the owner's personal copy share a virtual path, the personal copy
+  // keeps its physical path in the app and the plain path always means the team document.
+  it('round-trips with virtualOf when a team document collides with a personal copy', () => {
     const m = mapper(['design/Stamina.md', `${ROOT}design/Stamina.md`])
     expect(m.virtualOf(`${ROOT}design/Stamina.md`).path).toBe(`${ROOT}design/Stamina.md`)   // the personal copy keeps its physical path…
     expect(m.physicalOf('design/Stamina.md')).toBe('design/Stamina.md')                       // …so the plain path must stay the team document's

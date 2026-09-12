@@ -412,10 +412,14 @@ describe('routes', () => {
     expect(Object.keys(before.templates)).toContain('designer')
     expect(before.reactionsEnabled).toBe(false)
     const designer = { id: 'designer', ...before.templates.designer }
-    const ok = await call('/v1/members', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: 1, members: [...before.config.members, designer] }) })
+    // The team token may read the members but not rewrite them — only a signed-in person
+    const denied = await call('/v1/members', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: 1, members: [...before.config.members, designer] }) })
+    expect(denied.status).toBe(403)
+    const asPerson = (path: string, init: RequestInit = {}) => route(new Request(`https://w${path}`, { ...init, headers: { ...auth, ...(init.headers as Record<string, string> | undefined) } }), env, ctx, deps, { sub: '1001', email: 'k@x', name: 'kim', service: false })
+    const ok = await asPerson('/v1/members', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: 1, members: [...before.config.members, designer] }) })
     expect(ok.status).toBe(200)
     expect(((await (await call('/v1/members')).json()) as { config: { members: unknown[] } }).config.members).toHaveLength(2)
-    const bad = await call('/v1/members', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: 1, members: [{ ...designer, id: 'Bad Id' }] }) })
+    const bad = await asPerson('/v1/members', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: 1, members: [{ ...designer, id: 'Bad Id' }] }) })
     expect(bad.status).toBe(400)
   })
 

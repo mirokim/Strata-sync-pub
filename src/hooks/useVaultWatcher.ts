@@ -62,7 +62,8 @@ export function useVaultWatcher(): void {
             // Electron's fs.watch also fires for the editor's own save; the store already holds
             // that text, so there is nothing to update (and no "changed" banner to show).
             if (existing && existing.rawContent === content) return
-            const updatedDoc = existing ? { ...parsedDoc, id: existing.id } : parsedDoc
+            // The incremental path builds the file without server metadata: keep what the full load knew
+            const updatedDoc = existing ? { ...parsedDoc, id: existing.id, ...(existing.personal ? { personal: true } : {}) } : parsedDoc
 
             // Diff calculation — compare with previous rawContent
             const prevDoc = loadedDocuments?.find(d => d.id === updatedDoc.id)

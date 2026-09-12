@@ -35,7 +35,8 @@ const TOOLS: [string, string][] = [
   ['vault_propose', 'Record an idea or decision as a proposal in _agent/ (never straight into the vault)'],
   ['vault_proposals', 'List pending proposals'],
   ['vault_promote', 'Promote a proposal into the vault — after a person approves it'],
-  ['vault_write', 'Create or replace a document directly (only when explicitly asked)'],
+  ['vault_write', 'Create or replace a document directly (only when explicitly asked); personal=true keeps it to you'],
+  ['vault_visibility', 'Share a personal document with the team, or take back one only you have ever saved'],
   ['vault_changes', 'What changed since a date — authors, titles, deletions'],
   ['members_list · member_remember · member_report', 'The AI members (Settings → AI Members), their memory notes and routine runs; the `member` prompt takes one on'],
 ]

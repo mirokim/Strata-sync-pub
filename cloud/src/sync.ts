@@ -18,10 +18,15 @@ export interface FileRow {
   size: number
   mtime: number
   author: string
+  /** Stable identity of the saver: OAuth sub, 'service' for the team token, '' when unknown (legacy rows). */
+  authorSub: string
   deleted: boolean
   seq: number
   updatedAt: number
 }
+
+/** Internal bookkeeping prefix (snapshot, history, member config): never a vault path. */
+export const SYSTEM_PREFIX = '_system'
 
 export interface MetaStore {
   get(path: string): Promise<FileRow | null>
@@ -73,6 +78,10 @@ export function normalizeVaultPath(raw: string | null | undefined): string | nul
   for (const s of segments) {
     if (s === '' || s.startsWith('.')) return null
   }
+  // The server's own bookkeeping lives under _system/ and is written through the blob store
+  // directly; a client that could address it would read the vault snapshot (every document,
+  // personal ones included) or forge version history.
+  if (segments[0] === SYSTEM_PREFIX) return null
   return p
 }
 
@@ -123,6 +132,8 @@ export interface PutInput {
   createOnly?: boolean
   mtime: number
   author: string
+  /** Stable identity of the saver (see FileRow.authorSub); '' when the caller has none. */
+  authorSub?: string
 }
 
 /**
@@ -155,12 +166,12 @@ export async function putFile(deps: SyncDeps, input: PutInput): Promise<SyncResu
   await deps.blobs.put(path, input.body)
   const row = await deps.meta.upsert({
     path, etag, size: input.body.byteLength, mtime: Math.floor(input.mtime),
-    author: input.author.slice(0, 80), deleted: false, updatedAt: (deps.now ?? Date.now)(),
+    author: input.author.slice(0, 80), authorSub: (input.authorSub ?? '').slice(0, 120), deleted: false, updatedAt: (deps.now ?? Date.now)(),
   })
   return { status: live ? 200 : 201, body: row, headers: { 'ETag': `"${etag}"`, 'X-Seq': String(row.seq) } }
 }
 
-export async function deleteFile(deps: SyncDeps, rawPath: string | null, ifMatch: string | undefined, author: string): Promise<SyncResult> {
+export async function deleteFile(deps: SyncDeps, rawPath: string | null, ifMatch: string | undefined, author: string, authorSub = ''): Promise<SyncResult> {
   const path = normalizeVaultPath(rawPath)
   if (!path) return { status: 400, body: { error: 'invalid path' } }
   const current = await deps.meta.get(path)
@@ -173,7 +184,7 @@ export async function deleteFile(deps: SyncDeps, rawPath: string | null, ifMatch
   }
   await deps.blobs.delete(path)
   const row = await deps.meta.upsert({
-    path, etag: current.etag, size: 0, mtime: current.mtime, author: author.slice(0, 80),
+    path, etag: current.etag, size: 0, mtime: current.mtime, author: author.slice(0, 80), authorSub: authorSub.slice(0, 120),
     deleted: true, updatedAt: (deps.now ?? Date.now)(),
   })
   return { status: 200, body: row }

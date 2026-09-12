@@ -14,10 +14,14 @@ export const HISTORY_KEEP = 20
 /** Diff output is for people and prompts, not machines: keep it readable. */
 const DIFF_MAX_LINES = 2_000
 
-export interface Version { path: string; at: number; etag: string; author: string; size: number; key: string }
+export interface Version { path: string; at: number; etag: string; author: string; authorSub: string; size: number; key: string }
 
-export function historyKey(path: string, at: number, etag: string, author: string): string {
-  return `${HISTORY_PREFIX}${path}/${String(Math.max(0, Math.floor(at))).padStart(13, '0')}.${etag}.${encodeURIComponent(author.slice(0, 80))}`
+/** Key segments are percent-encoded with `.` included, so the dot can separate them. */
+const seg = (s: string) => encodeURIComponent(s).replace(/\./g, '%2E')
+const unseg = (s: string) => { try { return decodeURIComponent(s) } catch { return s } }
+
+export function historyKey(path: string, at: number, etag: string, author: string, authorSub = ''): string {
+  return `${HISTORY_PREFIX}${path}/${String(Math.max(0, Math.floor(at))).padStart(13, '0')}.${etag}.${seg(author.slice(0, 80))}.${seg(authorSub.slice(0, 120))}`
 }
 
 export function parseHistoryKey(key: string, size = 0): Version | null {
@@ -27,9 +31,11 @@ export function parseHistoryKey(key: string, size = 0): Version | null {
   if (slash < 0) return null
   const m = /^(\d{13})\.([0-9a-f]{64})\.(.*)$/.exec(rest.slice(slash + 1))
   if (!m) return null
-  let author = ''
-  try { author = decodeURIComponent(m[3]) } catch { author = m[3] }
-  return { path: rest.slice(0, slash), at: Number(m[1]), etag: m[2], author, size, key }
+  // `<author>.<sub>` — keys written before the sub existed hold only the author
+  const tail = m[3]
+  const dot = tail.lastIndexOf('.')
+  const [author, authorSub] = dot >= 0 ? [unseg(tail.slice(0, dot)), unseg(tail.slice(dot + 1))] : [unseg(tail), '']
+  return { path: rest.slice(0, slash), at: Number(m[1]), etag: m[2], author, authorSub, size, key }
 }
 
 /** Only documents get history; images and other binaries would just fill the bucket. */
@@ -41,9 +47,9 @@ export function keepsHistory(path: string): boolean {
  * Archive the version described by `row` (its current bytes) before it is overwritten or
  * deleted, then drop versions beyond HISTORY_KEEP. Failures here must never block the save.
  */
-export async function archiveVersion(blobs: BlobStore, row: Pick<FileRow, 'path' | 'etag' | 'author' | 'updatedAt'>, bytes: Uint8Array): Promise<void> {
+export async function archiveVersion(blobs: BlobStore, row: Pick<FileRow, 'path' | 'etag' | 'author' | 'authorSub' | 'updatedAt'>, bytes: Uint8Array): Promise<void> {
   if (!keepsHistory(row.path)) return
-  await blobs.put(historyKey(row.path, row.updatedAt, row.etag, row.author), bytes)
+  await blobs.put(historyKey(row.path, row.updatedAt, row.etag, row.author, row.authorSub ?? ''), bytes)
   const versions = await listVersions(blobs, row.path)
   for (const v of versions.slice(HISTORY_KEEP)) await blobs.delete(v.key)
 }
@@ -52,6 +58,17 @@ export async function archiveVersion(blobs: BlobStore, row: Pick<FileRow, 'path'
 export async function listVersions(blobs: BlobStore, path: string): Promise<Version[]> {
   const objects = await blobs.list(`${HISTORY_PREFIX}${path}/`)
   return objects.map(o => parseHistoryKey(o.key, o.size)).filter((v): v is Version => v !== null).sort((a, b) => b.at - a.at || (a.etag < b.etag ? 1 : -1))
+}
+
+/** Move a document's archived versions to another path (a document taken back into a personal space keeps its past with it). */
+export async function moveHistory(blobs: BlobStore, from: string, to: string): Promise<number> {
+  const versions = await listVersions(blobs, from)
+  for (const v of versions) {
+    const bytes = await blobs.get(v.key)
+    if (bytes) await blobs.put(historyKey(to, v.at, v.etag, v.author, v.authorSub), bytes)
+    await blobs.delete(v.key)
+  }
+  return versions.length
 }
 
 export async function readVersion(blobs: BlobStore, path: string, etag: string): Promise<{ version: Version; bytes: Uint8Array } | null> {

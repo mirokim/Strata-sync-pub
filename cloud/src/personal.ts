@@ -13,7 +13,7 @@
  * else has ever saved it: once a colleague has written into it, it is team knowledge.
  */
 import { deleteFile, putFile, normalizeVaultPath, type FileRow, type SyncDeps, type SyncResult } from './sync.js'
-import { listVersions } from './history.js'
+import { listVersions, moveHistory } from './history.js'
 
 export const PERSONAL_PREFIX = '_personal/'
 
@@ -39,16 +39,23 @@ export function splitPersonal(path: string): { owner: string; path: string } | n
   if (!p.startsWith(PERSONAL_PREFIX)) return null
   const rest = p.slice(PERSONAL_PREFIX.length)
   const slash = rest.indexOf('/')
-  if (slash <= 0) return null
+  if (slash <= 0 || slash === rest.length - 1) return null
   return { owner: rest.slice(0, slash), path: rest.slice(slash + 1) }
 }
 
-/** Whether a viewer may see a path: team paths always, personal ones only for their owner. */
+/**
+ * Whether a viewer may see a path: team paths always, personal ones only for their owner. The
+ * personal root itself and an owner folder without a document are nobody's (listing them would
+ * enumerate other people's history).
+ */
 export function canSee(path: string, viewer?: Viewer | null): boolean {
-  const split = splitPersonal(path)
-  if (!split) return true
-  if (!viewer || viewer.service) return false
-  return split.owner === ownerSegment(viewer.sub)
+  const p = path.replace(/\\/g, '/').replace(/^\/+/, '')
+  if (p === PERSONAL_PREFIX.slice(0, -1) || p.startsWith(PERSONAL_PREFIX)) {
+    const split = splitPersonal(p)
+    if (!split || !viewer || viewer.service) return false
+    return split.owner === ownerSegment(viewer.sub)
+  }
+  return true
 }
 
 /** The personal path for a viewer's document; null when the viewer cannot own documents. */
@@ -63,7 +70,38 @@ export function visibleRows<T extends { path: string }>(rows: T[], viewer?: View
   return rows.filter(r => canSee(r.path, viewer))
 }
 
+/**
+ * Whether `text` repeats a stretch of one of the viewer's personal documents. Used before
+ * anything team-visible is written on the viewer's behalf (proposals, member memory notes) so a
+ * routine instruction cannot make an agent carry private thinking into the shared space.
+ * Returns the offending document's path, or null. Windows of LEAK_WINDOW characters.
+ */
+export const LEAK_WINDOW = 80
+export async function leaksPersonal(deps: Pick<SyncDeps, 'meta' | 'blobs'>, viewer: Viewer | undefined, text: string): Promise<string | null> {
+  const root = viewer ? personalRoot(viewer) : null
+  if (!root) return null
+  const probe = text.replace(/\s+/g, ' ').trim()
+  if (probe.length < LEAK_WINDOW) return null
+  const rows = (await deps.meta.listSince(0, 100_000)).filter(r => !r.deleted && r.path.startsWith(root) && /\.md$/i.test(r.path))
+  const dec = new TextDecoder()
+  for (const r of rows) {
+    const bytes = await deps.blobs.get(r.path)
+    if (!bytes) continue
+    const body = dec.decode(bytes).replace(/\s+/g, ' ')
+    if (body.length < LEAK_WINDOW) continue
+    for (let i = 0; i + LEAK_WINDOW <= probe.length; i += Math.floor(LEAK_WINDOW / 2)) {
+      if (body.includes(probe.slice(i, i + LEAK_WINDOW))) return r.path
+    }
+  }
+  return null
+}
+
 export interface VisibilityInput { path: string; personal: boolean; viewer: Viewer; author: string }
+
+/** A version counts as the viewer's own only by stable identity, never by the editable display name. */
+function savedByViewer(authorSub: string, viewer: Viewer): boolean {
+  return authorSub !== '' && authorSub === viewer.sub
+}
 
 /**
  * Move a document between the team space and the viewer's personal space. Returns the new row.
@@ -89,19 +127,21 @@ export async function setVisibility(deps: SyncDeps, input: VisibilityInput): Pro
   const row = await deps.meta.get(src)
   if (!row || row.deleted) return { status: 404, body: { error: 'not found' } }
   if (input.personal) {
-    // Withdrawing from the team: only while every version so far is the viewer's own
+    // Withdrawing from the team: only while every version so far was saved by this very identity
     const others = new Set<string>()
-    if (row.author && row.author !== input.author) others.add(row.author)
-    for (const v of await listVersions(deps.blobs, src)) if (v.author && v.author !== input.author) others.add(v.author)
+    if (!savedByViewer(row.authorSub, input.viewer)) others.add(row.author || 'unknown')
+    for (const v of await listVersions(deps.blobs, src)) if (!savedByViewer(v.authorSub, input.viewer)) others.add(v.author || 'unknown')
     if (others.size > 0) return { status: 403, body: { error: `others have saved this document (${[...others].join(', ')}); it stays with the team` } }
   }
   const existing = await deps.meta.get(dest)
   if (existing && !existing.deleted) return { status: 409, body: { error: `a document already exists at ${dest}`, current: existing } }
   const bytes = await deps.blobs.get(src)
   if (!bytes) return { status: 404, body: { error: 'content missing' } }
-  const put = await putFile(deps, { path: dest, body: bytes, mtime: row.mtime, author: input.author, createOnly: true })
+  const put = await putFile(deps, { path: dest, body: bytes, mtime: row.mtime, author: input.author, authorSub: input.viewer.sub, createOnly: true })
   if (put.status !== 201) return put
-  const del = await deleteFile(deps, src, row.etag, input.author)
+  const del = await deleteFile(deps, src, row.etag, input.author, input.viewer.sub)
   if (del.status !== 200) return del
+  // Taking a document back: its team-era versions go with it, so nothing stays readable at the team path
+  if (input.personal) await moveHistory(deps.blobs, src, dest).catch(e => console.error('[personal] history move failed', src, e))
   return { status: 200, body: { from: src, path: dest, row: put.body as FileRow, personal: input.personal } }
 }

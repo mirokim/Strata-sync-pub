@@ -86,7 +86,8 @@ export function isDescribed(markdown: string): boolean {
 /** Image documents still waiting for a description, oldest first. */
 export function undescribedImages(view: VaultView): { doc: string; image: string; pastedInto?: string; since: number }[] {
   const out: { doc: string; image: string; pastedInto?: string; since: number }[] = []
-  for (const path of view.docs.keys()) {
+  for (const [path, d] of view.docs) {
+    if (!d.tags.includes('image')) continue                     // every image document carries the tag; skips the re-parse for the rest
     const raw = view.contents.get(path)
     if (!raw) continue
     const { data } = parseFrontmatter(raw)

@@ -115,9 +115,9 @@ export class RemoteVault {
   private isPrivate(rel: string): boolean { return rel.split('/').some(seg => seg.startsWith('.')) }
 
   /**
-   * Upload a pasted image and the placeholder image document next to it. The server's vision
-   * model completes the description; the app learns about both files on the next pull, so the
-   * document is announced here right away for the tree and the graph.
+   * Upload a pasted image and the placeholder image document next to it. Whoever is connected
+   * over MCP (a person's client, a member routine) writes the description later; the app learns
+   * about both files on the next pull, so the document is announced here right away.
    */
   async pasteImage(bytes: Uint8Array, ext: string, pastedInto: string): Promise<{ imageRel: string; docRel: string; embed: string }> {
     const target = this.personal.physicalOf(this.rel(pastedInto))
@@ -125,8 +125,10 @@ export class RemoteVault {
     const virtualImage = pastedImagePath(ext, new Date(this.now()))
     const imageRel = isPersonalPath(target) ? (this.personal.personalPath(virtualImage) ?? virtualImage) : virtualImage
     const docRel = imageDocPath(imageRel)
-    await this.write(imageRel, bytes, { createOnly: true })
+    // Document first: the server creates a bare placeholder for any image that lands without one,
+    // and it must find ours (with the "pasted into" link) rather than race it
     await this.write(docRel, enc.encode(renderImageDoc({ imagePath: virtualImage, pastedInto: this.personal.virtualOf(target).path })), { createOnly: true })
+    await this.write(imageRel, bytes, { createOnly: true })
     this.emitChanged(this.personal.virtualOf(docRel).path)
     return { imageRel: this.personal.virtualOf(imageRel).path, docRel: this.personal.virtualOf(docRel).path, embed: `![[${imageRel.split('/').pop()}]]` }
   }
@@ -171,7 +173,7 @@ export class RemoteVault {
       if (this.config.auth !== 'oauth') return
       try {
         const me = await this.client.me()
-        if (!me.service && me.sub) this.personal = new PersonalMapper(personalRootFor(me.sub), p => { const r = this.cache.rows.get(p); return Boolean(r) })
+        if (!me.service && me.sub) this.personal = new PersonalMapper(personalRootFor(me.sub), p => this.cache.rows.has(p))
       } catch { /* stays team-only until the next load */ }
     })()
   }
@@ -358,7 +360,7 @@ export class RemoteVault {
         this.staleAfterConflict.clear() // the app is about to receive every current version
         return {
           files: mdRows().map(r => { const v = this.personal.virtualOf(r.path); return { relativePath: v.path, absolutePath: this.abs(v.path), content: r.content!, mtime: r.mtime, ...(v.personal ? { personal: true } : {}) } }),
-          folders: this.cache.folders().map(f => this.personal.virtualOf(f).path).filter((f, i, a) => a.indexOf(f) === i),
+          folders: [...new Set(this.cache.folders().map(f => this.personal.virtualOf(f).path))].filter(f => !this.personal.isRootFolder(f)),
           imageRegistry: this.imageRegistry(),
         }
       },
@@ -461,9 +463,9 @@ export class RemoteVault {
         const rel = this.personal.physicalOf(virtual)
         const folder = this.rel(destFolderPath)
         const name = rel.slice(rel.lastIndexOf('/') + 1)
-        // A personal document moves inside the personal space
+        // A personal document moves inside the personal space, whatever path the app knew it by
         const virtualDest = folder ? `${folder}/${name}` : name
-        const dest = isPersonalPath(rel) && rel !== virtual ? (this.personal.personalPath(virtualDest) ?? virtualDest) : virtualDest
+        const dest = isPersonalPath(rel) && !isPersonalPath(virtualDest) ? (this.personal.personalPath(virtualDest) ?? virtualDest) : virtualDest
         await this.copyThenDelete(rel, dest)
         return { success: true, newPath: this.abs(this.personal.virtualOf(dest).path) }
       },

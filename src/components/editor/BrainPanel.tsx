@@ -4,7 +4,7 @@
  * point at it and which it points to, proposals that cite it, and documents living in the same
  * neighbourhood. Everything but history comes from the loaded vault (src/lib/brain.ts).
  */
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight, History, Link2, MessageSquare, Sparkles, FileQuestion, ArrowUpRight, EyeOff } from 'lucide-react'
 import type { LoadedDocument } from '@/types'
 import { useVaultStore } from '@/stores/vaultStore'
@@ -129,7 +129,7 @@ function HistorySection({ doc }: { doc: LoadedDocument }) {
   )
 }
 
-export default function BrainPanel({ doc }: { doc: LoadedDocument }) {
+function BrainPanel({ doc }: { doc: LoadedDocument }) {
   const loadedDocuments = useVaultStore(s => s.loadedDocuments)
   const openInEditor = useUIStore(s => s.openInEditor)
   const info: Around | null = useMemo(() => (loadedDocuments ? around(loadedDocuments, doc) : null), [loadedDocuments, doc])
@@ -175,3 +175,6 @@ export default function BrainPanel({ doc }: { doc: LoadedDocument }) {
     </aside>
   )
 }
+
+/** The editor re-renders per keystroke; the panel only cares about the document object and the vault. */
+export default memo(BrainPanel)

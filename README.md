@@ -316,7 +316,7 @@ npm run build:web && npx vite preview --mode web # 브라우저에서 http://127
 ```bash
 claude mcp add --transport http strata https://<worker>/mcp --header "Authorization: Bearer <팀 토큰>"
 ```
-툴: `vault_recall`(주제에 대해 팀이 아는 것 한 묶음), `vault_search`(BM25 + 시맨틱 RRF), `vault_read`(이미지 경로면 이미지 + 이미지 문서), `vault_history`(버전과 diff), `images_undescribed`(설명 없는 이미지 목록 — 클라이언트가 보고 써 넣음), `vault_list`, `graph_lint`, `graph_suggest_links`, `vault_propose`, `vault_proposals`, `vault_promote`, `vault_write`, `vault_changes`, `members_list`, `member_remember`, `member_report`; 프롬프트 `member`. 쓰기는 앱에서 저장한 것과 똑같이 AI 팀원 반응을 일으킵니다.
+툴: `vault_recall`(주제에 대해 팀이 아는 것 한 묶음), `vault_search`(BM25 + 시맨틱 RRF), `vault_read`(이미지 경로면 이미지 + 이미지 문서), `vault_history`(버전과 diff), `images_undescribed`(설명 없는 이미지 목록 — 클라이언트가 보고 써 넣음), `vault_visibility`(개인 문서 공개/회수), `vault_list`, `graph_lint`, `graph_suggest_links`, `vault_propose`, `vault_proposals`, `vault_promote`, `vault_write`, `vault_changes`, `members_list`, `member_remember`, `member_report`; 프롬프트 `member`. 쓰기는 앱에서 저장한 것과 똑같이 AI 팀원 반응을 일으킵니다.
 
 **봇** — Slack/Telegram 봇의 `/propose`는 데스크톱 앱이 꺼져 있어도 `STRATA_SERVER_URL`·`STRATA_TEAM_TOKEN`이 있으면 Worker의 `POST /v1/propose`로 기록합니다(`bot/.env.example`). 봇의 `/ask` RAG는 아직 로컬 볼트(데스크톱 앱)가 필요합니다.
 
@@ -378,6 +378,9 @@ MCP 툴: `vault_propose`(제안 쓰기, 관련 문서 위키링크 포함), `gra
 - **저장에 반응한다** (선택) — 범위 안의 문서가 서버에 저장되면 Worker Queue가 팀원별로 한 번씩 LLM을 호출해 `_members/<이름>/<문서 경로>`에 짧은 소견을 남깁니다: 무엇이 바뀌는지, 자기 기억·다른 문서와 어디서 충돌하는지, 질문 하나. 다음 pull에 모두에게 도착합니다.
 
 팀원이 직접 쓰는 문서는 자기 기억 노트뿐입니다(`member_remember`). 나머지는 전부 제안이고, 사람이 승격합니다.
+
+### 개인 문서 — 같은 볼트 안에서 나만 보는 글
+아직 정리 안 된 생각은 편집기 상단의 사람 아이콘으로 **Only me**로 둡니다. 문서는 원래 폴더에 그대로 있고, 팀 문서와 서로 링크되고, **내** 그래프·검색·회상엔 팀 문서와 같이 섞여 나옵니다. 남한테는 존재하지 않습니다 — 서버가 로그인 계정 기준으로 목록·검색·그래프·린트·야간 임베딩·역사·파일 읽기 전부를 거릅니다(저장은 `_personal/<계정>/…`). 다시 누르면 그 자리에서 팀 문서가 되고, 팀 문서를 개인으로 되돌리는 건 나 혼자만 저장한 문서일 때만 됩니다. MCP에서는 `vault_write`의 `personal: true`, `vault_visibility`. 제안과 팀원 기억 노트는 내 개인 문서의 문장을 그대로 옮기면 거부합니다. 구글 로그인이 필요합니다(팀 토큰은 주인이 없음).
 
 반응 비용 통제: 같은 내용은 한 번만, 경로당 6시간 쿨다운, 400자 미만·`_`/`.` 폴더·충돌 사본·봇 저장은 제외, 문서당 12,000자 캡. `REACTION_FOLDERS`로 대상 폴더를 좁힐 수 있고, 모델은 `REACTION_MODEL`(기본 `claude-opus-5`). 켜기:
 ```bash
@@ -873,7 +876,7 @@ npm run build:web && npx vite preview --mode web # connect the browser to http:/
 ```bash
 claude mcp add --transport http strata https://<worker>/mcp --header "Authorization: Bearer <team token>"
 ```
-Tools: `vault_recall` (what the team knows about a topic, one bundle), `vault_search` (BM25 + semantic, RRF), `vault_read` (an image path returns the image and its image document), `vault_history` (versions and a diff), `images_undescribed` (images still without words — the client looks and writes), `vault_list`, `graph_lint`, `graph_suggest_links`, `vault_propose`, `vault_proposals`, `vault_promote`, `vault_write`, `vault_changes`, `members_list`, `member_remember`, `member_report`; prompt `member`. Writes trigger member reactions exactly like saves from the app.
+Tools: `vault_recall` (what the team knows about a topic, one bundle), `vault_search` (BM25 + semantic, RRF), `vault_read` (an image path returns the image and its image document), `vault_history` (versions and a diff), `images_undescribed` (images still without words — the client looks and writes), `vault_visibility` (share a personal document / take one back), `vault_list`, `graph_lint`, `graph_suggest_links`, `vault_propose`, `vault_proposals`, `vault_promote`, `vault_write`, `vault_changes`, `members_list`, `member_remember`, `member_report`; prompt `member`. Writes trigger member reactions exactly like saves from the app.
 
 **Bots** — the Slack/Telegram `/propose` command records to the Worker's `POST /v1/propose` when the desktop app is not running and `STRATA_SERVER_URL` / `STRATA_TEAM_TOKEN` are set (`bot/.env.example`). The bots' `/ask` RAG still needs a local vault (the desktop app).
 
@@ -935,6 +938,9 @@ A member works in two ways.
 - **Reacting to saves** (optional) — when a document in scope reaches the server, a Worker Queue job makes one LLM call per member and leaves a short remark at `_members/<Name>/<document path>`: what this changes, what it collides with in the member's memory or other documents, one question. It arrives on every machine with the next pull.
 
 The only document a member writes itself is its memory note (`member_remember`). Everything else is a proposal a person promotes.
+
+### Personal documents — yours alone, inside the same vault
+Thinking that is not ready yet stays with you: the person icon in the editor marks a document **Only me**. It keeps its folder, links to and from team documents, and appears in *your* graph, search and recall next to everything else. For everyone else it does not exist — the server filters every listing, search, graph, lint, nightly embedding, history and file read by the signed-in identity (stored under `_personal/<owner>/…`). Click again to share it in place; taking a team document back is allowed only while nobody else has ever saved it. Over MCP: `vault_write` with `personal: true`, `vault_visibility`. Proposals and member memory notes refuse text copied from your personal documents. Needs Google sign-in (the team token has no owner).
 
 Reaction cost controls: one reaction per content version, a 6-hour cooldown per path, nothing for files under 400 characters, `_`/`.` folders, conflict copies or bot writes, 12,000-character cap per document. `REACTION_FOLDERS` narrows the scope; `REACTION_MODEL` picks the model (default `claude-opus-5`). Enable with:
 ```bash

@@ -12,7 +12,7 @@ export class MemoryMeta implements MetaStore {
   }
   async head() { return this.seq }
   async upsert(row: Omit<FileRow, 'seq'>) {
-    const stored = { ...row, seq: ++this.seq }
+    const stored = { ...row, authorSub: row.authorSub ?? '', seq: ++this.seq }
     this.rows.set(row.path, stored)
     return stored
   }

@@ -15,6 +15,10 @@ export interface LinkIndex {
   out: Map<string, Set<string>>
   in: Map<string, Set<string>>
   byId: Map<string, LoadedDocument>
+  /** Ids of documents in system folders (`_agent`, `_members`, dot-folders). */
+  system: Set<string>
+  /** Per document: its team neighbours (both directions) plus `#tags` — the neighbourhood signature `around()` compares. */
+  sig: Map<string, Set<string>>
 }
 
 /** `Folder/Doc Name|alias#Heading^block` → `doc name` (Obsidian resolves by basename). */
@@ -82,7 +86,17 @@ export function buildLinkIndex(docs: LoadedDocument[]): LinkIndex {
       inn.get(target.id)!.add(d.id)
     }
   }
-  const index = { out, in: inn, byId }
+  const system = new Set(docs.filter(isSystemDoc).map(d => d.id))
+  const sig = new Map<string, Set<string>>()
+  for (const d of docs) {
+    if (system.has(d.id)) continue
+    const s = new Set<string>()
+    for (const id of out.get(d.id)!) if (!system.has(id)) s.add(id)
+    for (const id of inn.get(d.id)!) if (!system.has(id)) s.add(id)
+    for (const t of d.tags) s.add(`#${t.toLowerCase()}`)
+    sig.set(d.id, s)
+  }
+  const index = { out, in: inn, byId, system, sig }
   indexCache = { docs, index }
   return index
 }
@@ -91,9 +105,14 @@ export interface Remark { member: string; doc: LoadedDocument; body: string }
 
 /** Frontmatter and the title line stripped — the remark text itself. */
 export function remarkBody(raw: string): string {
-  const body = raw.replace(/^---[\s\S]*?\n---\r?\n?/, '')
-  const lines = body.split('\n')
-  const kept = lines.filter((line, i) => !(i === 0 && /^#\s/.test(line)) && !(i <= 2 && /^Saved by .* · memory: /.test(line)))
+  const body = raw.replace(/^---[\s\S]*?\n---\r?\n?/, '').replace(/^\s*\n/, '')
+  // The title line and the "Saved by … · memory: …" byline are chrome, wherever blank lines put them
+  let title = false, byline = false
+  const kept = body.split('\n').filter(line => {
+    if (!title && /^#\s/.test(line)) { title = true; return false }
+    if (!byline && /^Saved by .* · memory: /.test(line)) { byline = true; return false }
+    return true
+  })
   return kept.join('\n').trim()
 }
 
@@ -126,24 +145,22 @@ export function around(docs: LoadedDocument[], doc: LoadedDocument, similarLimit
   const index = buildLinkIndex(docs)
   const byTitle = (a: LoadedDocument, b: LoadedDocument) => docTitle(a).localeCompare(docTitle(b))
   const ids = (s: Set<string> | undefined) => [...(s ?? [])].map(id => index.byId.get(id)!).filter(Boolean)
-  const teamIds = (s: Set<string> | undefined) => ids(s).filter(d => !isSystemDoc(d)).map(d => d.id)
   const linkedFromAll = ids(index.in.get(doc.id))
-  const linkedFrom = linkedFromAll.filter(d => !isSystemDoc(d)).sort(byTitle)
-  const linksTo = ids(index.out.get(doc.id)).filter(d => !isSystemDoc(d)).sort(byTitle)
+  const linkedFrom = linkedFromAll.filter(d => !index.system.has(d.id)).sort(byTitle)
+  const linksTo = ids(index.out.get(doc.id)).filter(d => !index.system.has(d.id)).sort(byTitle)
   const proposals = linkedFromAll.filter(isProposalDoc).sort((a, b) => (b.mtime ?? 0) - (a.mtime ?? 0))
 
-  // Similar: share of neighbours (both directions) and tags — Jaccard, no text needed
-  const mine = new Set([...teamIds(index.out.get(doc.id)), ...teamIds(index.in.get(doc.id)), ...doc.tags.map(t => `#${t.toLowerCase()}`)])
+  // Similar: share of neighbours (both directions) and tags — Jaccard over the precomputed signatures
+  const mine = index.sig.get(doc.id) ?? new Set<string>()
   const similar: Around['similar'] = []
   if (mine.size > 0) {
-    for (const d of docs) {
-      if (d.id === doc.id || isSystemDoc(d)) continue
-      const theirs = new Set([...teamIds(index.out.get(d.id)), ...teamIds(index.in.get(d.id)), ...d.tags.map(t => `#${t.toLowerCase()}`)])
+    for (const [id, theirs] of index.sig) {
+      if (id === doc.id) continue
       let shared = 0
       for (const x of mine) if (theirs.has(x)) shared++
       if (shared === 0) continue
       const union = mine.size + theirs.size - shared
-      similar.push({ doc: d, score: shared / union, shared })
+      similar.push({ doc: index.byId.get(id)!, score: shared / union, shared })
     }
     similar.sort((a, b) => b.score - a.score || b.shared - a.shared || byTitle(a.doc, b.doc))
   }

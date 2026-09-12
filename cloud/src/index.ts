@@ -24,7 +24,7 @@ import { handleAuth, SCOPE, type AuthEnv, type Identity } from './auth.js'
 import { readMembers, saveMemberDefinitions, validateMembers, TEMPLATES, type MembersConfig } from './members.js'
 import { listVersions, readVersion, diffLines } from './history.js'
 import { ensureImageDoc, isImagePath } from './images.js'
-import { canSee, visibleRows, setVisibility, type Viewer } from './personal.js'
+import { canSee, isPersonalPath, visibleRows, setVisibility, type Viewer } from './personal.js'
 
 export interface Env extends AuthEnv {
   VAULT: R2Bucket
@@ -286,7 +286,7 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
       })
       let rel = proposal.relPath
       for (let n = 2; (await deps.meta.get(rel))?.deleted === false; n++) rel = proposal.relPath.replace(/\.md$/, `-${n}.md`)
-      const r = await putFile(deps, { path: rel, body: new TextEncoder().encode(proposal.content), mtime: Date.now(), author: author || 'bot', createOnly: true })
+      const r = await putFile(deps, { path: rel, body: new TextEncoder().encode(proposal.content), mtime: Date.now(), author: author || 'bot', authorSub: identity.sub, createOnly: true })
       if (r.status >= 400) return toResponse(r)
       invalidateVaultView()
       return json(200, { ok: true, path: rel, title: proposal.title })
@@ -297,7 +297,8 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
       const body = await req.json().catch(() => ({})) as { query?: unknown; topK?: unknown }
       if (typeof body.query !== 'string') return json(400, { error: 'query (string) required' })
       const hits = await semanticSearch(embedder(env.AI), vectorQuery(env.VECTORS), body.query, Number(body.topK ?? 10))
-      return json(200, { hits: visibleRows(hits, viewer) })
+      const live = await Promise.all(visibleRows(hits, viewer).map(async h => ((await deps.meta.get(h.path))?.deleted === false ? h : null)))
+      return json(200, { hits: live.filter((h): h is NonNullable<typeof h> => h !== null) })
     }
     if (url.pathname === '/v1/lint/run' && req.method === 'POST') {
       // Manual trigger of the nightly batch (same code the cron runs)
@@ -309,11 +310,14 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
     }
     if (url.pathname === '/v1/history' && req.method === 'GET') {
       const path = normalizeVaultPath(url.searchParams.get('path'))
-      if (!path) return json(400, { error: 'path required' })
+      if (!path || !/\.md$/i.test(path)) return json(400, { error: 'path of a document required' })
       if (!canSee(path, viewer)) return json(404, { error: 'not found' })
+      // A deleted team document's past is not public reading matter — only its owner (personal) still sees it
+      const liveRow = await deps.meta.get(path)
+      if ((!liveRow || liveRow.deleted) && !isPersonalPath(path)) return json(404, { error: 'not found' })
       const etag = url.searchParams.get('etag')
       if (!etag) {
-        const row = await deps.meta.get(path)
+        const row = liveRow
         const versions = (await listVersions(deps.blobs, path)).map(v => ({ etag: v.etag, at: v.at, author: v.author, size: v.size }))
         return json(200, { path, current: row && !row.deleted ? { etag: row.etag, at: row.updatedAt, author: row.author, size: row.size } : null, versions })
       }
@@ -330,6 +334,9 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
       return json(200, { config: await readMembers(deps), templates: TEMPLATES, reactionsEnabled: Boolean(env.REACTION_QUEUE && env.ANTHROPIC_API_KEY) })
     }
     if (url.pathname === '/v1/members' && req.method === 'PUT') {
+      // Routine instructions run inside every teammate's agent with that teammate's identity —
+      // only a person can change them, and their identity is on record as the author
+      if (identity.service) return json(403, { error: 'sign in to edit the AI members (the team token cannot)' })
       const body = await req.json().catch(() => null)
       const error = validateMembers(body)
       if (error) return json(400, { error })
@@ -364,13 +371,13 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
           ifMatch: parseIfMatch(req.headers.get('if-match')),
           createOnly: req.headers.get('if-none-match') === '*',
           mtime: Number(req.headers.get('x-mtime')),
-          author,
+          author, authorSub: identity.sub,
         })
         // A new version of a document → queue member reactions (fire-and-forget)
         if ((result.status === 200 || result.status === 201) && result.body) enqueueReaction(env, ctx, deps, result.body as FileRow)
         return toResponse(result)
       }
-      if (req.method === 'DELETE') return toResponse(await deleteFile(deps, path, parseIfMatch(req.headers.get('if-match')), author))
+      if (req.method === 'DELETE') return toResponse(await deleteFile(deps, path, parseIfMatch(req.headers.get('if-match')), author, identity.sub))
       return json(405, { error: 'method not allowed' })
     }
     return json(404, { error: 'not found' })

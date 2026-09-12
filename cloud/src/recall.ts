@@ -54,8 +54,10 @@ export interface RecallResult {
 
 /** BM25 + semantic, fused by rank so the two score scales do not fight. Shared with vault_search. */
 export async function fusedSearch(deps: RecallDeps, view: VaultView, query: string, topK: number, exclude: Set<string> = new Set()): Promise<{ hits: FusedHit[]; semantic: boolean }> {
+  // The semantic round trip overlaps the BM25 build (seconds on a cold index) instead of following it
+  const semanticCall = deps.semanticSearch ? deps.semanticSearch(query, topK * 3).catch(() => [] as SearchHit[]) : Promise.resolve([] as SearchHit[])
   const bm25 = view.bm25().search(query, topK * 2, exclude)
-  const raw = deps.semanticSearch ? await deps.semanticSearch(query, topK * 3).catch(() => []) : []
+  const raw = await semanticCall
   const seen = new Set<string>()
   const semantic = raw.filter(h => h.score >= SEMANTIC_MIN_SCORE && !exclude.has(h.path) && view.docs.has(h.path) && !seen.has(h.path) && seen.add(h.path)).slice(0, topK)
   const rank = new Map<string, { score: number; semantic: boolean; bm25: boolean }>()
@@ -121,8 +123,7 @@ export async function recall(deps: RecallDeps, options: RecallOptions): Promise<
 
   // Neighbours: documents linked from or to a seed, ranked by seeds touched, query score, link count
   const graph = view.graph()
-  const byId = new Map<string, ParsedVaultDoc>()
-  for (const d of view.docs.values()) byId.set(d.id, d)
+  const byId = view.byId()
   const cand = new Map<string, { seeds: Set<string>; links: number }>()
   const touch = (id: string, seed: ParsedVaultDoc, count: number) => {
     if (seedIds.has(id)) return
@@ -132,8 +133,8 @@ export async function recall(deps: RecallDeps, options: RecallOptions): Promise<
     c.seeds.add(seed.title); c.links += count; cand.set(id, c)
   }
   for (const seed of seeds) {
-    for (const [target, count] of graph.outRefs.get(seed.id) ?? []) touch(target, seed, count)
-    for (const [source, refs] of graph.outRefs) { const count = refs.get(seed.id); if (count) touch(source, seed, count) }
+    // adjacency is undirected: each neighbour once, with whichever direction's reference count applies
+    for (const n of graph.adjacency.get(seed.id) ?? []) touch(n, seed, graph.outRefs.get(seed.id)?.get(n) ?? graph.outRefs.get(n)?.get(seed.id) ?? 1)
   }
   const neighbours = [...cand.entries()].map(([id, c]) => {
     const d = byId.get(id)!
@@ -145,9 +146,10 @@ export async function recall(deps: RecallDeps, options: RecallOptions): Promise<
   const config = await readMembers(deps)
   const scored: { member: string; heading: string; text: string; score: number }[] = []
   for (const m of config.members.filter(x => x.enabled)) {
-    const bytes = await deps.blobs.get(memberNotePath(m))
-    if (!bytes) continue
-    for (const s of splitNoteSections(new TextDecoder().decode(bytes))) {
+    // Memory notes are vault documents: already in the view, no round trip needed
+    const note = view.contents.get(memberNotePath(m))
+    if (!note) continue
+    for (const s of splitNoteSections(note)) {
       const score = scoreText(queryTerms, `${s.heading} ${s.text}`)
       if (score > 0) scored.push({ member: m.name, heading: s.heading, text: s.text.slice(0, 800), score })
     }

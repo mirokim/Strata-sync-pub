@@ -41,7 +41,7 @@ export async function applyR2Events(deps: SyncDeps, messages: R2EventMessage[], 
       if (!current || current.deleted) { result.skipped++; continue }
       // Guard against a stale event ordering: if the object is back, leave the row alone.
       if (await deps.blobs.get(path)) { result.skipped++; continue }
-      await deps.meta.upsert({ path, etag: current.etag, size: 0, mtime: current.mtime, author: EXTERNAL_AUTHOR, deleted: true, updatedAt: now })
+      await deps.meta.upsert({ path, etag: current.etag, size: 0, mtime: current.mtime, author: EXTERNAL_AUTHOR, authorSub: '', deleted: true, updatedAt: now })
       result.tombstoned++
       continue
     }
@@ -52,7 +52,7 @@ export async function applyR2Events(deps: SyncDeps, messages: R2EventMessage[], 
     const etag = await sha256Hex(bytes)
     if (current && !current.deleted && current.etag === etag) { result.skipped++; continue }   // our own API write
     const mtime = msg.eventTime ? Date.parse(msg.eventTime) || now : now
-    await deps.meta.upsert({ path, etag, size: bytes.byteLength, mtime, author: EXTERNAL_AUTHOR, deleted: false, updatedAt: now })
+    await deps.meta.upsert({ path, etag, size: bytes.byteLength, mtime, author: EXTERNAL_AUTHOR, authorSub: '', deleted: false, updatedAt: now })
     result.indexed++
   }
   return result

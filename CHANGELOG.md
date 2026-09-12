@@ -17,6 +17,14 @@ into, a graph over it, and AI members who read it through a role of their own.
   diff. Member reactions now respond to the diff, not the whole document.
 - **Activity heat** — graph colour mode "Activity": recent edits, remarks and proposals warm a
   document; untouched ones stay grey.
+- **Personal documents** — a document can be yours alone: it stays in its folder, links and is
+  searched, recalled and graphed like any other for you, and does not exist for anyone else (the
+  server filters every listing, search, lint, embedding, history and file read by the signed-in
+  identity; stored under `_personal/<owner>/`). Editor toggle "Only me" ↔ share with the team;
+  taking a team document back is allowed only while nobody else has ever saved it. MCP:
+  `vault_write` with `personal: true`, `vault_visibility`; `/v1/visibility`. Proposals and member
+  memory notes refuse text copied from your personal documents. Needs Google sign-in (the team
+  token has no owner). `cloud/src/personal.ts`, `src/web/personal.ts`.
 - **Image documents** — paste or drop an image into the editor: it is uploaded to
   `attachments/` with a placeholder document next to it linking back (images uploaded any other
   way get one from the server). No vision model on the server: MCP `images_undescribed` lists

@@ -21,7 +21,7 @@ import type { SearchHit } from './nightly.js'
 import { recall, fusedSearch } from './recall.js'
 import { listVersions, readVersion, previousVersion, diffLines } from './history.js'
 import { isImagePath, imageDocPath, mimeOf, undescribedImages, DESCRIBE_GUIDE } from './images.js'
-import { canSee, isPersonalPath, toPersonalPath, setVisibility, type Viewer } from './personal.js'
+import { canSee, isPersonalPath, toPersonalPath, setVisibility, leaksPersonal, type Viewer } from './personal.js'
 
 export interface McpDeps extends SyncDeps {
   /** Semantic search when Vectorize is configured; otherwise BM25 only. */
@@ -86,7 +86,7 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       const visible = [...view.docs.entries()].filter(([p]) => canSee(p, deps.viewer))
       const items = visible
         .filter(([p]) => !folder || p === folder || p.startsWith(folder + '/'))
-        .sort((a, b) => a[0].localeCompare(b[0]))
+        .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
         .slice(0, limit)
         .map(([path, d]) => ({ path, title: d.title, tags: d.tags, modified: d.mtime ? new Date(d.mtime).toISOString() : null, proposal: isProposalPath(d.folderPath) || undefined, personal: isPersonalPath(path) || undefined }))
       return text({ count: items.length, total: visible.length, items })
@@ -125,9 +125,10 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
     }
     case 'vault_history': {
       const path = normalizeVaultPath(String(args.path ?? ''))
-      if (!path) return fail('path required')
+      if (!path || !/\.md$/i.test(path)) return fail('path of a document required')
       if (!canSee(path, deps.viewer)) return fail(`${path}: not found`)
       const row = await deps.meta.get(path)
+      if ((!row || row.deleted) && !isPersonalPath(path)) return fail(`${path}: not found`)
       const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 50)
       const versions = await listVersions(deps.blobs, path)
       const listed = versions.slice(0, limit).map(v => ({ etag: v.etag, at: new Date(v.at).toISOString(), author: v.author, size: v.size }))
@@ -167,6 +168,8 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
     case 'vault_propose': {
       const title = String(args.title ?? '').trim(), body = String(args.body ?? '').trim()
       if (!title || !body) return fail('title and body are required')
+      const leak = await leaksPersonal(deps, deps.viewer, `${title}\n${body}`)
+      if (leak) return fail(`this proposal repeats text from the personal document ${leak}; proposals are visible to the whole team — rephrase, or publish that document first (vault_visibility)`)
       const proposal = buildProposal({
         title, body,
         tags: Array.isArray(args.tags) ? (args.tags as unknown[]).map(String) : [],
@@ -175,7 +178,7 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       })
       let rel = proposal.relPath
       for (let n = 2; (await deps.meta.get(rel))?.deleted === false; n++) rel = proposal.relPath.replace(/\.md$/, `-${n}.md`)
-      const r = await putFile(deps, { path: rel, body: enc.encode(proposal.content), mtime: Date.now(), author, createOnly: true })
+      const r = await putFile(deps, { path: rel, body: enc.encode(proposal.content), mtime: Date.now(), author, authorSub: deps.viewer?.sub, createOnly: true })
       if (r.status >= 400) return fail(`could not write proposal (${r.status})`)
       invalidateVaultView()
       return text({ path: rel, title: proposal.title, note: 'Saved to _agent/. A person promotes it in the app or with vault_promote.' })
@@ -192,13 +195,14 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       const current = await getFile(deps, rel)
       if (current.status !== 200 || !('bytes' in current) || !current.bytes) return fail(`proposal not found: ${rel}`)
       const dest = promotedPath(rel, typeof args.destFolder === 'string' ? args.destFolder : '')
+      if (isPersonalPath(dest) || !normalizeVaultPath(dest)) return fail('a proposal is promoted into the team vault, not into a personal space')
       const existing = await deps.meta.get(dest)
       if (existing && !existing.deleted) return fail(`destination already exists: ${dest}`)
-      const written = await putFile(deps, { path: dest, body: enc.encode(stripProposalFrontmatter(dec.decode(current.bytes))), mtime: Date.now(), author, createOnly: true })
+      const written = await putFile(deps, { path: dest, body: enc.encode(stripProposalFrontmatter(dec.decode(current.bytes))), mtime: Date.now(), author, authorSub: deps.viewer?.sub, createOnly: true })
       if (written.status >= 400) return fail(`could not write ${dest} (${written.status})`)
       if (written.body) deps.onWrite?.(written.body as FileRow)
       const etag = (current.headers?.ETag ?? '').replace(/^"|"$/g, '')
-      await deleteFile(deps, rel, etag || undefined, author)
+      await deleteFile(deps, rel, etag || undefined, author, deps.viewer?.sub)
       invalidateVaultView()
       return text({ promoted: rel, to: dest })
     }
@@ -212,7 +216,7 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       }
       if (!canSee(rel, deps.viewer)) return fail(`${rel}: not your personal space`)
       const content = String(args.content ?? '')
-      const r = await putFile(deps, { path: rel, body: enc.encode(content), mtime: Date.now(), author })
+      const r = await putFile(deps, { path: rel, body: enc.encode(content), mtime: Date.now(), author, authorSub: deps.viewer?.sub })
       if (r.status >= 400) return fail(`write failed (${r.status})`)
       if (r.body) deps.onWrite?.(r.body as FileRow)
       invalidateVaultView()
@@ -258,6 +262,8 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       if (!member) return fail(`unknown member: ${String(args.member ?? '')}`)
       const body = String(args.text ?? '').trim().slice(0, 8_000)
       if (!body) return fail('text is required')
+      const leak = await leaksPersonal(deps, deps.viewer, body)
+      if (leak) return fail(`this note repeats text from the personal document ${leak}; memory notes are visible to the whole team — keep it out, or publish that document first`)
       const entry = await appendToMemory(deps, member, body, author)
       return text({ path: memberNotePath(member), appended: entry.length, link: `[[${memberNoteName(member)}]]` })
     }
