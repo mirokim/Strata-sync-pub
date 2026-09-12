@@ -168,6 +168,22 @@ describe('callTool', () => {
     expect((await callTool(mdeps, 'vault_search', { query: '  ' })).isError).toBe(true)
   })
 
+  it('vault_search ignores weak semantic hits and counts a document once however many chunks matched', async () => {
+    const noisy: McpDeps = { ...mdeps, semanticSearch: async () => [
+      { path: 'active/Enemy AI.md', docId: 'x', heading: 'a', score: 0.31 }, // noise from a half-built index
+      { path: 'active/Stamina.md', docId: 'y', heading: 'h1', score: 0.8 },
+      { path: 'active/Stamina.md', docId: 'y', heading: 'h2', score: 0.7 },
+      { path: 'active/Stamina.md', docId: 'y', heading: 'h3', score: 0.6 },
+    ] }
+    const r = parse(await callTool(noisy, 'vault_search', { query: 'melee', topK: 3 }))
+    const paths = r.results.map((h: { path: string }) => h.path)
+    expect(paths).toContain('active/Combat System.md')
+    expect(paths.filter((p: string) => p === 'active/Stamina.md')).toHaveLength(1)
+    expect(paths).not.toContain('active/Enemy AI.md')
+    // three chunks of one document count as one vote: the BM25 hit is not outranked
+    expect(r.results[0].score).toBeCloseTo(r.results[1].score, 4)
+  })
+
   it('vault_search survives a failing semantic backend', async () => {
     const broken: McpDeps = { ...mdeps, semanticSearch: async () => { throw new Error('vectorize down') } }
     const r = parse(await callTool(broken, 'vault_search', { query: 'combat' }))

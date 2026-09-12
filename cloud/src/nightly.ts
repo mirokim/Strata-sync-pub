@@ -24,7 +24,11 @@ export const REPORT_RETENTION_DAYS = 30
 /** Section text cap — bge-m3 handles 8k tokens; this keeps one chunk well inside that. */
 const CHUNK_MAX_CHARS = 4500
 const CHUNK_MIN_CHARS = 30
-const EMBED_BATCH = 20
+/**
+ * Chunks per Workers AI call. Chunks of several documents share a call: on the Free plan one
+ * invocation gets ~50 subrequests, and every embed + upsert pair is two of them.
+ */
+const EMBED_BATCH = 50
 
 export interface VectorItem { id: string; values: number[]; metadata: Record<string, string> }
 
@@ -40,12 +44,23 @@ export interface NightlyDeps extends SyncDeps {
   log?: (msg: string) => void
   /** IANA zone used to date the report file name (default Asia/Seoul — the cron fires at 04:00 there). */
   timeZone?: string
+  /**
+   * Documents to (re)embed per run (default 150). The index is checkpointed after every batch,
+   * so a run that is cut off by the platform still leaves progress behind and the next run
+   * continues where it stopped instead of starting over.
+   */
+  maxEmbedDocsPerRun?: number
+  /**
+   * Embed/upsert call pairs per run (default 22 — under the Free plan's 50-subrequest cap once
+   * index checkpoints and deletes are counted). Runs stop cleanly at the budget with `pending`.
+   */
+  maxEmbedBatchesPerRun?: number
 }
 
 export interface NightlyResult {
   docs: number
   lint: { reportPath: string; errors: number; warnings: number; skipped: string[]; prunedReports: number }
-  embeddings: { skipped: boolean; docsEmbedded: number; chunksUpserted: number; docsRemoved: number; chunksDeleted: number; error?: string }
+  embeddings: { skipped: boolean; docsEmbedded: number; chunksUpserted: number; docsRemoved: number; chunksDeleted: number; pending: number; error?: string }
 }
 
 interface EmbedIndex { version: 1; docs: Record<string, { etag: string; chunks: number }> }
@@ -140,7 +155,8 @@ export async function runNightly(deps: NightlyDeps): Promise<NightlyResult> {
   log(`[nightly] lint: ${report.summary.bySeverity.error} errors, ${report.summary.bySeverity.warn} warnings → ${reportPath} (${prunedReports} old reports pruned)`)
 
   // ── Embeddings ───────────────────────────────────────────────────────────
-  const embeddings: NightlyResult['embeddings'] = { skipped: true, docsEmbedded: 0, chunksUpserted: 0, docsRemoved: 0, chunksDeleted: 0 }
+  const embeddings: NightlyResult['embeddings'] = { skipped: true, docsEmbedded: 0, chunksUpserted: 0, docsRemoved: 0, chunksDeleted: 0, pending: 0 }
+  const maxDocs = Math.max(1, deps.maxEmbedDocsPerRun ?? 150)
   if (deps.embed && deps.vectors) {
     embeddings.skipped = false
     const index: EmbedIndex = (await readJson<EmbedIndex>(deps, EMBED_INDEX_KEY)) ?? { version: 1, docs: {} }
@@ -156,7 +172,11 @@ export async function runNightly(deps: NightlyDeps): Promise<NightlyResult> {
         delete index.docs[path]
       }
 
-      // Changed documents → re-embed
+      // Changed documents → re-embed. Chunks of consecutive documents are packed into shared
+      // AI calls; a document is recorded in the index only once its last chunk is upserted, and
+      // the index is checkpointed after every batch so an interrupted run resumes cleanly.
+      type Pending = { path: string; etag: string; doc: ParsedVaultDoc; chunks: { heading: string; text: string }[] }
+      const queue: Pending[] = []
       for (const [path, row] of liveByPath) {
         const prev = index.docs[path]
         if (prev && prev.etag === row.etag) continue
@@ -168,20 +188,48 @@ export async function runNightly(deps: NightlyDeps): Promise<NightlyResult> {
           continue
         }
         const chunks = chunkDocument(doc)
-        if (prev && prev.chunks > chunks.length) await deps.vectors.deleteByIds(chunkIds(path, prev.chunks).slice(chunks.length))
-        for (let i = 0; i < chunks.length; i += EMBED_BATCH) {
-          const batch = chunks.slice(i, i + EMBED_BATCH)
-          const vectors = await deps.embed(batch.map(c => c.text))
-          await deps.vectors.upsert(batch.map((c, j) => ({
-            id: chunkId(path, i + j),
-            values: vectors[j],
-            metadata: { path, docId: doc.id, heading: c.heading.slice(0, 200) },
-          })))
-          embeddings.chunksUpserted += batch.length
-        }
-        index.docs[path] = { etag: row.etag, chunks: chunks.length }
-        embeddings.docsEmbedded++
+        if (chunks.length === 0) { index.docs[path] = { etag: row.etag, chunks: 0 }; embeddings.docsEmbedded++; continue }
+        queue.push({ path, etag: row.etag, doc, chunks })
       }
+
+      const maxBatches = Math.max(1, deps.maxEmbedBatchesPerRun ?? 22)
+      let batches = 0
+      let cursor = 0 // documents fully handled so far
+      while (cursor < queue.length && embeddings.docsEmbedded < maxDocs && batches < maxBatches) {
+        // Take whole documents until the batch is full (a document never spans two batches)
+        const items: { d: Pending; i: number }[] = []
+        let end = cursor
+        while (end < queue.length && end - cursor < maxDocs - embeddings.docsEmbedded && items.length + queue[end].chunks.length <= EMBED_BATCH) {
+          queue[end].chunks.forEach((_, i) => items.push({ d: queue[end], i }))
+          end++
+        }
+        if (end === cursor) { // a single document larger than one batch: send it alone, in slices
+          const d = queue[cursor]
+          for (let i = 0; i < d.chunks.length; i += EMBED_BATCH) {
+            const slice = d.chunks.slice(i, i + EMBED_BATCH)
+            const vectors = await deps.embed(slice.map(c => c.text))
+            await deps.vectors.upsert(slice.map((c, j) => ({ id: chunkId(d.path, i + j), values: vectors[j], metadata: { path: d.path, docId: d.doc.id, heading: c.heading.slice(0, 200) } })))
+            embeddings.chunksUpserted += slice.length
+            batches++
+          }
+          end = cursor + 1
+        } else {
+          const vectors = await deps.embed(items.map(it => it.d.chunks[it.i].text))
+          await deps.vectors.upsert(items.map((it, j) => ({ id: chunkId(it.d.path, it.i), values: vectors[j], metadata: { path: it.d.path, docId: it.d.doc.id, heading: it.d.chunks[it.i].heading.slice(0, 200) } })))
+          embeddings.chunksUpserted += items.length
+          batches++
+        }
+        for (let k = cursor; k < end; k++) {
+          const d = queue[k]
+          const prev = index.docs[d.path]
+          if (prev && prev.chunks > d.chunks.length) await deps.vectors.deleteByIds(chunkIds(d.path, prev.chunks).slice(d.chunks.length))
+          index.docs[d.path] = { etag: d.etag, chunks: d.chunks.length }
+          embeddings.docsEmbedded++
+        }
+        cursor = end
+        await writeJson(deps, EMBED_INDEX_KEY, index)
+      }
+      embeddings.pending = queue.length - cursor
     } catch (e) {
       // The lint report is already written; an embedding outage must not undo the night's work.
       // Documents processed so far are recorded, the rest are retried tomorrow.
@@ -189,7 +237,7 @@ export async function runNightly(deps: NightlyDeps): Promise<NightlyResult> {
       log(`[nightly] embeddings aborted: ${embeddings.error}`)
     }
     await writeJson(deps, EMBED_INDEX_KEY, index)
-    log(`[nightly] embeddings: ${embeddings.docsEmbedded} docs / ${embeddings.chunksUpserted} chunks upserted, ${embeddings.docsRemoved} docs removed`)
+    log(`[nightly] embeddings: ${embeddings.docsEmbedded} docs / ${embeddings.chunksUpserted} chunks upserted, ${embeddings.docsRemoved} docs removed, ${embeddings.pending} left for the next run`)
   } else {
     log('[nightly] embeddings skipped (no AI / Vectorize binding)')
   }

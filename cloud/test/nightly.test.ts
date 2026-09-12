@@ -113,6 +113,38 @@ describe('runNightly', () => {
     expect([...vectors.items.values()].some(v => v.metadata.path.startsWith('_reports/'))).toBe(false)
   })
 
+  it('embeds at most maxEmbedDocsPerRun per run, checkpoints the index, and finishes on later runs', async () => {
+    for (const n of ['A', 'B', 'C', 'D', 'E']) await seed(`${n}.md`, `# ${n}
+
+long enough body to make one chunk for ${n}.`)
+    const r1 = await runNightly({ ...deps, maxEmbedDocsPerRun: 2 })
+    expect(r1.embeddings.docsEmbedded).toBe(2)
+    expect(r1.embeddings.pending).toBe(3)
+    expect(Object.keys(JSON.parse(dec(blobs.objects.get(EMBED_INDEX_KEY)!)).docs)).toHaveLength(2)
+
+    // the platform kills the run: the checkpoint written so far must survive
+    const dying = { ...deps, maxEmbedDocsPerRun: 2, embed: async () => { throw new Error('killed') } }
+    const r2 = await runNightly(dying)
+    expect(r2.embeddings.error).toContain('killed')
+    expect(Object.keys(JSON.parse(dec(blobs.objects.get(EMBED_INDEX_KEY)!)).docs)).toHaveLength(2)
+
+    // the remaining three documents share ONE embed call (chunks are packed across documents)
+    embedCalls = []
+    const r3 = await runNightly({ ...deps, maxEmbedDocsPerRun: 10 })
+    expect(r3.embeddings.docsEmbedded).toBe(3)
+    expect(r3.embeddings.pending).toBe(0)
+    expect(embedCalls).toHaveLength(1)
+    expect(embedCalls[0]).toHaveLength(3)
+    expect(vectors.items.size).toBe(5)
+
+    // the batch budget stops a run cleanly, reporting what is left
+    for (const n of ['F', 'G', 'H']) await seed(`${n}.md`, `# ${n}\n\nlong enough body to make one chunk for ${n}.`)
+    const r4 = await runNightly({ ...deps, maxEmbedDocsPerRun: 1, maxEmbedBatchesPerRun: 2 })
+    expect(r4.embeddings.docsEmbedded).toBe(1)
+    expect(r4.embeddings.pending).toBe(2)
+    expect(r4.embeddings.error).toBeUndefined()
+  })
+
   it('re-embeds an edited document and removes vectors of a deleted one', async () => {
     const a = await seed('A.md', '# A\n\nfirst version with enough characters to make a chunk.')
     await seed('B.md', '# B\n\nsecond document with enough characters to make a chunk.')

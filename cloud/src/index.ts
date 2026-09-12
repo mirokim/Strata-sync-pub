@@ -39,6 +39,8 @@ export interface Env extends AuthEnv {
   REVIEW_MODEL?: string
   /** Comma-separated vault folders eligible for review; empty = every non-underscore folder. */
   REVIEW_FOLDERS?: string
+  /** Documents (re)embedded per nightly run; the rest wait for the next run (default 150). */
+  EMBED_MAX_DOCS?: string
   /** Browser origins allowed to call the API (comma-separated, or `*`). Empty = no browser access. */
   ALLOWED_ORIGINS?: string
 }
@@ -334,7 +336,7 @@ function baseDeps(env: Env): SyncDeps {
 }
 
 function nightlyDeps(env: Env): NightlyDeps {
-  const deps: NightlyDeps = { ...baseDeps(env), log: msg => console.log(msg), timeZone: env.REPORT_TIMEZONE || 'Asia/Seoul' }
+  const deps: NightlyDeps = { ...baseDeps(env), log: msg => console.log(msg), timeZone: env.REPORT_TIMEZONE || 'Asia/Seoul', maxEmbedDocsPerRun: Number(env.EMBED_MAX_DOCS) || undefined }
   if (env.AI && env.VECTORS) {
     deps.embed = embedder(env.AI)
     deps.vectors = vectorStore(env.VECTORS)

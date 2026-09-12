@@ -28,6 +28,8 @@ export interface McpDeps extends SyncDeps {
 
 const enc = new TextEncoder()
 const dec = new TextDecoder()
+/** bge-m3 cosine below this is noise (the app's own team tier uses ~0.43). */
+const SEMANTIC_MIN_SCORE = 0.45
 
 const TOOLS = [
   { name: 'vault_list', description: 'List documents in the team vault (path, title, tags, modified). Optional folder prefix filter.', inputSchema: { type: 'object' as const, properties: { folder: { type: 'string', description: 'Only paths under this folder' }, limit: { type: 'number', description: 'Max entries (default 200)' } } } },
@@ -75,7 +77,11 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       const topK = Math.min(Math.max(Number(args.topK) || 8, 1), 30)
       const view = await loadVaultView(deps)
       const bm25 = view.bm25().search(query, topK)
-      const semantic = deps.semanticSearch ? await deps.semanticSearch(query, topK).catch(() => []) : []
+      // Semantic hits are chunk-level: keep one entry per document (its best chunk) and drop
+      // weak matches, otherwise a half-built index outvotes an exact BM25 title hit.
+      const raw = deps.semanticSearch ? await deps.semanticSearch(query, topK * 3).catch(() => []) : []
+      const seen = new Set<string>()
+      const semantic = raw.filter(h => h.score >= SEMANTIC_MIN_SCORE && !seen.has(h.path) && seen.add(h.path)).slice(0, topK)
       // Rank fusion: rank-based so the two score scales do not fight
       const rank = new Map<string, number>()
       bm25.forEach((h, i) => rank.set(h.path, (rank.get(h.path) ?? 0) + 1 / (60 + i + 1)))
