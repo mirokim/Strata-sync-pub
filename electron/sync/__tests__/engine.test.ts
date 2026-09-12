@@ -194,6 +194,38 @@ describe('SyncEngine — two clients', () => {
 })
 
 describe('SyncEngine — resilience', () => {
+  it('works with a non-Latin author name (header values must be encoded)', async () => {
+    const vault = newVault()
+    const t = new ManualTimers()
+    const e = makeEngine(vault, '미로 김', t)
+    write(vault, 'A.md', 'a')
+    await e.start()
+    expect(e.getStatus().lastError).toBeNull()
+    expect((await server.meta.get('A.md'))!.author).toBe('미로 김')
+    e.stop()
+  })
+
+  it('starts over when the server sequence restarted below ours (server reset)', async () => {
+    const vault = newVault()
+    const t = new ManualTimers()
+    const e = makeEngine(vault, 'm', t)
+    write(vault, 'A.md', 'a'); write(vault, 'B.md', 'b')
+    await e.start()
+    await e.syncNow()                    // the pull after our uploads moves the cursor to 2
+    expect(e.getStatus().lastSeq).toBe(2)
+    e.stop()
+
+    // simulate a wiped server holding one new file (its sequence, 1, is behind our cursor, 2)
+    server = new FakeServer('tok')
+    await server.deps.meta.upsert({ path: 'FromNewServer.md', etag: 'x', size: 1, mtime: 1, author: 's', deleted: false, updatedAt: 1 })
+    await server.blobs.put('FromNewServer.md', new TextEncoder().encode('n'))
+    const e2 = makeEngine(vault, 'm', t)
+    await e2.start()
+    expect(existsSync(join(vault, 'FromNewServer.md'))).toBe(true)
+    expect(server.text('A.md')).toBe('a')          // local file re-published
+    e2.stop()
+  })
+
   it('survives the server being unreachable and catches up when it returns', async () => {
     const vault = newVault()
     const t = new ManualTimers()

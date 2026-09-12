@@ -64,9 +64,11 @@ export default {
       }
       if (url.pathname === '/v1/file') {
         const path = url.searchParams.get('path')
-        const author = req.headers.get('x-author') ?? ''
+        const author = decodeHeader(req.headers.get('x-author'))
         if (req.method === 'GET') return toResponse(await getFile(deps, path))
         if (req.method === 'PUT') {
+          const declared = Number(req.headers.get('content-length'))
+          if (Number.isFinite(declared) && declared > deps.maxFileBytes) return json(413, { error: `file larger than ${deps.maxFileBytes} bytes` })
           const body = new Uint8Array(await req.arrayBuffer())
           return toResponse(await putFile(deps, {
             path, body,
@@ -86,6 +88,12 @@ export default {
     }
   },
 } satisfies ExportedHandler<Env>
+
+/** Clients send the author percent-encoded because header values must be Latin-1. */
+function decodeHeader(v: string | null): string {
+  if (!v) return ''
+  try { return decodeURIComponent(v) } catch { return v }
+}
 
 function toResponse(r: Awaited<ReturnType<typeof getFile>>): Response {
   if ('bytes' in r && r.bytes) {

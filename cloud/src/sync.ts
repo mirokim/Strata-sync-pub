@@ -101,7 +101,7 @@ export async function getFile(deps: SyncDeps, rawPath: string | null): Promise<S
     headers: {
       'ETag': `"${row.etag}"`,
       'X-Mtime': String(row.mtime),
-      'X-Author': row.author,
+      'X-Author': encodeURIComponent(row.author),
       'X-Seq': String(row.seq),
     },
   }

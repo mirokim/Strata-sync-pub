@@ -224,7 +224,8 @@ class SyncEngine {
     for (const [k, v] of Object.entries(query)) url.searchParams.set(k, String(v))
     const res = await this.deps.fetch(url.toString(), {
       method, body,
-      headers: { authorization: `Bearer ${this.config.token}`, 'x-author': this.config.author || '', ...headers },
+      // HTTP header values are Latin-1 only; a Korean display name would make fetch throw.
+      headers: { authorization: `Bearer ${this.config.token}`, 'x-author': encodeURIComponent(this.config.author || ''), ...headers },
     })
     return res
   }
@@ -236,7 +237,17 @@ class SyncEngine {
     for (;;) {
       const res = await this.api('GET', 'v1/manifest', { query: { since } })
       if (!res.ok) throw new Error(`manifest ${res.status}`)
-      const { files, next } = await res.json()
+      const { files, next, head } = await res.json()
+      // The server was reset (new deployment, wiped database): its sequence restarted below ours.
+      // Start over from 0 so nothing is skipped; local files are reconciled by hash afterwards.
+      if (typeof head === 'number' && head < this.state.lastSeq) {
+        this.deps.log(`[sync] server sequence ${head} is behind ours (${this.state.lastSeq}) — resetting cursor`)
+        // Forget what the old server had: local files then re-index against the new one (matching
+        // hashes are simply indexed, unknown ones are uploaded, disagreements become conflict copies).
+        this.state = { version: 1, lastSeq: 0, index: {} }
+        since = 0
+        continue
+      }
       for (const row of files) {
         await this.applyRemote(row)
         this.state.lastSeq = Math.max(this.state.lastSeq, row.seq)

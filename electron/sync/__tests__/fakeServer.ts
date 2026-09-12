@@ -26,7 +26,7 @@ export class FakeServer {
     if (url.pathname === '/health') return json(200, { ok: true })
     if (headers.get('authorization') !== `Bearer ${this.token}`) return json(401, { error: 'unauthorized' })
 
-    const author = headers.get('x-author') ?? ''
+    const author = decodeURIComponent(headers.get('x-author') ?? '')
     const path = url.searchParams.get('path')
     let r
     if (url.pathname === '/v1/manifest') r = await getManifest(this.deps, Number(url.searchParams.get('since') ?? '0'))
