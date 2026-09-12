@@ -437,7 +437,7 @@ export default function MarkdownEditor() {
       const pos = view.state.selection.main.head
       view.dispatch({ changes: { from: pos, insert: `${embed}
 ` }, selection: { anchor: pos + embed.length + 1 } })
-      showToast('Image saved — the description is on its way.', 'success')
+      showToast('Image saved — describe it from your MCP client (images_undescribed) to make it searchable.', 'success')
     } catch (e) {
       showToast(`Image upload failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
     }

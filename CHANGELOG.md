@@ -18,10 +18,12 @@ into, a graph over it, and AI members who read it through a role of their own.
 - **Activity heat** — graph colour mode "Activity": recent edits, remarks and proposals warm a
   document; untouched ones stay grey.
 - **Image documents** — paste or drop an image into the editor: it is uploaded to
-  `attachments/` with a placeholder document linking back; the server's vision model
-  (Workers AI, `VISION_MODEL`) writes the description, visible text and tags into it, so the
-  image is searchable, linkable and recallable. MCP `vault_read` on an image returns the image
-  and its document for a client to refine (`cloud/src/images.ts`).
+  `attachments/` with a placeholder document next to it linking back (images uploaded any other
+  way get one from the server). No vision model on the server: MCP `images_undescribed` lists
+  the images still without words, `vault_read` on an image returns the image and its document,
+  and the client (a person's Claude Code / Codex, or the Librarian's daily "images" routine)
+  writes what it shows, the visible text and tags with `vault_write` — from then on the image is
+  searchable, linkable and recallable (`cloud/src/images.ts`).
 - Vault snapshot (`_system/vault-snapshot.json`) so a cold Worker isolate reads the vault in one
   request instead of one per document.
 - **AI members** (Settings → AI Members) replace Reviewers and Jobs. A member is a role, a scope

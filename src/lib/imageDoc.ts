@@ -1,11 +1,12 @@
 /**
  * imageDoc.ts — the client half of image documents. When an image is pasted into the editor it is
  * uploaded to ATTACHMENTS_FOLDER and a placeholder document is written next to it, linking back to
- * the document it was pasted into; the server's vision model then fills in the description
- * (cloud/src/images.ts). Keep the document shape in step with the server's renderImageDoc.
+ * the document it was pasted into; whoever is connected over MCP (Claude Code, Codex, an AI
+ * member) then writes the description (cloud/src/images.ts). Keep the document shape in step
+ * with the server's renderImageDoc.
  */
 export const ATTACHMENTS_FOLDER = 'attachments'
-export const DESCRIBING_PLACEHOLDER = '_(describing…)_'
+export const DESCRIBING_PLACEHOLDER = '_(not described yet — open the image with vault_read and write what it shows here)_'
 const IMAGE_MIME: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' }
 
 /** Extension for a pasted image's MIME type; null for anything we do not accept. */

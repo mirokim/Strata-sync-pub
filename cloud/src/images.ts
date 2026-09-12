@@ -1,47 +1,33 @@
 /**
  * Image documents — an image is only part of the shared brain once it has words. When an image
- * lands in the vault (pasted in the app, uploaded by Obsidian), a vision model describes it and
- * the description is written into a markdown "image document" next to it (`foo.png` → `foo.md`):
- * the embed, where it was pasted, what it shows, the text visible in it, a few tags. From then on
- * search, the graph, recall and the members see the image like any other document. The prompt
- * that would have generated the image, recovered from the image — the same idea in reverse.
+ * lands in the vault (pasted in the app, uploaded by Obsidian) a markdown "image document" is
+ * created next to it (`foo.png` → `foo.md`): the embed, where it was pasted, and an empty
+ * `## Description`. Whoever is connected over MCP — a person's Claude Code or Codex, or an AI
+ * member on its routine — looks at the image (`vault_read` returns it) and writes what it shows,
+ * the text visible in it and a few tags into that section (`vault_write`). From then on search,
+ * the graph, recall and the members see the image like any other document. The prompt that
+ * would have generated the image, recovered from the image — the same idea in reverse.
  *
- * The description is a first draft: a person or a member can edit the document freely; only the
- * `## Description` section is replaced when the image itself changes.
+ * No vision model runs on the server: the describing is done by whichever model the team member
+ * already uses, in their language, with their judgement.
  */
 import { putFile, type SyncDeps } from './sync.js'
 import { parseFrontmatter } from '../../mcp/src/lint/vaultDoc.js'
+import type { VaultView } from './vaultIndex.js'
 
 export const IMAGE_EXT = /\.(png|jpe?g|webp|gif)$/i
-/** Vision models choke on very large inputs; skip rather than fail the queue. */
-export const IMAGE_MAX_BYTES = 6 * 1024 * 1024
-export const DESCRIBE_AUTHOR = 'strata-bot'
-export const DESCRIBING_PLACEHOLDER = '_(describing…)_'
+export const IMAGE_DOC_AUTHOR = 'strata-bot'
+export const DESCRIBING_PLACEHOLDER = '_(not described yet — open the image with vault_read and write what it shows here)_'
 
-export const DESCRIBE_PROMPT = [
-  'Describe this image for a knowledge-base search index.',
-  'Say what it shows and how it is composed, in two to five sentences.',
+/** What a client is asked to put into `## Description`; surfaced by `images_undescribed`. */
+export const DESCRIBE_GUIDE = [
+  'Say what the image shows and how it is composed, in two to five sentences, in the vault\'s language.',
   'If there is visible text, transcribe it exactly under a line "Text:".',
   'End with a line "Tags:" followed by three to six lowercase tags separated by commas.',
-  'Write in Korean (transcribed text stays verbatim). Be concrete. No preamble.',
+  'Write it into the image document\'s "## Description" section with vault_write, keeping the rest of the document; put the tags into the frontmatter tags too.',
 ].join(' ')
 
-export interface DescribeJob { kind: 'describe'; path: string; etag?: string }
-
-export interface DescribeDeps extends SyncDeps {
-  /** Vision model call: image bytes + prompt → description text. */
-  describe: (bytes: Uint8Array, mime: string, prompt: string) => Promise<string>
-  /** Recorded in the document as `described_by`. */
-  model?: string
-  log?: (msg: string) => void
-}
-
-export type DescribeOutcome =
-  | { status: 'described'; doc: string; chars: number }
-  | { status: 'skipped'; reason: string }
-
 const enc = new TextEncoder()
-const dec = new TextDecoder()
 
 export function isImagePath(path: string): boolean {
   const p = path.replace(/\\/g, '/')
@@ -58,25 +44,17 @@ export function mimeOf(path: string): string {
   return ({ png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' } as Record<string, string>)[ext] ?? 'application/octet-stream'
 }
 
-/** The document a client writes at paste time, before any model has looked at the image. */
-export interface Described { by: string; at: number; imageEtag: string }
-
-function describedLines(d: Described): string[] {
-  return [`described_by: ${JSON.stringify(d.by)}`, `described_at: ${new Date(d.at).toISOString()}`, `described_image_etag: ${JSON.stringify(d.imageEtag)}`]
-}
-
-export function renderImageDoc(input: { imagePath: string; pastedInto?: string; description?: string; described?: Described }): string {
+/** The placeholder document written when the image lands (by the app at paste time, or by the server). */
+export function renderImageDoc(input: { imagePath: string; pastedInto?: string }): string {
   const file = input.imagePath.replace(/\\/g, '/').split('/').pop()!
   const name = file.replace(IMAGE_EXT, '')
-  const tags = ['image', ...tagsFrom(input.description ?? '')]
   const fm = [
     '---',
     `title: ${JSON.stringify(name)}`,
     'type: image',
     `image: ${JSON.stringify(file)}`,
     ...(input.pastedInto ? [`pasted_into: ${JSON.stringify(input.pastedInto)}`] : []),
-    ...(input.described ? describedLines(input.described) : []),
-    `tags: [${tags.join(', ')}]`,
+    'tags: [image]',
     '---',
   ]
   const body = [
@@ -87,75 +65,46 @@ export function renderImageDoc(input: { imagePath: string; pastedInto?: string; 
     ...(input.pastedInto ? [`Pasted into [[${input.pastedInto.replace(/\.md$/i, '').split('/').pop()}]]`, ''] : []),
     '## Description',
     '',
-    input.description?.trim() || DESCRIBING_PLACEHOLDER,
+    DESCRIBING_PLACEHOLDER,
     '',
   ]
   return [...fm, '', ...body].join('\n')
 }
 
-/** `Tags: a, b, c` line of a description → clean tag slugs. */
-export function tagsFrom(description: string): string[] {
-  const m = /^\s*tags?\s*:\s*(.+)$/im.exec(description)
-  if (!m) return []
-  return [...new Set(m[1].split(/[,、]/).map(t => t.trim().toLowerCase().replace(/^#/, '').replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '')).filter(t => t && t.length <= 40))].slice(0, 6)
-}
-
-/** Replace the `## Description` section (and the description frontmatter) of an existing image document. */
-export function setDescription(markdown: string, description: string, described: Described): string {
-  const { data, body } = parseFrontmatter(markdown)
-  const text = description.trim()
-  const tags = new Set<string>(['image', ...(Array.isArray(data.tags) ? data.tags : typeof data.tags === 'string' ? [data.tags] : []).map(String), ...tagsFrom(text)])
-  // Rebuild the frontmatter from what we know; unknown keys survive as plain strings
-  const keep = Object.entries(data).filter(([k]) => !['tags', 'described_by', 'described_at', 'described_image_etag'].includes(k))
-  const fm = ['---', ...keep.map(([k, v]) => `${k}: ${Array.isArray(v) ? `[${v.join(', ')}]` : JSON.stringify(String(v))}`), ...describedLines(described), `tags: [${[...tags].join(', ')}]`, '---']
+/** An image document counts as described once its Description section holds more than the placeholder. */
+export function isDescribed(markdown: string): boolean {
+  const { body } = parseFrontmatter(markdown)
   const lines = body.replace(/\r/g, '').split('\n')
   const start = lines.findIndex(l => /^##\s+Description\s*$/i.test(l))
-  let next: string[]
-  if (start < 0) {
-    next = [...lines, '', '## Description', '', text, '']
-  } else {
-    let end = lines.length
-    for (let i = start + 1; i < lines.length; i++) if (/^##\s+/.test(lines[i])) { end = i; break }
-    next = [...lines.slice(0, start + 1), '', text, '', ...lines.slice(end)]
+  if (start < 0) return false
+  let end = lines.length
+  for (let i = start + 1; i < lines.length; i++) if (/^##\s+/.test(lines[i])) { end = i; break }
+  const text = lines.slice(start + 1, end).join('\n').replace(DESCRIBING_PLACEHOLDER, '').trim()
+  return text.length >= 20
+}
+
+/** Image documents still waiting for a description, oldest first. */
+export function undescribedImages(view: VaultView): { doc: string; image: string; pastedInto?: string; since: number }[] {
+  const out: { doc: string; image: string; pastedInto?: string; since: number }[] = []
+  for (const path of view.docs.keys()) {
+    const raw = view.contents.get(path)
+    if (!raw) continue
+    const { data } = parseFrontmatter(raw)
+    if (data.type !== 'image' || isDescribed(raw)) continue
+    const file = typeof data.image === 'string' ? data.image : ''
+    const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : ''
+    out.push({ doc: path, image: folder + file, pastedInto: typeof data.pasted_into === 'string' ? data.pasted_into : undefined, since: view.rows.get(path)?.updatedAt ?? 0 })
   }
-  return [...fm, '', ...next].join('\n').replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '') + '\n'
+  return out.sort((a, b) => a.since - b.since)
 }
 
-/** Which image version the document's description was written for. */
-export function describedImageEtag(markdown: string): string | undefined {
-  const { data } = parseFrontmatter(markdown)
-  return typeof data.described_image_etag === 'string' ? data.described_image_etag : undefined
-}
-
-/**
- * Describe one image and write (or update) its document. Idempotent per image version: the
- * document's `described_at` is only touched when the model actually ran.
- */
-export async function describeImage(deps: DescribeDeps, job: DescribeJob): Promise<DescribeOutcome> {
-  const log = deps.log ?? (() => {})
-  const path = job.path.replace(/\\/g, '/')
-  if (!isImagePath(path)) return { status: 'skipped', reason: 'not an image' }
-  const row = await deps.meta.get(path)
-  if (!row || row.deleted) return { status: 'skipped', reason: 'image gone' }
-  if (job.etag && job.etag !== row.etag) return { status: 'skipped', reason: 'superseded by a newer upload' }
-  if (row.size > IMAGE_MAX_BYTES) return { status: 'skipped', reason: 'image too large to describe' }
-  const bytes = await deps.blobs.get(path)
-  if (!bytes) return { status: 'skipped', reason: 'content missing' }
-
+/** Create the placeholder document for an image that has none (server side, for uploads that skipped the app). */
+export async function ensureImageDoc(deps: SyncDeps, imagePath: string): Promise<'created' | 'exists' | 'skipped'> {
+  const path = imagePath.replace(/\\/g, '/')
+  if (!isImagePath(path)) return 'skipped'
   const docPath = imageDocPath(path)
-  const existingRow = await deps.meta.get(docPath)
-  const existing = existingRow && !existingRow.deleted ? await deps.blobs.get(docPath) : null
-  const existingText = existing ? dec.decode(existing) : null
-  // Already described for this very image version → nothing to do
-  if (existingText && describedImageEtag(existingText) === row.etag) return { status: 'skipped', reason: 'already described' }
-
-  const text = (await deps.describe(bytes, mimeOf(path), DESCRIBE_PROMPT)).trim()
-  if (!text) return { status: 'skipped', reason: 'model returned nothing' }
-  const now = (deps.now ?? Date.now)()
-  const described: Described = { by: deps.model ?? 'vision-model', at: now, imageEtag: row.etag }
-  const markdown = existingText ? setDescription(existingText, text, described) : renderImageDoc({ imagePath: path, description: text, described })
-  const put = await putFile(deps, { path: docPath, body: enc.encode(markdown), mtime: now, author: DESCRIBE_AUTHOR, ...(existingRow && !existingRow.deleted ? { ifMatch: existingRow.etag } : { createOnly: true }) })
-  if (put.status >= 400) { log(`[images] write failed for ${docPath}: ${JSON.stringify(put.body)}`); return { status: 'skipped', reason: `write failed (${put.status})` } }
-  log(`[images] ${path} → ${docPath} (${text.length} chars)`)
-  return { status: 'described', doc: docPath, chars: text.length }
+  const existing = await deps.meta.get(docPath)
+  if (existing && !existing.deleted) return 'exists'
+  const put = await putFile(deps, { path: docPath, body: enc.encode(renderImageDoc({ imagePath: path })), mtime: (deps.now ?? Date.now)(), author: IMAGE_DOC_AUTHOR, createOnly: true })
+  return put.status === 201 ? 'created' : 'exists'
 }

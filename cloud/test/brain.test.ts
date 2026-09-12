@@ -8,7 +8,7 @@ import { memberNotePath, DEFAULT_MEMBER } from '../src/members.js'
 import { reactToSave, type LlmCall } from '../src/reactions.js'
 import { route, type Env } from '../src/index.js'
 import { MemoryMeta, MemoryBlobs, enc, dec } from './fakes.js'
-import { renderImageDoc, setDescription, tagsFrom, describeImage, isImagePath, imageDocPath, describedImageEtag, DESCRIBING_PLACEHOLDER } from '../src/images.js'
+import { renderImageDoc, isDescribed, undescribedImages, ensureImageDoc, isImagePath, imageDocPath, DESCRIBING_PLACEHOLDER } from '../src/images.js'
 
 let deps: SyncDeps
 let meta: MemoryMeta
@@ -207,69 +207,59 @@ describe('vault view snapshot', () => {
 })
 
 describe('image documents', () => {
-  const png = () => enc('\x89PNG fake bytes')
+  const png = () => enc('PNG fake bytes')
 
-  it('paths, tags and the client-side placeholder document', () => {
+  it('paths and the placeholder document', () => {
     expect(isImagePath('attachments/2026-09/pasted.PNG')).toBe(true)
     expect(isImagePath('_system/x.png')).toBe(false)
     expect(isImagePath('notes/a.md')).toBe(false)
     expect(imageDocPath('attachments/a b.jpeg')).toBe('attachments/a b.md')
-    expect(tagsFrom('blah\nTags: UI, Login Screen, #dark-mode, ui')).toEqual(['ui', 'login-screen', 'dark-mode'])
     const doc = renderImageDoc({ imagePath: 'attachments/pasted-1.png', pastedInto: 'design/Menu.md' })
     expect(doc).toContain('type: image')
     expect(doc).toContain('image: "pasted-1.png"')
     expect(doc).toContain('![[pasted-1.png]]')
     expect(doc).toContain('Pasted into [[Menu]]')
     expect(doc).toContain(`## Description\n\n${DESCRIBING_PLACEHOLDER}`)
+    expect(isDescribed(doc)).toBe(false)
+    expect(isDescribed(doc.replace(DESCRIBING_PLACEHOLDER, 'A login screen with two buttons.\nTags: ui, login'))).toBe(true)
+    expect(isDescribed(doc.replace(DESCRIBING_PLACEHOLDER, 'short'))).toBe(false)
   })
 
-  it('setDescription replaces only the Description section and stamps the frontmatter', () => {
-    const before = renderImageDoc({ imagePath: 'a.png', pastedInto: 'b.md' }) + '\n## Notes\n\nkeep me\n'
-    const after = setDescription(before, 'A login screen.\nText: Sign in\nTags: ui, login', { by: 'test-model', at: 1_000, imageEtag: 'e1' })
-    expect(after).toContain('described_by: "test-model"')
-    expect(after).toContain('described_image_etag: "e1"')
-    expect(after).toContain('tags: [image, ui, login]')
-    expect(after).toContain('pasted_into: "b.md"')
-    expect(after).toContain('## Description\n\nA login screen.\nText: Sign in\nTags: ui, login\n\n## Notes\n\nkeep me')
-    expect(after).not.toContain(DESCRIBING_PLACEHOLDER)
-    expect(describedImageEtag(after)).toBe('e1')
-  })
-
-  it('describeImage writes a new document, updates a client placeholder, and is idempotent per image version', async () => {
-    const calls: string[] = []
-    const ddeps = { ...deps, now: () => 7_000, model: 'm', describe: async (_b: Uint8Array, mime: string, prompt: string) => { calls.push(mime); return prompt.includes('search index') ? 'Two buttons on a dark screen.\nTags: ui, buttons' : '' } }
-    await putFile(deps, { path: 'attachments/shot.png', body: png(), mtime: 1, author: 'kim' })
-    expect(await describeImage(ddeps, { kind: 'describe', path: 'attachments/shot.png' })).toMatchObject({ status: 'described', doc: 'attachments/shot.md' })
-    const created = dec(blobs.objects.get('attachments/shot.md')!)
-    expect(created).toContain('Two buttons on a dark screen.')
-    expect(created).toContain('tags: [image, ui, buttons]')
+  it('an uploaded image gets its placeholder document (once); undescribed ones are listed for MCP clients', async () => {
+    await putFile({ ...deps, now: () => 1_000 }, { path: 'attachments/shot.png', body: png(), mtime: 1, author: 'kim' })
+    expect(await ensureImageDoc({ ...deps, now: () => 1_000 }, 'attachments/shot.png')).toBe('created')
+    expect(await ensureImageDoc(deps, 'attachments/shot.png')).toBe('exists')
+    expect(await ensureImageDoc(deps, 'notes/x.md')).toBe('skipped')
     expect(meta.rows.get('attachments/shot.md')!.author).toBe('strata-bot')
-    expect(calls).toEqual(['image/png'])
-    expect(await describeImage(ddeps, { kind: 'describe', path: 'attachments/shot.png' })).toEqual({ status: 'skipped', reason: 'already described' })
-    // A placeholder written by the app at paste time is completed in place
-    await putFile(deps, { path: 'attachments/paste.jpg', body: png(), mtime: 1, author: 'kim' })
-    await putFile(deps, { path: 'attachments/paste.md', body: enc(renderImageDoc({ imagePath: 'attachments/paste.jpg', pastedInto: 'design/Menu.md' })), mtime: 1, author: 'kim' })
-    expect((await describeImage(ddeps, { kind: 'describe', path: 'attachments/paste.jpg' })).status).toBe('described')
-    const updated = dec(blobs.objects.get('attachments/paste.md')!)
-    expect(updated).toContain('Pasted into [[Menu]]')
-    expect(updated).not.toContain(DESCRIBING_PLACEHOLDER)
-    expect(await describeImage(ddeps, { kind: 'describe', path: 'attachments/paste.jpg', etag: 'old' })).toEqual({ status: 'skipped', reason: 'superseded by a newer upload' })
-    expect(await describeImage(ddeps, { kind: 'describe', path: 'notes/x.md' })).toEqual({ status: 'skipped', reason: 'not an image' })
+    // The app writes its own placeholder at paste time; the server leaves it alone
+    await putFile({ ...deps, now: () => 2_000 }, { path: 'attachments/paste.jpg', body: png(), mtime: 1, author: 'kim' })
+    await putFile({ ...deps, now: () => 2_000 }, { path: 'attachments/paste.md', body: enc(renderImageDoc({ imagePath: 'attachments/paste.jpg', pastedInto: 'design/Menu.md' })), mtime: 1, author: 'kim' })
+    expect(await ensureImageDoc(deps, 'attachments/paste.jpg')).toBe('exists')
+    invalidateVaultView()
+    const pending = undescribedImages(await loadVaultView(deps, true))
+    expect(pending.map(p => [p.doc, p.image, p.pastedInto])).toEqual([['attachments/shot.md', 'attachments/shot.png', undefined], ['attachments/paste.md', 'attachments/paste.jpg', 'design/Menu.md']])
+    // Once described (by a client over vault_write) it drops off the list
+    const described = renderImageDoc({ imagePath: 'attachments/shot.png' }).replace(DESCRIBING_PLACEHOLDER, '검은 배경 위의 파란 아이콘. 텍스트 없음.\nTags: icon, blue')
+    await putFile(deps, { path: 'attachments/shot.md', body: enc(described), mtime: 3, author: 'kim' })
+    invalidateVaultView()
+    expect(undescribedImages(await loadVaultView(deps, true)).map(p => p.doc)).toEqual(['attachments/paste.md'])
+    const r = parse(await callTool({ ...deps, author: 'kim' }, 'images_undescribed', {}))
+    expect(r.count).toBe(1)
+    expect(r.guide).toContain('vault_write')
   })
 
-  it('vault_read returns the image and its document; PUT of an image queues a describe job', async () => {
+  it('vault_read returns the image and its document; PUT of an image creates the document without a queue', async () => {
     await putFile(deps, { path: 'attachments/shot.png', body: png(), mtime: 1, author: 'kim' })
     const r = await callTool({ ...deps, author: 'kim' }, 'vault_read', { path: 'attachments/shot.png' })
     expect(r.content[0]).toMatchObject({ type: 'image', mimeType: 'image/png' })
     expect((r.content[1] as { text: string }).text).toContain('no image document yet')
-    const sent: unknown[] = []
-    const env = { TEAM_TOKEN: 'secret', REACTION_QUEUE: { send: async (m: unknown) => { sent.push(m) } } } as unknown as Env
+    const env = { TEAM_TOKEN: 'secret' } as unknown as Env
     const waited: Promise<unknown>[] = []
     const ctx = { waitUntil: (p: Promise<unknown>) => { waited.push(p) }, passThroughOnException() {}, props: {} } as unknown as ExecutionContext
     const res = await route(new Request('https://w/v1/file?path=attachments%2Fnew.png', { method: 'PUT', headers: { authorization: 'Bearer secret', 'x-mtime': '5', 'x-author': 'kim' }, body: png() }), env, ctx, deps)
     expect(res.status).toBe(201)
     await Promise.all(waited)
-    expect(sent).toEqual([{ kind: 'describe', path: 'attachments/new.png', etag: meta.rows.get('attachments/new.png')!.etag }])
+    expect(dec(blobs.objects.get('attachments/new.md')!)).toContain('![[new.png]]')
   })
 })
 

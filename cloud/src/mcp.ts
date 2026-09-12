@@ -20,7 +20,7 @@ import { readMembers, recordRoutineRun, dueRoutines, findMember, renderMemberPro
 import type { SearchHit } from './nightly.js'
 import { recall, fusedSearch } from './recall.js'
 import { listVersions, readVersion, previousVersion, diffLines } from './history.js'
-import { isImagePath, imageDocPath, mimeOf } from './images.js'
+import { isImagePath, imageDocPath, mimeOf, undescribedImages, DESCRIBE_GUIDE } from './images.js'
 
 export interface McpDeps extends SyncDeps {
   /** Semantic search when Vectorize is configured; otherwise BM25 only. */
@@ -46,6 +46,7 @@ const TOOLS = [
   { name: 'vault_promote', description: 'Promote a proposal into the vault (strip proposal frontmatter, move out of _agent/). Only when the user explicitly approves it.', inputSchema: { type: 'object' as const, properties: { path: { type: 'string' }, destFolder: { type: 'string', description: 'Destination folder (default vault root)' } }, required: ['path'] } },
   { name: 'vault_write', description: 'Write a document directly (create or replace). Prefer vault_propose for anything the team has not approved; use this only when the user explicitly asks to edit an existing document.', inputSchema: { type: 'object' as const, properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } },
   { name: 'vault_changes', description: 'Documents created, changed or deleted since a point in time (ISO date or ms since epoch), newest first, with author and title. Use it to see what moved before reviewing premises or writing a digest.', inputSchema: { type: 'object' as const, properties: { since: { type: 'string', description: 'ISO 8601 date/time, or ms since epoch' }, limit: { type: 'number', description: 'default 100, max 500' } }, required: ['since'] } },
+  { name: 'images_undescribed', description: 'Image documents whose Description is still empty (images pasted in the app or uploaded). For each: vault_read the image, then vault_write the image document with what it shows, the visible text and tags — that is how images become searchable.', inputSchema: { type: 'object' as const, properties: { limit: { type: 'number', description: 'default 20' } } } },
   { name: 'members_list', description: 'The team\'s AI members (Settings → AI Members): id, name, role, scope, routines with cadence and last run, memory note path. Use the `member` prompt to act as one.', inputSchema: { type: 'object' as const, properties: { due: { type: 'boolean', description: 'Only members with a routine due now' } } } },
   { name: 'member_remember', description: 'Append to an AI member\'s own memory note (_members/<Name> (memory).md) — a position taken, a question asked, what a routine found. The only document a member writes directly. Creates the note on first use.', inputSchema: { type: 'object' as const, properties: { member: { type: 'string', description: 'Member id or name' }, text: { type: 'string', description: 'Markdown to append (dated automatically)' } }, required: ['member', 'text'] } },
   { name: 'member_report', description: 'Record that a member routine was run: a short summary and the proposal paths created. Call once per routine after finishing it, even when nothing was proposed.', inputSchema: { type: 'object' as const, properties: { member: { type: 'string', description: 'Member id or name' }, routine: { type: 'string', description: 'Routine id' }, summary: { type: 'string' }, proposals: { type: 'array', items: { type: 'string' } } }, required: ['member', 'routine', 'summary'] } },
@@ -210,6 +211,12 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
         .sort((a, b) => b.updatedAt - a.updatedAt || b.seq - a.seq).slice(0, limit)
         .map(r => ({ path: r.path, title: view.docs.get(r.path)?.title ?? r.path.replace(/^.*\//, '').replace(/\.md$/i, ''), author: r.author, at: new Date(r.updatedAt).toISOString(), deleted: r.deleted, proposal: isProposalPath(r.path) || undefined }))
       return text({ since: new Date(since).toISOString(), count: changed.length, changes: changed })
+    }
+    case 'images_undescribed': {
+      const view = await loadVaultView(deps)
+      const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 100)
+      const pending = undescribedImages(view)
+      return text({ count: pending.length, guide: DESCRIBE_GUIDE, images: pending.slice(0, limit).map(p => ({ ...p, since: new Date(p.since).toISOString() })) })
     }
     case 'members_list': {
       const config = await readMembers(deps)

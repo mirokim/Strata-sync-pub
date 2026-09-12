@@ -299,7 +299,7 @@ describe('handleMcpRequest', () => {
 
     const list = await (await handleMcpRequest(rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' }), deps)).json() as { result: { tools: { name: string }[] } }
     expect(list.result.tools.map(t => t.name).sort()).toEqual([
-      'graph_lint', 'graph_suggest_links', 'member_remember', 'member_report', 'members_list', 'vault_changes', 'vault_history', 'vault_list', 'vault_promote', 'vault_proposals', 'vault_propose', 'vault_read', 'vault_recall', 'vault_search', 'vault_write',
+      'graph_lint', 'graph_suggest_links', 'images_undescribed', 'member_remember', 'member_report', 'members_list', 'vault_changes', 'vault_history', 'vault_list', 'vault_promote', 'vault_proposals', 'vault_propose', 'vault_read', 'vault_recall', 'vault_search', 'vault_write',
     ])
 
     const call = await (await handleMcpRequest(rpc({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'vault_read', arguments: { path: 'active/Stamina.md' } } }), deps)).json() as { result: { content: { text: string }[] } }
