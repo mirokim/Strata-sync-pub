@@ -36,7 +36,7 @@ function exportLogCsv(log: UsageLogEntry[]) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `sandbox-map-usage-${new Date().toISOString().slice(0, 10)}.csv`
+  a.download = `strata-sync-usage-${new Date().toISOString().slice(0, 10)}.csv`
   a.click()
   URL.revokeObjectURL(url)
 }

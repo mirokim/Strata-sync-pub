@@ -399,14 +399,14 @@ describe('Jira 검색 시나리오 100건 (201-300)', () => {
     expect(chk('Top-5 프시케', has(r, 5, '프시케'))).toBe(true)
   })
 
-  it('262: 미하일 컨셉 레퍼런스', () => {
-    const r = S('미하일 컨셉 레퍼런스'); P('미하일 컨셉 레퍼런스', r)
-    expect(chk('Top-5 미하일', has(r, 5, '미하일'))).toBe(true)
+  it('262: 캐릭터E 컨셉 레퍼런스', () => {
+    const r = S('캐릭터E 컨셉 레퍼런스'); P('캐릭터E 컨셉 레퍼런스', r)
+    expect(chk('Top-5 캐릭터E', has(r, 5, '캐릭터E'))).toBe(true)
   })
 
-  it('263: 스칼렛 캐릭터 단계', () => {
-    const r = S('스칼렛 캐릭터'); P('스칼렛 캐릭터', r)
-    expect(chk('Top-5 스칼렛', has(r, 5, '스칼렛'))).toBe(true)
+  it('263: 캐릭터A 캐릭터 단계', () => {
+    const r = S('캐릭터A 캐릭터'); P('캐릭터A 캐릭터', r)
+    expect(chk('Top-5 캐릭터A', has(r, 5, '캐릭터A'))).toBe(true)
   })
 
   it('264: 오룰론 키워드', () => {
@@ -414,19 +414,19 @@ describe('Jira 검색 시나리오 100건 (201-300)', () => {
     expect(chk('Top-5 오룰론', has(r, 5, '오룰론'))).toBe(true)
   })
 
-  it('265: 알탄 캐릭터', () => {
-    const r = S('알탄 캐릭터 키워드'); P('알탄 캐릭터 키워드', r)
-    expect(chk('Top-10 알탄', has(r, 10, '알탄'))).toBe(true)
+  it('265: 캐릭터H 캐릭터', () => {
+    const r = S('캐릭터H 캐릭터 키워드'); P('캐릭터H 캐릭터 키워드', r)
+    expect(chk('Top-10 캐릭터H', has(r, 10, '캐릭터H'))).toBe(true)
   })
 
-  it('266: 타미리스 캐릭터', () => {
-    const r = S('타미리스 캐릭터'); P('타미리스 캐릭터', r)
-    expect(chk('Top-5 타미리스', has(r, 5, '타미리스'))).toBe(true)
+  it('266: 캐릭터F 캐릭터', () => {
+    const r = S('캐릭터F 캐릭터'); P('캐릭터F 캐릭터', r)
+    expect(chk('Top-5 캐릭터F', has(r, 5, '캐릭터F'))).toBe(true)
   })
 
-  it('267: 다이잔 쇼군 도감', () => {
-    const r = S('다이잔 쇼군 캐릭터 도감'); P('다이잔 쇼군 캐릭터 도감', r)
-    expect(chk('Top-5 다이잔', has(r, 5, '다이잔'))).toBe(true)
+  it('267: 캐릭터G 쇼군 도감', () => {
+    const r = S('캐릭터G 쇼군 캐릭터 도감'); P('캐릭터G 쇼군 캐릭터 도감', r)
+    expect(chk('Top-5 캐릭터G', has(r, 5, '캐릭터G'))).toBe(true)
   })
 
   it('268: 마키마 캐릭터', () => {
@@ -434,24 +434,24 @@ describe('Jira 검색 시나리오 100건 (201-300)', () => {
     expect(chk('Top-5 마키마', has(r, 5, '마키마'))).toBe(true)
   })
 
-  it('269: 보르후 Voice 대본', () => {
-    const r = S('보르후 Voice 대본'); P('보르후 Voice 대본', r)
-    expect(chk('Top-5 보르후/Voice', has(r, 5, '보르후', 'Voice', '대본'))).toBe(true)
+  it('269: 캐릭터I Voice 대본', () => {
+    const r = S('캐릭터I Voice 대본'); P('캐릭터I Voice 대본', r)
+    expect(chk('Top-5 캐릭터I/Voice', has(r, 5, '캐릭터I', 'Voice', '대본'))).toBe(true)
   })
 
-  it('270: 마투아 Voice 대본', () => {
-    const r = S('마투아 Voice 대본'); P('마투아 Voice 대본', r)
-    expect(chk('Top-5 마투아/Voice', has(r, 5, '마투아', 'Voice'))).toBe(true)
+  it('270: 캐릭터D Voice 대본', () => {
+    const r = S('캐릭터D Voice 대본'); P('캐릭터D Voice 대본', r)
+    expect(chk('Top-5 캐릭터D/Voice', has(r, 5, '캐릭터D', 'Voice'))).toBe(true)
   })
 
-  it('271: 월영 컨셉', () => {
-    const r = S('월영 캐릭터 컨셉'); P('월영 캐릭터 컨셉', r)
-    expect(chk('Top-5 월영', has(r, 5, '월영'))).toBe(true)
+  it('271: 캐릭터C 컨셉', () => {
+    const r = S('캐릭터C 캐릭터 컨셉'); P('캐릭터C 캐릭터 컨셉', r)
+    expect(chk('Top-5 캐릭터C', has(r, 5, '캐릭터C'))).toBe(true)
   })
 
-  it('272: 바도스 세력 인물', () => {
-    const r = S('바도스 주요 세력 인물'); P('바도스 주요 세력 인물', r)
-    expect(chk('Top-5 바도스', has(r, 5, '바도스'))).toBe(true)
+  it('272: 캐릭터J 세력 인물', () => {
+    const r = S('캐릭터J 주요 세력 인물'); P('캐릭터J 주요 세력 인물', r)
+    expect(chk('Top-5 캐릭터J', has(r, 5, '캐릭터J'))).toBe(true)
   })
 
   it('273: 캐릭터 관계도', () => {
@@ -521,9 +521,9 @@ describe('Jira 검색 시나리오 100건 (201-300)', () => {
     expect(chk('Top-5 전사크래프트', has(r, 5, '전사크래프', '크래프팅'))).toBe(true)
   })
 
-  it('286: 영웅서사 마투아', () => {
-    const r = S('영웅서사 마투아'); P('영웅서사 마투아', r)
-    expect(chk('Top-5 영웅서사', has(r, 5, '영웅서사', '마투아'))).toBe(true)
+  it('286: 영웅서사 캐릭터D', () => {
+    const r = S('영웅서사 캐릭터D'); P('영웅서사 캐릭터D', r)
+    expect(chk('Top-5 영웅서사', has(r, 5, '영웅서사', '캐릭터D'))).toBe(true)
   })
 
   it('287: 비선형 컨텐츠 리소스 정리', () => {

@@ -225,7 +225,7 @@ class TestIsValidSearchQuery(unittest.TestCase):
         cls.fn = staticmethod(bot_module._is_valid_search_query)
 
     def test_short_core_keywords_accepted(self):
-        for kw in ("밸런스", "캐릭터", "사운드", "GDD", "루모", "에녹", "다이잔"):
+        for kw in ("밸런스", "캐릭터", "사운드", "GDD", "루모", "에녹", "캐릭터G"):
             self.assertTrue(self.fn(kw), kw)
 
     def test_single_syllable_rejected(self):

@@ -1,8 +1,8 @@
-# Sandbox Map — Claude Code 지침
+# Strata Sync — Claude Code 지침
 
 ## MCP 풀 컨트롤 모드
 
-이 프로젝트에는 **sandbox-map MCP 서버**가 등록되어 있습니다 (`.mcp.json`).
+이 프로젝트에는 **strata-sync MCP 서버**가 등록되어 있습니다 (`.mcp.json`).
 MCP 서버가 연결되면 GUI의 API 키를 사용하지 않고, 모든 작업을 MCP 도구로 수행합니다.
 
 ### 빠른 시작
@@ -16,7 +16,7 @@ MCP 서버가 연결되면 GUI의 API 키를 사용하지 않고, 모든 작업�
 - `settings_get` / `settings_update` 도구로 런타임 변경 가능
 
 ### 프롬프트 주입
-MCP 게이트 프롬프트(`sandbox-map-gate`)가 연결 시 사용 가능합니다.
+MCP 게이트 프롬프트(`strata-sync-gate`)가 연결 시 사용 가능합니다.
 도구 목록과 사용 원칙이 포함되어 있으니 `prompts/get`으로 확인하세요.
 
 ## 개발 환경

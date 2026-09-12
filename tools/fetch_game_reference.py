@@ -90,7 +90,7 @@ def fetch_json(url: str, timeout: int = 20) -> Optional[dict]:
     try:
         req = urllib.request.Request(
             url,
-            headers={"User-Agent": "SandboxMapBot/1.0 (game research; contact: research@example.com)"},
+            headers={"User-Agent": "StrataSyncBot/1.0 (game research; contact: research@example.com)"},
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))

@@ -45,7 +45,7 @@ def scan_vault(vault_path: str) -> list[VaultDoc]:
         return docs
 
     for md_file in vault.rglob("*.md"):
-        # .rembrandt, .obsidian 등 숨김 폴더 제외.
+        # .strata-sync, .obsidian 등 숨김 폴더 제외.
         # 볼트 루트 기준 상대 경로로 판정 — 절대 경로 전체를 보면
         # 볼트가 dot 디렉터리(예: C:\Users\x\.notes\vault) 아래 있을 때
         # 모든 파일이 걸러져 스캔 결과가 0건이 된다.

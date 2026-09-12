@@ -265,7 +265,7 @@ export function bm25Search(query: string, topK = 10): SearchResult[] {
 
 export type EmbedProvider = 'local' | 'gemini'
 
-const LOCAL_EMBED_URL = process.env.SANDBOX_MAP_EMBED_URL ?? 'http://127.0.0.1:8077'
+const LOCAL_EMBED_URL = process.env.STRATA_SYNC_EMBED_URL ?? 'http://127.0.0.1:8077'
 const LOCAL_PROBE_TIMEOUT_MS = 1500
 /** 로컬 서버 MAXLEN 4096토큰 × 한국어 1토큰≈1.2자 ≈ 4,900자 → 안전하게 4,500자 */
 const EMBED_TEXT_MAX_CHARS = 4500

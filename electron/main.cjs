@@ -529,9 +529,9 @@ function registerVaultIpcHandlers() {
       let lastChangedFile = null
       watcher = fs.watch(vaultPath, { recursive: true }, (_eventType, filename) => {
         if (!filename || !filename.endsWith('.md')) return
-        // Skip internal app config directory (.rembrandt/) — written by the app itself
+        // Skip internal app config directory (.strata-sync/) — written by the app itself
         // (e.g. personas.md saved by usePersonaVaultSaver). These are not user vault edits.
-        if (filename.replace(/\\/g, '/').startsWith('.rembrandt/')) return
+        if (filename.replace(/\\/g, '/').startsWith('.strata-sync/')) return
         lastChangedFile = filename
         clearTimeout(watchDebounce)
         watchDebounce = setTimeout(() => {
@@ -1333,7 +1333,7 @@ function registerConfluenceIpcHandlers() {
   ipcMain.handle('config:write-mcp', async (_event, patch) => {
     // SEC-4: allowlist — only known GUI-managed keys may be written
     const ALLOWED_MCP_KEYS = new Set(['jira', 'confluence', 'slackBot', 'vaultPath'])
-    const mcpConfigPath = process.env.SANDBOX_MAP_CONFIG
+    const mcpConfigPath = process.env.STRATA_SYNC_CONFIG
       || path.join(__dirname, '..', 'mcp-config.json')
     let current = {}
     try { current = JSON.parse(fs.readFileSync(mcpConfigPath, 'utf-8')) } catch {}
@@ -1746,7 +1746,7 @@ function createWindow() {
     minWidth: 1200,
     minHeight: 700,
     title: 'SANDBOX MAP',
-    icon: path.join(__dirname, '..', 'public', 'sandbox-map.png'),  // window titlebar icon
+    icon: path.join(__dirname, '..', '..', 'ico.png'),  // window titlebar icon
     frame: true,
     titleBarStyle: 'hidden',   // Hide native title text, keep window controls
     titleBarOverlay: {
@@ -1772,7 +1772,7 @@ function createWindow() {
 
   // Explicitly set taskbar icon on Windows (setAppUserModelId must be called before this)
   if (process.platform === 'win32') {
-    const iconPath = path.join(__dirname, '..', 'public', 'sandbox-map.png')
+    const iconPath = path.join(__dirname, '..', '..', 'ico.png')
     if (require('fs').existsSync(iconPath)) mainWindow.setIcon(iconPath)
   }
 
@@ -2142,7 +2142,7 @@ function startRagApiServer() {
 }
 
   if (process.platform === 'win32') {
-    app.setAppUserModelId('com.sandbox-map.app')
+    app.setAppUserModelId('com.strata-sync.app')
   }
 
   app.whenReady().then(() => {

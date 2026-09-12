@@ -1163,7 +1163,7 @@ function buildSystemPrompt(p: SystemPromptParts): string {
 let _multiVaultSearchLock: Promise<void> = Promise.resolve()
 
 /**
- * Slack 봇용: 렘브란트 맵의 RAG 파이프라인(BFS+TF-IDF)으로 컨텍스트를 수집하고
+ * Slack 봇용: Strata Sync의 RAG 파이프라인(BFS+TF-IDF)으로 컨텍스트를 수집하고
  * 지정 페르소나 모델로 답변을 생성해 반환한다.
  * useRagApi.ts의 onAsk 핸들러에서 호출됨.
  */

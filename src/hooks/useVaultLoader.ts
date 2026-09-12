@@ -134,7 +134,7 @@ export function useVaultLoader() {
         }
         setLoadedDocuments(docs)
 
-        // Load vault-scoped persona config (.rembrant/personas.md)
+        // Load vault-scoped persona config (.strata-sync/personas.md)
         try {
           const configPath = `${dirPath}/${PERSONA_CONFIG_PATH}`
           const configContent = await window.vaultAPI!.readFile(configPath)

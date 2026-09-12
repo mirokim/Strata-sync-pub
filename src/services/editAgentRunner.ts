@@ -23,7 +23,7 @@ import { vectorEmbedIndex } from '@/lib/vectorEmbedIndex'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const LOG_FILE = '.rembrandt/edit-agent-logs.jsonl'
+const LOG_FILE = '.strata-sync/edit-agent-logs.jsonl'
 import { AGENT_MAX_OUTPUT_TOKENS, EDIT_AGENT_MAX_FILE_CHARS } from '@/lib/constants'
 
 const MAX_FILE_CHARS = EDIT_AGENT_MAX_FILE_CHARS

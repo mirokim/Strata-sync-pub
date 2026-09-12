@@ -45,3 +45,11 @@ venv/
 
 # Claude Code local settings
 .claude/
+
+# Local knowledge graph DB
+.megamemory/
+
+# Runtime logs
+bot/cron-logs/
+bot/slackbot_logs/
+logs/

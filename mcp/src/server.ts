@@ -1,5 +1,5 @@
 /**
- * MCP Server — registers all tools and resources for Sandbox Map.
+ * MCP Server — registers all tools and resources for Strata Sync.
  * 37 tools: vault CRUD, graph analysis, chat, search, edit agent, debate,
  * python tools, confluence/jira sync, slack bot, usage tracking, settings.
  */
@@ -807,11 +807,11 @@ ${config.editAgent.refinementManual ? `\n편집 매뉴얼:\n${config.editAgent.r
 // ── MCP Gate Prompt ─────────────────────────────────────────────────────────
 // Injected when Claude Code connects — tells the model it's in MCP control mode.
 
-const GATE_PROMPT = `당신은 지금 **Sandbox Map MCP 서버**에 연결되어 있습니다.
+const GATE_PROMPT = `당신은 지금 **Strata Sync MCP 서버**에 연결되어 있습니다.
 
 ## 모드: MCP 풀 컨트롤
 - GUI의 API 키를 사용하지 않습니다. 모든 LLM 호출은 이 MCP 서버를 경유합니다.
-- 당신은 서브 에이전트를 통해 Sandbox Map의 모든 기능을 직접 통제합니다.
+- 당신은 서브 에이전트를 통해 Strata Sync의 모든 기능을 직접 통제합니다.
 - vault CRUD, 그래프 분석, 채팅, 검색, Edit Agent, 토론, Python 도구,
   Confluence/Jira 동기화, Slack 봇, 사용량 추적, 설정 — 전부 MCP 도구로 제어 가능합니다.
 
@@ -842,7 +842,7 @@ const GATE_PROMPT = `당신은 지금 **Sandbox Map MCP 서버**에 연결되어
 
 export function createServer(): Server {
   const server = new Server(
-    { name: 'sandbox-map', version: '0.3.0' },
+    { name: 'strata-sync', version: '0.3.0' },
     { capabilities: { tools: {}, resources: {}, prompts: {} } },
   )
 
@@ -889,18 +889,18 @@ export function createServer(): Server {
   // List prompts — exposes the gate prompt
   server.setRequestHandler(ListPromptsRequestSchema, async () => ({
     prompts: [{
-      name: 'sandbox-map-gate',
-      description: 'Sandbox Map MCP 풀 컨트롤 모드 — 연결 시 자동 주입되는 시스템 프롬프트',
+      name: 'strata-sync-gate',
+      description: 'Strata Sync MCP 풀 컨트롤 모드 — 연결 시 자동 주입되는 시스템 프롬프트',
     }],
   }))
 
   // Get prompt — returns the gate prompt content
   server.setRequestHandler(GetPromptRequestSchema, async (req) => {
-    if (req.params.name !== 'sandbox-map-gate') {
+    if (req.params.name !== 'strata-sync-gate') {
       throw new Error(`Unknown prompt: ${req.params.name}`)
     }
     return {
-      description: 'Sandbox Map MCP 풀 컨트롤 모드',
+      description: 'Strata Sync MCP 풀 컨트롤 모드',
       messages: [{ role: 'user' as const, content: { type: 'text' as const, text: GATE_PROMPT } }],
     }
   })

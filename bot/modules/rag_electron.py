@@ -1,5 +1,5 @@
 """
-rag_electron.py — Rembrandt Map Electron RAG API 클라이언트
+rag_electron.py — Strata Sync Electron RAG API 클라이언트
 
 Electron 앱이 실행 중일 때 localhost:7331에서
 TF-IDF + wiki-link 그래프 BFS 검색을 사용합니다.
@@ -164,7 +164,7 @@ def ask_via_electron(
 ) -> tuple[str | None, list[str]]:
     """
     Electron 앱에 질문을 보내고 완성된 AI 답변을 받아옴.
-    렘브란트 맵의 BFS RAG + 페르소나 LLM 파이프라인을 그대로 사용.
+    Strata Sync의 BFS RAG + 페르소나 LLM 파이프라인을 그대로 사용.
     history: [{"role": "user"|"assistant", "content": "..."}] 이전 대화 히스토리.
     images: [{"data": "<base64>", "mediaType": "image/png"}] 첨부 이미지.
     실패/미실행 시 None 반환 → 호출 측에서 폴백.

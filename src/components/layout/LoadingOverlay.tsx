@@ -150,7 +150,7 @@ export default function LoadingOverlay() {
           color: 'var(--color-text-primary)', fontSize: 15, fontWeight: 700,
           letterSpacing: '0.05em', opacity: 0.9, marginBottom: 2,
         }}>
-          Sandbox Map
+          Strata Sync
         </div>
 
         {/* Vault list (multi-vault only) */}

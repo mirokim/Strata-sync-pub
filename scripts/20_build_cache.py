@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-20_build_cache.py — BGE-M3 로컬 임베딩 → Sandbox_Map .vector_cache_v6.json
+20_build_cache.py — BGE-M3 로컬 임베딩 → Strata Sync .vector_cache_v6.json
 
 입력 : C:\\tmp\\embed_items.jsonl   (dump_embed_items.ts 출력)
 출력 : C:\\dev2\\refined_vault\\.vector_cache_v6.json

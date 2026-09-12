@@ -1,5 +1,5 @@
 """
-Sandbox Map Source Management Bot — 볼트 관리 + Slack 봇 통합 GUI
+Strata Sync Source Management Bot — 볼트 관리 + Slack 봇 통합 GUI
 ──────────────────────────────────────────────────────────────────
 기능:
   - vault MD 파일 스캔 + keyword_index.json 자동 관리
@@ -178,7 +178,7 @@ def _is_valid_search_query(s: str) -> bool:
     """LLM 출력이 대화형 응답이 아닌 '검색 키워드'로 사용 가능한지 판정.
 
     한글은 음절 기준으로 따로 판정한다. 이 프로젝트의 핵심 키워드가
-    '밸런스', '캐릭터', '사운드', 'GDD', '루모', '에녹', '다이잔' 처럼 짧아서
+    '밸런스', '캐릭터', '사운드', 'GDD', '루모', '에녹', '캐릭터G' 처럼 짧아서
     글자 수 3자 이하를 일괄 무효 처리하면 전부 버려진다.
 
     실패 조건: 빈 문자열, 80자 이상, 한글 2음절 미만(한글 없으면 2자 미만),
@@ -604,12 +604,12 @@ class SlackBotRunner:
                         f"`{p['name']}` ({len(p.get('personas', []))}명)" for p in saved_presets[:6]
                     )
                 else:
-                    preset_lines = "  _(아직 저장된 프리셋이 없어요. 렘브란트 맵 Settings > MiroFish 에서 만들 수 있어요)_"
+                    preset_lines = "  _(아직 저장된 프리셋이 없어요. Strata Sync Settings > MiroFish 에서 만들 수 있어요)_"
                 say(
                     blocks=[
                         {
                             "type": "header",
-                            "text": {"type": "plain_text", "text": "🗺️  Sandbox Map Bot", "emoji": True},
+                            "text": {"type": "plain_text", "text": "🗺️  Strata Sync Bot", "emoji": True},
                         },
                         {
                             "type": "section",
@@ -674,7 +674,7 @@ class SlackBotRunner:
                             "elements": [{"type": "mrkdwn", "text": "🔖 볼트 문서에 `#시뮬레이션필요` 태그 → 자동 알림   •   ⏰ 스케줄 자동 실행: Settings > MiroFish"}],
                         },
                     ],
-                    text="🗺️ Sandbox Map Bot 사용법",
+                    text="🗺️ Strata Sync Bot 사용법",
                     thread_ts=thread_ts,
                 )
                 return
@@ -745,7 +745,7 @@ class SlackBotRunner:
                 self._log(f"[Slack] 히스토리 {len(history)//2}턴 복원")
 
             claude = None  # 폴백에서 덮어씀, 사용자 기억 갱신에 사용
-            # 1순위: Electron /ask — 렘브란트 맵의 BFS RAG + LLM 파이프라인 그대로 사용
+            # 1순위: Electron /ask — Strata Sync의 BFS RAG + LLM 파이프라인 그대로 사용
             if progress: progress.start("electron")
 
             # Electron HTTP 준비 확인 (3초 이내 /settings 응답)
@@ -821,14 +821,14 @@ class SlackBotRunner:
                             "- 설명·문장·이모지·마크다운 금지\n"
                             "- 변환이 어려우면 입력의 명사구만 복사\n\n"
                             "예시 1:\n"
-                            "INPUT: 미하일 컨셉과 관련해서 디렉터 피드백을 정리해봐\n"
-                            "OUTPUT: 미하일 컨셉 디렉터 피드백\n\n"
+                            "INPUT: 캐릭터E 컨셉과 관련해서 디렉터 피드백을 정리해봐\n"
+                            "OUTPUT: 캐릭터E 컨셉 디렉터 피드백\n\n"
                             "예시 2:\n"
                             "INPUT: 최근 회의에서 주요한 의사결정이 뭐였지?\n"
                             "OUTPUT: 최근 회의 주요 의사결정\n\n"
                             "예시 3:\n"
-                            "INPUT: 지난달 렘브란트 맵 성능 이슈 있었나\n"
-                            "OUTPUT: 렘브란트 맵 성능 이슈"
+                            "INPUT: 지난달 Strata Sync 성능 이슈 있었나\n"
+                            "OUTPUT: Strata Sync 성능 이슈"
                         )
                         _rewrite_user = f"INPUT: {search_query}\nOUTPUT:"
                         _rewritten = None
@@ -902,9 +902,9 @@ class SlackBotRunner:
                             "- 설명·문장·이모지·마크다운 금지\n"
                             "- 의미상 단일 주제여서 분해 어려우면 빈 응답\n\n"
                             "예시:\n"
-                            "INPUT: 미하일 컨셉 디렉터 피드백 정리해봐\n"
+                            "INPUT: 캐릭터E 컨셉 디렉터 피드백 정리해봐\n"
                             "OUTPUT:\n"
-                            "미하일 컨셉 피드백\n"
+                            "캐릭터E 컨셉 피드백\n"
                             "캐릭터 레퍼런스 방향성"
                         )
                         _decomp_user = f"INPUT: {query}\nOUTPUT:"
@@ -1306,7 +1306,7 @@ class SlackBotRunner:
         self._running = True
         self._thread = threading.Thread(target=_run, daemon=True)
         self._thread.start()
-        self._log("🟢 Slack 봇 시작 — 모델: 렘브란트 맵 페르소나 설정 따름")
+        self._log("🟢 Slack 봇 시작 — 모델: Strata Sync 페르소나 설정 따름")
         return True
 
     def stop(self):
@@ -1337,7 +1337,7 @@ class SlackBotRunner:
                         "blocks": [
                             {
                                 "type": "header",
-                                "text": {"type": "plain_text", "text": "🗺️  Sandbox Map Bot", "emoji": True},
+                                "text": {"type": "plain_text", "text": "🗺️  Strata Sync Bot", "emoji": True},
                             },
                             {
                                 "type": "section",
@@ -1409,7 +1409,7 @@ class SlackBotRunner:
         HELP_BLOCKS = [
             {
                 "type": "header",
-                "text": {"type": "plain_text", "text": "🗺️  Sandbox Map Bot 사용법", "emoji": True},
+                "text": {"type": "plain_text", "text": "🗺️  Strata Sync Bot 사용법", "emoji": True},
             },
             {
                 "type": "section",
@@ -1445,7 +1445,7 @@ class SlackBotRunner:
                 "elements": [{"type": "mrkdwn", "text": "*페르소나 태그*  `[감독]`  `[아트]`  `[기획]`  `[기술]`"}],
             },
         ]
-        HELP_TEXT = "*🗺️ Sandbox Map Bot 사용법*\n`/ask 질문`  `/remember`  `/status`  `/help`"
+        HELP_TEXT = "*🗺️ Strata Sync Bot 사용법*\n`/ask 질문`  `/remember`  `/status`  `/help`"
 
         @app.command("/help")
         def handle_slash_help(ack, respond, logger):
@@ -1552,7 +1552,7 @@ class SlackBotRunner:
                     blocks=[
                         {
                             "type": "header",
-                            "text": {"type": "plain_text", "text": "🗺️  Sandbox Map Bot 상태", "emoji": True},
+                            "text": {"type": "plain_text", "text": "🗺️  Strata Sync Bot 상태", "emoji": True},
                         },
                         {
                             "type": "section",
@@ -1586,7 +1586,7 @@ class SlackBotRunner:
                     view={
                         "type": "modal",
                         "callback_id": "sandbox_ask_modal",
-                        "title": {"type": "plain_text", "text": "Sandbox Map에게 질문"},
+                        "title": {"type": "plain_text", "text": "Strata Sync에게 질문"},
                         "submit": {"type": "plain_text", "text": "질문하기"},
                         "close":  {"type": "plain_text", "text": "취소"},
                         "blocks": [
@@ -1678,7 +1678,7 @@ class SlackBotRunner:
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Rembrandt Map Source Management Bot")
+        self.title("Strata Sync Source Management Bot")
         self.geometry("720x640")
         self.resizable(True, True)
         self.cfg = load_config()

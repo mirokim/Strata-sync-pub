@@ -31,7 +31,7 @@ function formatMembersFile(members: JiraTeamMember[], projectKey: string): strin
     `synced: ${new Date().toISOString()}`,
     '---',
     '',
-    '<!-- Sandbox Map이 자동 관리합니다. 역할/담당업무는 직접 수정해도 됩니다. -->',
+    '<!-- Strata Sync이 자동 관리합니다. 역할/담당업무는 직접 수정해도 됩니다. -->',
     '',
     '```json',
     JSON.stringify(members, null, 2),

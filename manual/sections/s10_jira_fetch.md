@@ -330,7 +330,7 @@ _attachments/
 - [design.pptx](_attachments/PROJ-123/design.pptx)
 ```
 
-> 이미지는 `![[]]` (sandbox_map 그래프에 이미지 노드로 시각화), 문서는 일반 링크로 표기.
+> 이미지는 `![[]]` (strata-sync 그래프에 이미지 노드로 시각화), 문서는 일반 링크로 표기.
 > XLSX/PPTX/PDF는 별도로 MD 변환 후 볼트에 추가하면 BM25 검색 가능.
 
 **6.4 우선순위**

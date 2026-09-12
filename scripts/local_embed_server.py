@@ -2,7 +2,7 @@
 """
 local_embed_server.py — BGE-M3 로컬 임베딩 서버 (완전 오프라인)
 
-Sandbox_Map 이 Gemini API 대신 이 서버를 호출하도록 하여
+Strata Sync 이 Gemini API 대신 이 서버를 호출하도록 하여
 사내 문서가 외부로 나가지 않게 합니다.
 
 실행:  python scripts/local_embed_server.py
@@ -39,7 +39,7 @@ _model = AutoModel.from_pretrained(
 _DIM = int(_model.config.hidden_size)
 print(f"[embed] 준비 완료 {time.time()-_t0:.1f}s | device={_device} dim={_DIM}", flush=True)
 
-app = FastAPI(title="Sandbox Map Local Embeddings")
+app = FastAPI(title="Strata Sync Local Embeddings")
 
 
 class EmbedRequest(BaseModel):

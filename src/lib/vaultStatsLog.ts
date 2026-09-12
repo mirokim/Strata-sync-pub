@@ -8,7 +8,7 @@
 import type { LoadedDocument } from '@/types'
 import { logger } from '@/lib/logger'
 
-const STATS_FILE = '.rembrandt/vault-stats.jsonl'
+const STATS_FILE = '.strata-sync/vault-stats.jsonl'
 const MAX_ENTRIES = 365  // 최대 1년치 보관
 
 export interface VaultStatsSnapshot {
