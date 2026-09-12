@@ -382,6 +382,7 @@ export function parseMarkdownFile(file: VaultFile): LoadedDocument {
     speaker,
     date,
     mtime: file.mtime,
+    ...(file.personal ? { personal: true } : {}),
     tags,
     links,
     sections,

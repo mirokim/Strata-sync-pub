@@ -14,6 +14,7 @@ import { runLint, reportToMarkdown, type LintReport, type LintSnapshot } from '.
 import { parseVaultDoc, type ParsedVaultDoc } from '../../mcp/src/lint/vaultDoc.js'
 import { putFile, deleteFile, type FileRow, type SyncDeps } from './sync.js'
 import { loadVaultView, writeVaultSnapshot } from './vaultIndex.js'
+import { isPersonalPath } from './personal.js'
 
 export const SNAPSHOT_KEY = '_system/lint-snapshot.json'
 export const EMBED_INDEX_KEY = '_system/embed-index.json'
@@ -158,10 +159,12 @@ export async function runNightly(deps: NightlyDeps, trigger: 'cron' | 'manual' =
   const now = (deps.now ?? Date.now)()
   const wallStart = Date.now()
   const log = deps.log ?? (() => {})
-  const rows = await listLiveRows(deps.meta)
+  const allRows = await listLiveRows(deps.meta)
   const view = await loadVaultView(deps, true)
-  const docs = view.docs
   await writeVaultSnapshot(deps, view).catch(e => log(`[nightly] snapshot write failed: ${e}`))
+  // Personal documents stay out of the shared lint report and the shared embedding index
+  const rows = allRows.filter(r => !isPersonalPath(r.path))
+  const docs = new Map([...view.docs].filter(([p]) => !isPersonalPath(p)))
   log(`[nightly] ${docs.size} documents`)
 
   // ── Lint ─────────────────────────────────────────────────────────────────

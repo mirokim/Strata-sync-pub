@@ -74,7 +74,7 @@ const client = {
   history: vi.fn(async () => ({ path: 'design/Stamina.md', current: { etag: 'c', at: now, author: 'kim', size: 10 }, versions: [{ etag: 'a'.repeat(64), at: now - DAY, author: 'ann', size: 9 }] })),
   historyDiff: vi.fn(async () => ({ path: 'design/Stamina.md', from: { etag: 'a'.repeat(64), at: now - DAY, author: 'ann' }, text: '- regen 4/s\n+ regen 5/s', stats: { added: 1, removed: 1, unchanged: 2 } })),
 }
-vi.mock('@/web/remoteVault', () => ({ currentRemoteVault: () => ({ client }) }))
+vi.mock('@/web/remoteVault', () => ({ currentRemoteVault: () => ({ client, physicalOf: (p: string) => p }) }))
 const openInEditor = vi.fn()
 vi.mock('@/stores/uiStore', () => ({ useUIStore: (sel: (s: unknown) => unknown) => sel({ openInEditor }) }))
 vi.mock('@/stores/vaultStore', () => ({ useVaultStore: (sel: (s: unknown) => unknown) => sel({ loadedDocuments: docs }) }))

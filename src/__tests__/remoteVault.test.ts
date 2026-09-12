@@ -41,6 +41,9 @@ class FakeWorker {
   }
   reset(): void { this.rows.clear(); this.blobs.clear(); this.seq = 0; this.generation += 1 }
 
+  /** OAuth sub of the signed-in user; '' = team token (service identity). */
+  sub = ''
+
   fetch = async (input: string, init: RequestInit = {}): Promise<Response> => {
     const url = new URL(input)
     const method = (init.method ?? 'GET').toUpperCase()
@@ -63,6 +66,18 @@ class FakeWorker {
       const since = Number(url.searchParams.get('since') ?? 0)
       const files = [...this.rows.values()].filter(r => r.seq > since)
       return json(200, { head: this.seq, next: null, files })
+    }
+    if (url.pathname === '/v1/me') return json(200, { sub: this.sub, email: 'k@x', name: '미로', picture: null, service: !this.sub, author: '미로' })
+    if (url.pathname === '/v1/visibility' && method === 'POST') {
+      const body = JSON.parse(String(init.body)) as { path: string; personal: boolean }
+      const src = this.rows.get(body.path)
+      if (!src || src.deleted) return json(404, { error: 'not found' })
+      const dest = body.personal ? `_personal/${this.sub}/${body.path}` : body.path.replace(/^_personal\/[^/]+\//, '')
+      if (this.rows.get(dest) && !this.rows.get(dest)!.deleted) return json(409, { error: `a document already exists at ${dest}` })
+      const bytes = this.blobs.get(body.path)!
+      const row: Row = { ...src, path: dest, seq: ++this.seq, updatedAt: Date.now() }
+      this.rows.set(dest, row); this.blobs.set(dest, bytes); this.del(body.path)
+      return json(200, { from: body.path, path: dest, row, personal: body.personal })
     }
     if (url.pathname === '/v1/search') return this.searchDown ? json(503, { error: 'semantic search not configured' }) : json(200, { hits: [{ path: 'a.md', docId: 'a', heading: 'A', score: 0.9 }] })
     if (url.pathname === '/v1/file') {
@@ -397,6 +412,58 @@ describe('images', () => {
     expect(doc).toContain('![[pasted-20260912-1030-00.png]]')
     expect(seen).toEqual([docRel])
     expect(vault.imageRegistry()[imageRel.split('/').pop()!.toLowerCase()]?.relativePath ?? Object.values(vault.imageRegistry()).some(r => r.relativePath === imageRel)).toBeTruthy()
+  })
+})
+
+describe('personal documents', () => {
+  const signedIn = () => {
+    server.sub = '1001'
+    server.put('_personal/1001/active/Draft.md', '# Draft\n\nnot ready, links [[Stamina]]')
+    server.put('_personal/1001/active/Stamina.md', '# my shadow stamina')      // collides with the team doc
+    return new RemoteVault({ ...CONFIG, auth: 'oauth' }, { fetchImpl: server.fetch, backend: new MemoryCacheBackend(), pollIntervalMs: 1000, now: () => clock, setTimer: (fn, ms) => { timers.push({ fn, ms }); return timers.length }, clearTimer: () => { timers.length = 0 }, notify: m => { notices.push(m) } })
+  }
+
+  it('shows the signed-in user\'s personal documents in their folders, flagged, and keeps colliding ones at their server path', async () => {
+    const v = signedIn()
+    const { files } = await v.api.loadFiles(v.vaultPath)
+    const byPath = Object.fromEntries(files.map(f => [f.relativePath, f.personal ?? false]))
+    expect(byPath).toEqual({ 'active/Combat System.md': false, 'active/Stamina.md': false, 'active/Draft.md': true, '_personal/1001/active/Stamina.md': true })
+    expect(v.personalEnabled).toBe(true)
+    // Reads and writes through the app path reach the personal copy
+    expect(await v.api.readFile(A('active/Draft.md'))).toContain('not ready')
+    await v.api.saveFile(A('active/Draft.md'), '# Draft\n\nstill mine')
+    expect(new TextDecoder().decode(server.blobs.get('_personal/1001/active/Draft.md')!)).toContain('still mine')
+    expect(server.rows.has('active/Draft.md')).toBe(false)
+    // A team-token session sees no personal space at all
+    const token = makeVault()
+    await token.api.loadFiles(token.vaultPath)
+    expect(token.personalEnabled).toBe(false)
+  })
+
+  it('setPersonal publishes and withdraws while the app path stays the same', async () => {
+    const v = signedIn()
+    await v.api.loadFiles(v.vaultPath)
+    const seen: (string | undefined)[] = []
+    v.api.onChanged(e => { seen.push(e.changedFile) })
+    expect(await v.setPersonal(A('active/Draft.md'), false)).toEqual({ path: 'active/Draft.md', personal: false })
+    expect(server.rows.get('active/Draft.md')?.deleted).toBe(false)
+    expect(server.rows.get('_personal/1001/active/Draft.md')?.deleted).toBe(true)
+    expect((await v.api.loadFiles(v.vaultPath)).files.find(f => f.relativePath === 'active/Draft.md')?.personal).toBeUndefined()
+    expect(await v.setPersonal(A('active/Draft.md'), true)).toEqual({ path: 'active/Draft.md', personal: true })
+    expect((await v.api.loadFiles(v.vaultPath)).files.find(f => f.relativePath === 'active/Draft.md')?.personal).toBe(true)
+    expect(seen).toEqual([undefined, undefined])   // full reloads
+    await expect(makeVault().setPersonal(A('active/Combat System.md'), true)).rejects.toThrow(/Sign in/)
+  })
+
+  it('images pasted into a personal document stay personal', async () => {
+    const v = signedIn()
+    await v.api.loadFiles(v.vaultPath)
+    const r = await v.pasteImage(new TextEncoder().encode('PNG'), 'png', A('active/Draft.md'))
+    expect(r.imageRel).toBe('attachments/2026-09/pasted-20260912-1030-00.png')
+    expect(server.rows.has('_personal/1001/attachments/2026-09/pasted-20260912-1030-00.png')).toBe(true)
+    expect(server.rows.has('attachments/2026-09/pasted-20260912-1030-00.png')).toBe(false)
+    expect(new TextDecoder().decode(server.blobs.get('_personal/1001/attachments/2026-09/pasted-20260912-1030-00.md')!)).toContain('pasted_into: "active/Draft.md"')
+    expect(await v.api.readImage(A('attachments/2026-09/pasted-20260912-1030-00.png'))).toMatch(/^data:image\/png/)
   })
 })
 

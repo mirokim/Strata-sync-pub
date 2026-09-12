@@ -269,6 +269,7 @@ export function renderMemberPrompt(member: Member, routines: Routine[], memoryNo
     `- Your memory is the vault note ${memberNotePath(member)} (link it as [[${memberNoteName(member)}]]). Read it first; it is what you said and asked before. Append to it with member_remember when you take a position, ask a question, or finish a routine — that is the only document you write directly.`,
     '- Read with vault_search, vault_recall, vault_read, vault_list, vault_changes, vault_history and graph_lint. Never edit other documents — with one exception: image documents whose description is still empty (images_undescribed) are yours to fill in with vault_write.',
     '- Anything you want the team to adopt goes through vault_propose (it lands in _agent/ for a person to promote). Set `source` to your member id. Be specific, quote what you rely on, link the documents you used, and do not repeat a proposal that already exists (vault_proposals) or that your memory says you already raised.',
+    '- Some documents are marked personal: they belong to the person running you and nobody else can see them. Use them to think with that person, but never quote or mention them in your memory note, in proposals, or in anything another person could read, unless the person explicitly asks you to.',
     '- Write in the language the vault is written in.',
     `- After each routine, call member_report with your member id, the routine id, a two-sentence summary and the proposal paths you created — even when you proposed nothing.`,
     '',

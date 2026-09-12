@@ -21,11 +21,14 @@ import type { SearchHit } from './nightly.js'
 import { recall, fusedSearch } from './recall.js'
 import { listVersions, readVersion, previousVersion, diffLines } from './history.js'
 import { isImagePath, imageDocPath, mimeOf, undescribedImages, DESCRIBE_GUIDE } from './images.js'
+import { canSee, isPersonalPath, toPersonalPath, setVisibility, type Viewer } from './personal.js'
 
 export interface McpDeps extends SyncDeps {
   /** Semantic search when Vectorize is configured; otherwise BM25 only. */
   semanticSearch?: (query: string, topK: number) => Promise<SearchHit[]>
   author?: string
+  /** Who is calling — decides which personal documents are visible and writable. */
+  viewer?: Viewer
   /** Called after a document is created/replaced (vault_write, vault_promote) — the router queues member reactions here. */
   onWrite?: (row: FileRow) => void
 }
@@ -44,7 +47,8 @@ const TOOLS = [
   { name: 'vault_propose', description: 'Record an idea, decision or note as an agent PROPOSAL in _agent/ — never directly into the vault. A person promotes it in the app or with vault_promote. Use whenever the user asks to remember/record/write something down.', inputSchema: { type: 'object' as const, properties: { title: { type: 'string' }, body: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } }, links: { type: 'array', items: { type: 'string' }, description: 'Titles of existing documents to wikilink under "## Related"' }, source: { type: 'string', description: 'Who is proposing (default "agent")' } }, required: ['title', 'body'] } },
   { name: 'vault_proposals', description: 'List pending agent proposals in _agent/.', inputSchema: { type: 'object' as const, properties: {} } },
   { name: 'vault_promote', description: 'Promote a proposal into the vault (strip proposal frontmatter, move out of _agent/). Only when the user explicitly approves it.', inputSchema: { type: 'object' as const, properties: { path: { type: 'string' }, destFolder: { type: 'string', description: 'Destination folder (default vault root)' } }, required: ['path'] } },
-  { name: 'vault_write', description: 'Write a document directly (create or replace). Prefer vault_propose for anything the team has not approved; use this only when the user explicitly asks to edit an existing document.', inputSchema: { type: 'object' as const, properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } },
+  { name: 'vault_write', description: 'Write a document directly (create or replace). Prefer vault_propose for anything the team has not approved; use this only when the user explicitly asks to edit an existing document. With personal=true the document is created in the user\'s personal space: it sits in its folder and links like any document, but only this user ever sees it (needs a signed-in user, not the team token).', inputSchema: { type: 'object' as const, properties: { path: { type: 'string' }, content: { type: 'string' }, personal: { type: 'boolean', description: 'Create as the user\'s personal (invisible to others) document' } }, required: ['path', 'content'] } },
+  { name: 'vault_visibility', description: 'Move a document between the team space and the user\'s personal space. personal=false publishes a personal document to the team at its own path (from then on everyone sees it, members react, history starts); personal=true withdraws a team document the user alone has ever saved.', inputSchema: { type: 'object' as const, properties: { path: { type: 'string' }, personal: { type: 'boolean' } }, required: ['path', 'personal'] } },
   { name: 'vault_changes', description: 'Documents created, changed or deleted since a point in time (ISO date or ms since epoch), newest first, with author and title. Use it to see what moved before reviewing premises or writing a digest.', inputSchema: { type: 'object' as const, properties: { since: { type: 'string', description: 'ISO 8601 date/time, or ms since epoch' }, limit: { type: 'number', description: 'default 100, max 500' } }, required: ['since'] } },
   { name: 'images_undescribed', description: 'Image documents whose Description is still empty (images pasted in the app or uploaded). For each: vault_read the image, then vault_write the image document with what it shows, the visible text and tags — that is how images become searchable.', inputSchema: { type: 'object' as const, properties: { limit: { type: 'number', description: 'default 20' } } } },
   { name: 'members_list', description: 'The team\'s AI members (Settings → AI Members): id, name, role, scope, routines with cadence and last run, memory note path. Use the `member` prompt to act as one.', inputSchema: { type: 'object' as const, properties: { due: { type: 'boolean', description: 'Only members with a routine due now' } } } },
@@ -53,6 +57,11 @@ const TOOLS = [
 ]
 
 type Args = Record<string, unknown>
+
+/** Paths this viewer must not see (other people's personal documents). */
+function hiddenFrom(view: { docs: Map<string, unknown> }, viewer?: Viewer): Set<string> {
+  return new Set([...view.docs.keys()].filter(p => !canSee(p, viewer)))
+}
 
 function toBase64(bytes: Uint8Array): string {
   let bin = ''
@@ -74,15 +83,17 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       const view = await loadVaultView(deps)
       const folder = typeof args.folder === 'string' ? args.folder.replace(/^\/+|\/+$/g, '') : ''
       const limit = Math.min(Math.max(Number(args.limit) || 200, 1), 2000)
-      const items = [...view.docs.entries()]
+      const visible = [...view.docs.entries()].filter(([p]) => canSee(p, deps.viewer))
+      const items = visible
         .filter(([p]) => !folder || p === folder || p.startsWith(folder + '/'))
         .sort((a, b) => a[0].localeCompare(b[0]))
         .slice(0, limit)
-        .map(([path, d]) => ({ path, title: d.title, tags: d.tags, modified: d.mtime ? new Date(d.mtime).toISOString() : null, proposal: isProposalPath(d.folderPath) || undefined }))
-      return text({ count: items.length, total: view.docs.size, items })
+        .map(([path, d]) => ({ path, title: d.title, tags: d.tags, modified: d.mtime ? new Date(d.mtime).toISOString() : null, proposal: isProposalPath(d.folderPath) || undefined, personal: isPersonalPath(path) || undefined }))
+      return text({ count: items.length, total: visible.length, items })
     }
     case 'vault_read': {
       const path = String(args.path ?? '')
+      if (!canSee(normalizeVaultPath(path) ?? path, deps.viewer)) return fail(`${path}: not found`)
       const r = await getFile(deps, path)
       if (r.status !== 200 || !('bytes' in r) || !r.bytes) return fail(`${path}: ${r.status === 404 ? 'not found' : 'cannot read'}`)
       if (isImagePath(path)) {
@@ -98,23 +109,24 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       if (!query) return fail('query required')
       const topK = Math.min(Math.max(Number(args.topK) || 8, 1), 30)
       const view = await loadVaultView(deps)
-      const { hits, semantic } = await fusedSearch(deps, view, query, topK)
+      const { hits, semantic } = await fusedSearch(deps, view, query, topK, hiddenFrom(view, deps.viewer))
       const results = hits.map(h => {
         const d = view.docs.get(h.path)
-        return { path: h.path, title: h.title, score: h.score, snippet: d ? d.body.replace(/\s+/g, ' ').slice(0, 240) : '', proposal: d && isProposalPath(d.folderPath) ? true : undefined }
+        return { path: h.path, title: h.title, score: h.score, snippet: d ? d.body.replace(/\s+/g, ' ').slice(0, 240) : '', proposal: d && isProposalPath(d.folderPath) ? true : undefined, personal: isPersonalPath(h.path) || undefined }
       })
       return text({ query, semantic, results })
     }
     case 'vault_recall': {
       const query = String(args.query ?? '').trim()
       if (!query) return fail('query required')
-      const result = await recall(deps, { query, budget: Number(args.budget) || undefined, seeds: Number(args.seeds) || undefined, neighbours: args.neighbours === undefined ? undefined : Number(args.neighbours) })
+      const result = await recall(deps, { query, viewer: deps.viewer, budget: Number(args.budget) || undefined, seeds: Number(args.seeds) || undefined, neighbours: args.neighbours === undefined ? undefined : Number(args.neighbours) })
       if (args.format === 'json') { const { markdown: _m, ...rest } = result; return text(rest) }
       return text(result.markdown)
     }
     case 'vault_history': {
       const path = normalizeVaultPath(String(args.path ?? ''))
       if (!path) return fail('path required')
+      if (!canSee(path, deps.viewer)) return fail(`${path}: not found`)
       const row = await deps.meta.get(path)
       const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 50)
       const versions = await listVersions(deps.blobs, path)
@@ -136,7 +148,8 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       let previous: LintSnapshot | undefined
       if (previousRaw) { try { previous = JSON.parse(dec.decode(previousRaw)) } catch { previous = undefined } }
       const rules = Array.isArray(args.rules) ? (args.rules as string[]).filter((r): r is LintRuleId => (ALL_RULES as readonly string[]).includes(r)) : undefined
-      const report = runLint({ docs: [...view.docs.values()], previousSnapshot: previous }, {
+      // Personal documents are nobody's business but their owner's — including the lint's
+      const report = runLint({ docs: [...view.docs.entries()].filter(([p]) => !isPersonalPath(p)).map(([, d]) => d), previousSnapshot: previous }, {
         rules, minSeverity: args.minSeverity as LintSeverity | undefined, limitPerRule: Number(args.limitPerRule) || undefined,
       })
       if (args.format === 'markdown') return text(reportToMarkdown(report))
@@ -147,7 +160,7 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       const q = String(args.text ?? '').trim()
       if (!q) return fail('text required')
       const view = await loadVaultView(deps)
-      const exclude = new Set([...view.docs.entries()].filter(([, d]) => isProposalPath(d.folderPath)).map(([p]) => p))
+      const exclude = new Set([...view.docs.entries()].filter(([p, d]) => isProposalPath(d.folderPath) || !canSee(p, deps.viewer)).map(([p]) => p))
       const hits = view.bm25().search(q, Math.min(Math.max(Number(args.topK) || 5, 1), 20), exclude)
       return text({ suggestions: hits.map(h => ({ path: h.path, title: h.title, docId: h.docId, score: Number(h.score.toFixed(3)) })) })
     }
@@ -190,14 +203,29 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       return text({ promoted: rel, to: dest })
     }
     case 'vault_write': {
-      const rel = normalizeVaultPath(String(args.path ?? ''))
+      let rel = normalizeVaultPath(String(args.path ?? ''))
       if (!rel || !rel.toLowerCase().endsWith('.md')) return fail('path must be a .md vault path')
+      if (args.personal === true) {
+        const personal = deps.viewer ? toPersonalPath(deps.viewer, rel) : null
+        if (!personal) return fail('personal documents need a signed-in user (the team token has no owner)')
+        rel = personal
+      }
+      if (!canSee(rel, deps.viewer)) return fail(`${rel}: not your personal space`)
       const content = String(args.content ?? '')
       const r = await putFile(deps, { path: rel, body: enc.encode(content), mtime: Date.now(), author })
       if (r.status >= 400) return fail(`write failed (${r.status})`)
       if (r.body) deps.onWrite?.(r.body as FileRow)
       invalidateVaultView()
-      return text({ path: rel, status: r.status === 201 ? 'created' : r.status === 204 ? 'unchanged' : 'replaced' })
+      return text({ path: rel, status: r.status === 201 ? 'created' : r.status === 204 ? 'unchanged' : 'replaced', personal: isPersonalPath(rel) || undefined })
+    }
+    case 'vault_visibility': {
+      if (!deps.viewer) return fail('no caller identity')
+      const r = await setVisibility(deps, { path: String(args.path ?? ''), personal: args.personal === true, viewer: deps.viewer, author })
+      if (r.status !== 200) return fail((r.body as { error?: string })?.error ?? `failed (${r.status})`)
+      invalidateVaultView()
+      const moved = r.body as { from: string; path: string; row: FileRow; personal: boolean }
+      if (!moved.personal) deps.onWrite?.(moved.row)
+      return text({ from: moved.from, path: moved.path, personal: moved.personal })
     }
     case 'vault_changes': {
       const raw = String(args.since ?? '').trim()
@@ -207,15 +235,15 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       const view = await loadVaultView(deps)
       // Every row (live or tombstone) newer than `since`; the vault view is keyed by path, so scan the store
       const rows = await deps.meta.listSince(0, 100_000)
-      const changed = rows.filter(r => r.updatedAt >= since && !r.path.split('/').some(s => s.startsWith('.')))
+      const changed = rows.filter(r => r.updatedAt >= since && !r.path.split('/').some(s => s.startsWith('.')) && canSee(r.path, deps.viewer))
         .sort((a, b) => b.updatedAt - a.updatedAt || b.seq - a.seq).slice(0, limit)
-        .map(r => ({ path: r.path, title: view.docs.get(r.path)?.title ?? r.path.replace(/^.*\//, '').replace(/\.md$/i, ''), author: r.author, at: new Date(r.updatedAt).toISOString(), deleted: r.deleted, proposal: isProposalPath(r.path) || undefined }))
+        .map(r => ({ path: r.path, title: view.docs.get(r.path)?.title ?? r.path.replace(/^.*\//, '').replace(/\.md$/i, ''), author: r.author, at: new Date(r.updatedAt).toISOString(), deleted: r.deleted, proposal: isProposalPath(r.path) || undefined, personal: isPersonalPath(r.path) || undefined }))
       return text({ since: new Date(since).toISOString(), count: changed.length, changes: changed })
     }
     case 'images_undescribed': {
       const view = await loadVaultView(deps)
       const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 100)
-      const pending = undescribedImages(view)
+      const pending = undescribedImages(view).filter(p => canSee(p.doc, deps.viewer))
       return text({ count: pending.length, guide: DESCRIBE_GUIDE, images: pending.slice(0, limit).map(p => ({ ...p, since: new Date(p.since).toISOString() })) })
     }
     case 'members_list': {

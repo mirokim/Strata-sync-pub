@@ -24,6 +24,7 @@ import { handleAuth, SCOPE, type AuthEnv, type Identity } from './auth.js'
 import { readMembers, saveMemberDefinitions, validateMembers, TEMPLATES, type MembersConfig } from './members.js'
 import { listVersions, readVersion, diffLines } from './history.js'
 import { ensureImageDoc, isImagePath } from './images.js'
+import { canSee, visibleRows, setVisibility, type Viewer } from './personal.js'
 
 export interface Env extends AuthEnv {
   VAULT: R2Bucket
@@ -224,6 +225,7 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
   }
   // Who gets recorded as the author of writes: the signed-in person, or whatever a service caller says
   const author = identity.service ? (identity.name || 'service') : (identity.name || identity.email)
+  const viewer: Viewer = { sub: identity.sub, service: identity.service }
 
   deps ??= baseDeps(env)
 
@@ -240,6 +242,7 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
       return handleMcpRequest(req, {
         ...deps, semanticSearch: semantic,
         author: author || 'mcp',
+        viewer,
         onWrite: row => enqueueReaction(env, ctx, deps, row),
       })
     }
@@ -253,10 +256,12 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
       const head = await deps.meta.head()
       const generation = await deps.meta.generation()
       // Markdown content is inlined; tombstones and binaries (images) carry `content: null`.
+      // Other people's personal documents are not part of this viewer's vault at all.
       const docs: (FileRow & { content: string | null })[] = []
       const BATCH = 25
-      for (let i = 0; i < rows.length; i += BATCH) {
-        const part = await Promise.all(rows.slice(i, i + BATCH).map(async row => {
+      const mine = visibleRows(rows, viewer)
+      for (let i = 0; i < mine.length; i += BATCH) {
+        const part = await Promise.all(mine.slice(i, i + BATCH).map(async row => {
           if (row.deleted || !row.path.toLowerCase().endsWith('.md')) return { ...row, content: null }
           const bytes = await deps.blobs.get(row.path)
           return { ...row, content: bytes ? new TextDecoder().decode(bytes) : null }
@@ -292,7 +297,7 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
       const body = await req.json().catch(() => ({})) as { query?: unknown; topK?: unknown }
       if (typeof body.query !== 'string') return json(400, { error: 'query (string) required' })
       const hits = await semanticSearch(embedder(env.AI), vectorQuery(env.VECTORS), body.query, Number(body.topK ?? 10))
-      return json(200, { hits })
+      return json(200, { hits: visibleRows(hits, viewer) })
     }
     if (url.pathname === '/v1/lint/run' && req.method === 'POST') {
       // Manual trigger of the nightly batch (same code the cron runs)
@@ -305,6 +310,7 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
     if (url.pathname === '/v1/history' && req.method === 'GET') {
       const path = normalizeVaultPath(url.searchParams.get('path'))
       if (!path) return json(400, { error: 'path required' })
+      if (!canSee(path, viewer)) return json(404, { error: 'not found' })
       const etag = url.searchParams.get('etag')
       if (!etag) {
         const row = await deps.meta.get(path)
@@ -331,10 +337,23 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
     }
     if (url.pathname === '/v1/manifest' && req.method === 'GET') {
       const since = Number(url.searchParams.get('since') ?? '0')
-      return toResponse(await getManifest(deps, since))
+      const result = await getManifest(deps, since)
+      if (result.status === 200) {
+        const body = result.body as { files: FileRow[] }
+        return toResponse({ ...result, body: { ...body, files: visibleRows(body.files, viewer) } })
+      }
+      return toResponse(result)
+    }
+    if (url.pathname === '/v1/visibility' && req.method === 'POST') {
+      const body = await req.json().catch(() => ({})) as { path?: unknown; personal?: unknown }
+      if (typeof body.path !== 'string' || typeof body.personal !== 'boolean') return json(400, { error: 'path (string) and personal (boolean) required' })
+      const result = await setVisibility(deps, { path: body.path, personal: body.personal, viewer, author })
+      if (result.status === 200 && result.body) { const moved = (result.body as { row: FileRow }).row; enqueueReaction(env, ctx, deps, moved) }
+      return toResponse(result)
     }
     if (url.pathname === '/v1/file') {
       const path = url.searchParams.get('path')
+      if (path && !canSee(path.replace(/\\/g, '/').replace(/^\/+/, ''), viewer)) return json(req.method === 'GET' ? 404 : 403, { error: req.method === 'GET' ? 'not found' : 'not your personal space' })
       if (req.method === 'GET') return toResponse(await getFile(deps, path))
       if (req.method === 'PUT') {
         const declared = Number(req.headers.get('content-length'))

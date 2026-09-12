@@ -17,7 +17,7 @@ import { history, defaultKeymap, historyKeymap } from '@codemirror/commands'
 import { syntaxHighlighting } from '@codemirror/language'
 import { markdown } from '@codemirror/lang-markdown'
 import matter from 'gray-matter'
-import { ArrowLeft, Save, CheckCircle, AlertCircle, X, Lock, Unlock, Pencil, Wand2, RotateCcw, Loader2, Brain } from 'lucide-react'
+import { ArrowLeft, Save, CheckCircle, AlertCircle, X, Lock, Unlock, Pencil, Wand2, RotateCcw, Loader2, Brain, EyeOff, Users } from 'lucide-react'
 import { useUIStore } from '@/stores/uiStore'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useSettingsStore } from '@/stores/settingsStore'
@@ -422,6 +422,27 @@ export default function MarkdownEditor() {
     )
     if (target) openInEditor(target.id)
   }, [openInEditor])
+
+  // ── Personal ↔ team (web build, signed in) ──────────────────────────────────────
+  const remoteForPersonal = currentRemoteVault()
+  const canTogglePersonal = Boolean(remoteForPersonal?.personalEnabled && doc && !doc.id.startsWith('gallery:'))
+  const [togglingPersonal, setTogglingPersonal] = useState(false)
+  const togglePersonal = useCallback(async () => {
+    const remote = currentRemoteVault()
+    if (!remote || !doc) return
+    const makePersonal = !doc.personal
+    if (!makePersonal && !window.confirm(`Share "${doc.filename.replace(/\.md$/i, '')}" with the team? Everyone will see it from now on, members will react to it, and its history starts here.`)) return
+    setTogglingPersonal(true)
+    try {
+      if (isDirty.current && viewRef.current) await doSaveRef.current(viewRef.current.state.doc.toString())
+      const r = await remote.setPersonal(doc.absolutePath, makePersonal)
+      showToast(r.personal ? 'Only you can see this document now.' : 'Shared with the team.', 'success')
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e), 'error')
+    } finally {
+      setTogglingPersonal(false)
+    }
+  }, [doc])
 
   // ── Image paste / drop → attachments/ + image document (web build) ──────────────
   const handleImagePaste = useCallback(async (file: File, view: EditorView) => {
@@ -898,6 +919,20 @@ export default function MarkdownEditor() {
           >
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayName}</span>
             {canSave && <Pencil size={10} style={{ flexShrink: 0, color: 'var(--color-text-muted)', opacity: 0.5 }} />}
+          </button>
+        )}
+
+        {canTogglePersonal && (
+          <button
+            onClick={togglePersonal}
+            disabled={togglingPersonal}
+            data-testid="personal-toggle"
+            aria-pressed={Boolean(doc?.personal)}
+            style={{ display: 'flex', alignItems: 'center', gap: 4, background: doc?.personal ? 'var(--color-bg-active)' : 'transparent', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 4, color: doc?.personal ? 'var(--color-accent)' : 'var(--color-text-muted)', cursor: 'pointer', padding: '3px 7px', fontSize: 11, transition: 'color 0.15s, border-color 0.15s' }}
+            title={doc?.personal ? 'Only you can see this document — click to share it with the team' : 'Keep this document to yourself (only you will see it)'}
+          >
+            {doc?.personal ? <EyeOff size={11} /> : <Users size={11} />}
+            {doc?.personal ? 'Only me' : ''}
           </button>
         )}
 

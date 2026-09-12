@@ -16,6 +16,7 @@ import { RemoteClient, RemoteError, type FetchLike } from './remoteClient'
 import { RemoteCache, defaultCacheBackend, type CacheBackend, type CachedRow } from './remoteCache'
 import { conflictName, numberedName } from '@/lib/conflictCopy'
 import { pastedImagePath, imageDocPath, renderImageDoc } from '@/lib/imageDoc'
+import { PersonalMapper, personalRootFor, isPersonalPath } from './personal'
 
 export { conflictName }
 
@@ -69,6 +70,9 @@ export class RemoteVault {
   private pollTimer: unknown = null
   private imageCache = new Map<string, string>()
   private authWarned = false
+  /** Personal-space path mapping for the signed-in user; team-token sessions have none. */
+  private personal = new PersonalMapper(null, () => false)
+  private identityChecked: Promise<void> | null = null
   /**
    * Files whose server version changed under the app (a lost save race) and which the app has
    * not re-read since. Saves to them keep going to the conflict copy — never over the teammate's
@@ -116,12 +120,33 @@ export class RemoteVault {
    * document is announced here right away for the tree and the graph.
    */
   async pasteImage(bytes: Uint8Array, ext: string, pastedInto: string): Promise<{ imageRel: string; docRel: string; embed: string }> {
-    const imageRel = pastedImagePath(ext, new Date(this.now()))
+    const target = this.personal.physicalOf(this.rel(pastedInto))
+    // An image pasted into a personal document stays personal with it
+    const virtualImage = pastedImagePath(ext, new Date(this.now()))
+    const imageRel = isPersonalPath(target) ? (this.personal.personalPath(virtualImage) ?? virtualImage) : virtualImage
     const docRel = imageDocPath(imageRel)
     await this.write(imageRel, bytes, { createOnly: true })
-    await this.write(docRel, enc.encode(renderImageDoc({ imagePath: imageRel, pastedInto: this.rel(pastedInto) })), { createOnly: true })
-    this.emitChanged(docRel)
-    return { imageRel, docRel, embed: `![[${imageRel.split('/').pop()}]]` }
+    await this.write(docRel, enc.encode(renderImageDoc({ imagePath: virtualImage, pastedInto: this.personal.virtualOf(target).path })), { createOnly: true })
+    this.emitChanged(this.personal.virtualOf(docRel).path)
+    return { imageRel: this.personal.virtualOf(imageRel).path, docRel: this.personal.virtualOf(docRel).path, embed: `![[${imageRel.split('/').pop()}]]` }
+  }
+
+  /**
+   * Publish a personal document to the team (personal=false) or take a team document the user
+   * alone has saved into their personal space (personal=true). The app path stays the same.
+   */
+  async setPersonal(appPath: string, personal: boolean): Promise<{ path: string; personal: boolean }> {
+    const virtual = this.rel(appPath)
+    if (!virtual) throw new Error('Invalid file path')
+    if (!this.personal.enabled) throw new Error('Sign in with Google to keep personal documents — the team token has no owner')
+    const physical = this.personal.physicalOf(virtual)
+    const moved = await this.client.setVisibility(physical, personal)
+    const old = this.cache.rows.get(physical)
+    this.cache.removeRow(physical)
+    this.cache.setRow({ path: moved.path, etag: moved.row.etag, size: moved.row.size, mtime: moved.row.mtime, author: moved.row.author, seq: moved.row.seq, content: old?.content ?? null })
+    this.staleAfterConflict.delete(physical)
+    this.emitChanged()
+    return { path: this.personal.virtualOf(moved.path).path, personal: moved.personal }
   }
 
   // ── Sync core ──────────────────────────────────────────────────────────────
@@ -140,8 +165,28 @@ export class RemoteVault {
     return this.pulling
   }
 
+  /** Who is signed in decides which `_personal/<owner>/` prefix the app strips. Checked once. */
+  private ensureIdentity(): Promise<void> {
+    return this.identityChecked ??= (async () => {
+      if (this.config.auth !== 'oauth') return
+      try {
+        const me = await this.client.me()
+        if (!me.service && me.sub) this.personal = new PersonalMapper(personalRootFor(me.sub), p => { const r = this.cache.rows.get(p); return Boolean(r) })
+      } catch { /* stays team-only until the next load */ }
+    })()
+  }
+
+  /** Whether this session can own personal documents (signed in, not the team token). */
+  get personalEnabled(): boolean { return this.personal.enabled }
+
+  /** App path (prefix stripped) for a server path. */
+  virtualOf(physical: string): { path: string; personal: boolean } { return this.personal.virtualOf(physical) }
+  /** Server path for an app path. */
+  physicalOf(virtual: string): string { return this.personal.physicalOf(virtual) }
+
   private async doPull(): Promise<{ changed: string[]; removed: string[] }> {
     await this.ensureLoaded()
+    await this.ensureIdentity()
     this.setStatus({ inFlight: true })
     const changed: string[] = []
     const removed: string[] = []
@@ -296,7 +341,7 @@ export class RemoteVault {
     for (const path of [...this.cache.rows.keys()].sort()) {
       if (!IMAGE_EXT.test(path)) continue
       const name = path.slice(path.lastIndexOf('/') + 1)
-      if (!out[name]) out[name] = { relativePath: path, absolutePath: this.abs(path) }
+      if (!out[name]) { const v = this.personal.virtualOf(path).path; out[name] = { relativePath: v, absolutePath: this.abs(v) } }
     }
     return out
   }
@@ -312,15 +357,15 @@ export class RemoteVault {
         await this.pull()
         this.staleAfterConflict.clear() // the app is about to receive every current version
         return {
-          files: mdRows().map(r => ({ relativePath: r.path, absolutePath: this.abs(r.path), content: r.content!, mtime: r.mtime })),
-          folders: this.cache.folders(),
+          files: mdRows().map(r => { const v = this.personal.virtualOf(r.path); return { relativePath: v.path, absolutePath: this.abs(v.path), content: r.content!, mtime: r.mtime, ...(v.personal ? { personal: true } : {}) } }),
+          folders: this.cache.folders().map(f => this.personal.virtualOf(f).path).filter((f, i, a) => a.indexOf(f) === i),
           imageRegistry: this.imageRegistry(),
         }
       },
 
       scanMetadata: async () => {
         await this.pull()
-        return mdRows().map(r => ({ relativePath: r.path, absolutePath: this.abs(r.path), mtime: r.mtime }))
+        return mdRows().map(r => { const v = this.personal.virtualOf(r.path); return { relativePath: v.path, absolutePath: this.abs(v.path), mtime: r.mtime, ...(v.personal ? { personal: true } : {}) } })
       },
 
       watchStart: async () => {
@@ -340,12 +385,13 @@ export class RemoteVault {
       },
 
       saveFile: async (filePath, content) => {
-        const rel = this.rel(filePath)
-        if (!rel) throw new Error('Invalid file path')
-        if (this.isPrivate(rel)) { this.privateWrite(rel, content); return { success: true, path: filePath } }
+        const virtual = this.rel(filePath)
+        if (!virtual) throw new Error('Invalid file path')
+        if (this.isPrivate(virtual)) { this.privateWrite(virtual, content); return { success: true, path: filePath } }
+        const rel = this.personal.physicalOf(virtual)
         try {
           const saved = await this.saveText(rel, content)
-          return { success: true, path: this.abs(saved) }
+          return { success: true, path: this.abs(this.personal.virtualOf(saved).path) }
         } catch (e) {
           this.recordError(rel, e instanceof Error ? e.message : String(e))
           throw e
@@ -355,18 +401,19 @@ export class RemoteVault {
       setActivePath: async () => true,
 
       renameFile: async (absolutePath, newFilename) => {
-        const rel = this.rel(absolutePath)
+        const rel = this.personal.physicalOf(this.rel(absolutePath))
         if (!rel || !newFilename || /[\\/]/.test(newFilename)) throw new Error('Invalid filename')
         const dir = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/') + 1) : ''
         const dest = dir + newFilename
         await this.copyThenDelete(rel, dest)
-        return { success: true, newPath: this.abs(dest) }
+        return { success: true, newPath: this.abs(this.personal.virtualOf(dest).path) }
       },
 
       deleteFile: async (absolutePath) => {
-        const rel = this.rel(absolutePath)
-        if (!rel) throw new Error('Invalid path')
-        if (this.isPrivate(rel)) { try { localStorage.removeItem(`${PRIVATE_KEY}:${this.vaultPath}/${rel}`) } catch { /* ignore */ } return { success: true } }
+        const virtual = this.rel(absolutePath)
+        if (!virtual) throw new Error('Invalid path')
+        if (this.isPrivate(virtual)) { try { localStorage.removeItem(`${PRIVATE_KEY}:${this.vaultPath}/${virtual}`) } catch { /* ignore */ } return { success: true } }
+        const rel = this.personal.physicalOf(virtual)
         const idx = this.cache.rows.get(rel)
         await this.client.deleteFile(rel, idx?.etag)
         this.cache.removeRow(rel)
@@ -375,9 +422,10 @@ export class RemoteVault {
       },
 
       readFile: async (filePath) => {
-        const rel = this.rel(filePath)
-        if (!rel) return null
-        if (this.isPrivate(rel)) return this.privateRead(rel)
+        const virtual = this.rel(filePath)
+        if (!virtual) return null
+        if (this.isPrivate(virtual)) return this.privateRead(virtual)
+        const rel = this.personal.physicalOf(virtual)
         this.staleAfterConflict.delete(rel) // the app now sees the server version
         const idx = this.cache.rows.get(rel)
         if (idx?.content != null) return idx.content
@@ -386,7 +434,7 @@ export class RemoteVault {
       },
 
       readImage: async (filePath) => {
-        const rel = this.rel(filePath)
+        const rel = this.personal.physicalOf(this.rel(filePath))
         return rel ? this.imageDataUrl(rel) : null
       },
 
@@ -408,13 +456,16 @@ export class RemoteVault {
       },
 
       moveFile: async (absolutePath, destFolderPath) => {
-        const rel = this.rel(absolutePath)
-        if (!rel) throw new Error('Invalid file path')
+        const virtual = this.rel(absolutePath)
+        if (!virtual) throw new Error('Invalid file path')
+        const rel = this.personal.physicalOf(virtual)
         const folder = this.rel(destFolderPath)
         const name = rel.slice(rel.lastIndexOf('/') + 1)
-        const dest = folder ? `${folder}/${name}` : name
+        // A personal document moves inside the personal space
+        const virtualDest = folder ? `${folder}/${name}` : name
+        const dest = isPersonalPath(rel) && rel !== virtual ? (this.personal.personalPath(virtualDest) ?? virtualDest) : virtualDest
         await this.copyThenDelete(rel, dest)
-        return { success: true, newPath: this.abs(dest) }
+        return { success: true, newPath: this.abs(this.personal.virtualOf(dest).path) }
       },
     }
   }
@@ -428,7 +479,7 @@ export class RemoteVault {
     if (changed.length === 0 && removed.length === 0) return
     // Exactly one markdown edit → incremental update; anything else → full reload
     const single = changed.length === 1 && removed.length === 0 && changed[0].toLowerCase().endsWith('.md')
-    this.emitChanged(single ? changed[0] : undefined)
+    this.emitChanged(single ? this.personal.virtualOf(changed[0]).path : undefined)
   }
 
   // ── window.syncAPI (team search + status for the Server tab) ───────────────

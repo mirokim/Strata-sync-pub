@@ -190,6 +190,16 @@ export class RemoteClient {
     return res.json()
   }
 
+  /** Move a document between the team space and the caller's personal space. */
+  async setVisibility(path: string, personal: boolean): Promise<{ from: string; path: string; row: RemoteRow; personal: boolean }> {
+    const res = await this.request('/v1/visibility', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path, personal }) })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({})) as { error?: string }
+      throw new RemoteError(res.status, body.error || `visibility change failed (${res.status})`)
+    }
+    return res.json()
+  }
+
   async history(path: string): Promise<HistoryResponse> {
     const res = await this.request(`/v1/history?path=${encodeURIComponent(path)}`)
     if (!res.ok) throw new RemoteError(res.status, `history failed (${res.status})`)

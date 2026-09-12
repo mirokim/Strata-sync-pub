@@ -14,6 +14,7 @@ import { loadVaultView, tokenize, type VaultView } from './vaultIndex.js'
 import { readMembers, memberNotePath, MEMBERS_FOLDER } from './members.js'
 import type { SyncDeps } from './sync.js'
 import type { SearchHit } from './nightly.js'
+import { canSee, isPersonalPath, type Viewer } from './personal.js'
 
 /** bge-m3 cosine below this is noise (the app's own team tier uses ~0.43). */
 export const SEMANTIC_MIN_SCORE = 0.45
@@ -27,6 +28,8 @@ export interface RecallDeps extends SyncDeps {
 
 export interface RecallOptions {
   query: string
+  /** Who is asking — decides which personal documents may appear. */
+  viewer?: Viewer | null
   /** Total characters of document text in the bundle (default 16 000). */
   budget?: number
   /** Seed documents (default 5, max 12). */
@@ -37,7 +40,7 @@ export interface RecallOptions {
 
 export interface FusedHit { path: string; title: string; score: number; semantic: boolean; bm25: boolean }
 
-export interface RecallDoc { path: string; title: string; author: string; modified: string; excerpt: string; proposal?: true; why?: string }
+export interface RecallDoc { path: string; title: string; author: string; modified: string; excerpt: string; proposal?: true; personal?: true; why?: string }
 export interface RecallResult {
   query: string
   semantic: boolean
@@ -109,8 +112,9 @@ export async function recall(deps: RecallDeps, options: RecallOptions): Promise<
   const view = await loadVaultView(deps)
   const queryTerms = new Set(tokenize(query))
 
-  // Remarks and memory notes are read separately; they must not compete with documents as seeds
-  const exclude = new Set([...view.docs.keys()].filter(p => isMemberPath(p) || isSystemPath(p)))
+  // Remarks and memory notes are read separately; they must not compete with documents as seeds.
+  // Other people's personal documents are not this viewer's to recall.
+  const exclude = new Set([...view.docs.keys()].filter(p => isMemberPath(p) || isSystemPath(p) || !canSee(p, options.viewer)))
   const { hits, semantic } = await fusedSearch(deps, view, query, seedCount, exclude)
   const seeds = hits.map(h => view.docs.get(h.path)!).filter(Boolean)
   const seedIds = new Set(seeds.map(d => d.id))
@@ -123,7 +127,7 @@ export async function recall(deps: RecallDeps, options: RecallOptions): Promise<
   const touch = (id: string, seed: ParsedVaultDoc, count: number) => {
     if (seedIds.has(id)) return
     const d = byId.get(id)
-    if (!d || isMemberPath(pathOf(d)) || d.graphWeight === 'skip') return
+    if (!d || isMemberPath(pathOf(d)) || d.graphWeight === 'skip' || !canSee(pathOf(d), options.viewer)) return
     const c = cand.get(id) ?? { seeds: new Set(), links: 0 }
     c.seeds.add(seed.title); c.links += count; cand.set(id, c)
   }
@@ -169,7 +173,7 @@ export async function recall(deps: RecallDeps, options: RecallOptions): Promise<
   const rowOf = (d: ParsedVaultDoc) => view.rows.get(pathOf(d))
   const toDoc = (d: ParsedVaultDoc, max: number, why?: string): RecallDoc => ({
     path: pathOf(d), title: d.title, author: rowOf(d)?.author ?? '', modified: new Date(rowOf(d)?.updatedAt ?? d.mtime ?? 0).toISOString().slice(0, 10),
-    excerpt: excerpt(d, max), proposal: isProposalPath(d.folderPath) ? true : undefined, why,
+    excerpt: excerpt(d, max), proposal: isProposalPath(d.folderPath) ? true : undefined, personal: isPersonalPath(pathOf(d)) ? true : undefined, why,
   })
   const core = seeds.map(d => toDoc(d, Math.max(perSeed, 400)))
   const around = neighbours.map(n => toDoc(n.d, Math.max(perNeighbour, 200), n.why))
@@ -182,10 +186,11 @@ export function renderRecall(query: string, core: RecallDoc[], around: RecallDoc
   const lines = [`# Recall: ${query}`, '']
   if (core.length === 0) { lines.push('Nothing in the vault matches this. Try other words, or vault_list to browse.'); return lines.join('\n') }
   lines.push(`## Core (${core.length})`)
-  for (const d of core) lines.push('', `### ${d.title}${d.proposal ? ' _(proposal, not yet promoted)_' : ''}`, `Path: ${d.path} · ${d.author || 'unknown'} · ${d.modified}`, '', d.excerpt)
+  const mark = (d: RecallDoc) => `${d.proposal ? ' _(proposal, not yet promoted)_' : ''}${d.personal ? ' _(personal — only you see this)_' : ''}`
+  for (const d of core) lines.push('', `### ${d.title}${mark(d)}`, `Path: ${d.path} · ${d.author || 'unknown'} · ${d.modified}`, '', d.excerpt)
   if (around.length) {
     lines.push('', `## Around them (${around.length})`)
-    for (const d of around) lines.push('', `### ${d.title}`, `Path: ${d.path} · ${d.why} · ${d.modified}`, '', d.excerpt)
+    for (const d of around) lines.push('', `### ${d.title}${mark(d)}`, `Path: ${d.path} · ${d.why} · ${d.modified}`, '', d.excerpt)
   }
   if (memory.length) {
     lines.push('', '## Members remember')

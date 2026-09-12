@@ -52,7 +52,7 @@ export interface SyncDeps {
 
 export type SyncResult =
   | { status: 200 | 201 | 204; body?: unknown; headers?: Record<string, string>; bytes?: Uint8Array }
-  | { status: 400 | 404 | 409 | 413; body: { error: string; current?: FileRow | null } }
+  | { status: 400 | 403 | 404 | 409 | 413; body: { error: string; current?: FileRow | null } }
 
 export const MANIFEST_PAGE = 500
 

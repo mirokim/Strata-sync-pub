@@ -5,7 +5,7 @@
  * neighbourhood. Everything but history comes from the loaded vault (src/lib/brain.ts).
  */
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight, History, Link2, MessageSquare, Sparkles, FileQuestion, ArrowUpRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, History, Link2, MessageSquare, Sparkles, FileQuestion, ArrowUpRight, EyeOff } from 'lucide-react'
 import type { LoadedDocument } from '@/types'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useUIStore } from '@/stores/uiStore'
@@ -54,6 +54,7 @@ function Section({ id, icon, title, n, defaultOpen = true, children }: { id: str
 function DocRow({ doc, note, onOpen }: { doc: LoadedDocument; note?: string; onOpen: (id: string) => void }) {
   return (
     <button style={row} onClick={() => onOpen(doc.id)} title={docPath(doc)}>
+      {doc.personal && <EyeOff size={10} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} aria-label="Only you can see this" />}
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{docTitle(doc)}</span>
       {note && <span style={{ ...muted, marginLeft: 'auto', flexShrink: 0 }}>{note}</span>}
     </button>
@@ -75,8 +76,10 @@ function RemarkBody({ text }: { text: string }) {
 }
 
 function HistorySection({ doc }: { doc: LoadedDocument }) {
-  const client = currentRemoteVault()?.client
-  const path = docPath(doc)
+  const remote = currentRemoteVault()
+  const client = remote?.client
+  // The server keeps personal documents under their owner's prefix; the app path is virtual
+  const path = remote ? remote.physicalOf(docPath(doc)) : docPath(doc)
   const [versions, setVersions] = useState<HistoryVersion[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [diff, setDiff] = useState<{ etag: string; data: HistoryDiff | null; loading: boolean } | null>(null)

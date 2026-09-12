@@ -117,6 +117,8 @@ export interface VaultFile {
   absolutePath: string
   content: string        // UTF-8
   mtime?: number         // file modification timestamp (ms)
+  /** Only the signed-in user sees this document (team server personal space) */
+  personal?: boolean
 }
 
 /**
@@ -165,6 +167,8 @@ export interface LoadedDocument {
   vaultLabel?: string
   /** Raw frontmatter key-value pairs (for fields not mapped to typed properties, e.g. ref_game, ref_collected) */
   frontmatter?: Record<string, unknown>
+  /** Only the signed-in user sees this document — it is in their personal space on the team server */
+  personal?: boolean
 }
 
 // ── Backend / RAG types (Phase 1-3) ──────────────────────────────────────────

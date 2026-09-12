@@ -2,7 +2,7 @@ import type { MockDocument, LoadedDocument } from '@/types'
 import { SPEAKER_CONFIG } from '@/lib/speakerConfig'
 import { useUIStore } from '@/stores/uiStore'
 import { cn } from '@/lib/utils'
-import { FileText } from 'lucide-react'
+import { FileText, EyeOff } from 'lucide-react'
 import type { ContextMenuState } from './ContextMenu'
 
 interface FileTreeItemProps {
@@ -57,6 +57,7 @@ export default function FileTreeItem({ doc, onContextMenu }: FileTreeItemProps) 
     >
       <FileText size={11} style={{ color: speakerColor, flexShrink: 0 }} />
       <span className="truncate">{displayName}</span>
+      {doc.personal && <EyeOff size={10} style={{ color: 'var(--color-text-muted)', flexShrink: 0, marginLeft: 'auto' }} aria-label="Only you can see this" data-testid="personal-mark" />}
     </button>
   )
 }
