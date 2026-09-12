@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.5.0 — 2026-09-12
+
+The web release: the same app in a browser, hosted on Vercel, with the Cloudflare Worker as
+the vault, the search index and an MCP server. Electron builds still work but are no longer the
+delivery target.
+
+### Added
+- **Web build** (`npm run build:web`, `vercel.json`) — `src/web/`: connect screen (server URL,
+  team token, author), `window.vaultAPI` / `window.syncAPI` implemented over the Worker
+  (IndexedDB mirror advanced with `GET /v1/docs?after=<seq>`, `If-Match` saves, conflict copies,
+  images as data URLs, 15 s poll), Settings → Server tab. Electron-only tabs are hidden.
+- **Worker web API** — CORS (`ALLOWED_ORIGINS`), `GET /v1/docs` (paged documents with content),
+  `POST /v1/propose` (bots), and a **remote MCP endpoint** at `/mcp` (Streamable HTTP, Bearer
+  team token): `vault_list/read/search/write/propose/proposals/promote`, `graph_lint`,
+  `graph_suggest_links`. `claude mcp add --transport http strata https://<worker>/mcp …`.
+- **Deploy pipeline** — `deploy-worker` job (main push → tests → D1 migrations →
+  `wrangler deploy`); Vercel deploys the web app from Git.
+- Bots: `/propose` falls back to the Worker when the desktop app is not running
+  (`STRATA_SERVER_URL`, `STRATA_TEAM_TOKEN`).
+
+### Fixed
+- External vault changes (fs.watch, desktop sync pulls) were only applied while Settings →
+  General was open — the listener lived in that tab. It now lives in `useVaultWatcher`, mounted
+  once in App.
+- Documents written through MCP tools skipped the director-review queue.
+
 ## 0.4.0 — 2026-09-12
 
 The team-vault release: one vault shared through Cloudflare, an agent-writing discipline, and

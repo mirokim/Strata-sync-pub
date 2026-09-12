@@ -249,7 +249,8 @@ npm run electron:dev
 
 ### 프로덕션 빌드
 ```bash
-npm run electron:build
+npm run electron:build   # 데스크톱
+npm run build:web        # 브라우저 (Vercel이 실행하는 명령)
 ```
 
 ### 백엔드
@@ -287,6 +288,31 @@ cd bot && pytest      # Bot
 - 이미지 자동 첨부: 선택된 문서에 `![[...]]` 이미지가 있으면 자동 전송
 
 ---
+
+## 웹 버전 (Vercel + Cloudflare)
+
+설치 없이 브라우저에서 팀 볼트를 씁니다. 화면(React)은 Vercel이, 데이터·검색·MCP는 Cloudflare Worker(`cloud/`)가 맡습니다. 데스크톱 앱과 같은 코드라 기능도 같습니다(로컬 프로세스가 필요한 크론·Slack 봇 제어·Python 도구 탭만 빠짐).
+
+**배포**
+1. Worker를 먼저 배포합니다(아래 "팀 동기화"의 서버 배포 명령). `wrangler.toml`의 `ALLOWED_ORIGINS`에 Vercel 주소를 넣으면 다른 사이트의 브라우저는 API를 못 부릅니다(`*`는 토큰만으로 막는 상태).
+2. Vercel에서 이 저장소를 import 합니다. `vercel.json`이 빌드(`npm run build:web`)와 SPA 라우팅을 담고 있어 설정할 게 없습니다. main에 push 하면 자동 배포.
+3. Worker는 GitHub Actions가 배포합니다(`.github/workflows/ci.yml`의 `deploy-worker`): main push → 테스트 통과 → D1 마이그레이션 → `wrangler deploy`. 저장소 시크릿 `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`가 필요합니다.
+
+**사용** — 첫 화면에서 서버 주소, 팀 토큰, 이름을 넣으면 끝. 토큰은 이 브라우저의 localStorage에만 저장됩니다. 문서 사본은 IndexedDB에 두고 15초마다 바뀐 것만 내려받습니다(`GET /v1/docs?after=<seq>`). 저장은 `If-Match`로 잠그고, 같은 파일을 둘이 고쳤으면 데스크톱과 같은 규칙으로 `이름 (conflict 내이름 날짜 시각).md` 사본을 남깁니다. Settings → Server에서 상태·충돌·이름 변경·연결 해제.
+
+**로컬에서 돌려보기**
+```bash
+cd cloud && npx wrangler dev --port 8787        # .dev.vars에 TEAM_TOKEN=... 필요
+npm run build:web && npx vite preview --mode web # 브라우저에서 http://127.0.0.1:8787 + 토큰으로 연결
+```
+
+**원격 MCP** — Worker가 MCP 서버이기도 합니다(`/mcp`, Streamable HTTP). 로컬 MCP 서버 없이 Claude Code에서 바로:
+```bash
+claude mcp add --transport http strata https://<worker>/mcp --header "Authorization: Bearer <팀 토큰>"
+```
+툴: `vault_list`, `vault_read`, `vault_search`(BM25 + 시맨틱 RRF), `graph_lint`, `graph_suggest_links`, `vault_propose`, `vault_proposals`, `vault_promote`, `vault_write`. 쓰기는 데스크톱에서 저장한 것과 똑같이 디렉터 리뷰 큐에 들어갑니다.
+
+**봇** — Slack/Telegram 봇의 `/propose`는 데스크톱 앱이 꺼져 있어도 `STRATA_SERVER_URL`·`STRATA_TEAM_TOKEN`이 있으면 Worker의 `POST /v1/propose`로 기록합니다(`bot/.env.example`). 봇의 `/ask` RAG는 아직 로컬 볼트(데스크톱 앱)가 필요합니다.
 
 ## 팀 동기화 (Cloudflare)
 
@@ -770,7 +796,8 @@ npm run electron:dev
 
 ### Production Build
 ```bash
-npm run electron:build
+npm run electron:build   # desktop
+npm run build:web        # browser (what Vercel runs)
 ```
 
 ### Backend
@@ -806,6 +833,31 @@ Launch app → "Open Vault" → select Obsidian vault folder → knowledge graph
 - Auto image attachment: If selected doc has `![[...]]` images, they're sent automatically
 
 ---
+
+## Web build (Vercel + Cloudflare)
+
+Use the team vault from a browser, nothing to install. Vercel serves the React app; the Cloudflare Worker (`cloud/`) holds the data, search and MCP. It is the same code as the desktop app, so the features are the same (only the tabs that need a local process — cron, Slack bot control, Python tools — are hidden).
+
+**Deploy**
+1. Deploy the Worker first (server commands under "Team sync" below). Put the Vercel origin in `ALLOWED_ORIGINS` in `wrangler.toml` so browsers on other sites cannot call the API (`*` relies on the token alone).
+2. Import this repository in Vercel. `vercel.json` carries the build (`npm run build:web`) and the SPA rewrite; pushes to main deploy automatically.
+3. The Worker is deployed by GitHub Actions (`deploy-worker` in `.github/workflows/ci.yml`): push to main → tests pass → D1 migrations → `wrangler deploy`. Needs the repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+
+**Use** — the first screen asks for the server URL, the team token and your name. The token stays in this browser's localStorage. Documents are mirrored in IndexedDB and only changes are pulled, every 15 s (`GET /v1/docs?after=<seq>`). Saves are locked with `If-Match`; when two people edit the same file, the desktop rule applies: your text is kept as `<name> (conflict <you> <date> <time>).md`. Settings → Server shows status, conflicts, your name and disconnect.
+
+**Run locally**
+```bash
+cd cloud && npx wrangler dev --port 8787        # needs TEAM_TOKEN=... in .dev.vars
+npm run build:web && npx vite preview --mode web # connect the browser to http://127.0.0.1:8787 + token
+```
+
+**Remote MCP** — the Worker is also an MCP server (`/mcp`, Streamable HTTP). From Claude Code, without the local MCP server:
+```bash
+claude mcp add --transport http strata https://<worker>/mcp --header "Authorization: Bearer <team token>"
+```
+Tools: `vault_list`, `vault_read`, `vault_search` (BM25 + semantic, RRF), `graph_lint`, `graph_suggest_links`, `vault_propose`, `vault_proposals`, `vault_promote`, `vault_write`. Writes are queued for director review exactly like saves from the desktop app.
+
+**Bots** — the Slack/Telegram `/propose` command records to the Worker's `POST /v1/propose` when the desktop app is not running and `STRATA_SERVER_URL` / `STRATA_TEAM_TOKEN` are set (`bot/.env.example`). The bots' `/ask` RAG still needs a local vault (the desktop app).
 
 ## Team sync (Cloudflare)
 

@@ -164,7 +164,7 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
 export async function handleMcpRequest(req: Request, deps: McpDeps): Promise<Response> {
   // Stateless: no server-initiated SSE stream (GET) and no session to terminate (DELETE).
   if (req.method !== 'POST') return new Response(null, { status: 405, headers: { Allow: 'POST' } })
-  const server = new Server({ name: 'strata-sync-cloud', version: '0.4.0' }, { capabilities: { tools: {} } })
+  const server = new Server({ name: 'strata-sync-cloud', version: '0.5.0' }, { capabilities: { tools: {} } })
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }))
   server.setRequestHandler(CallToolRequestSchema, async request => {
     try {

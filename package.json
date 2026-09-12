@@ -1,7 +1,7 @@
 {
   "name": "strata-sync",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "AI Director Proxy System — Knowledge Graph UI",
   "type": "module",
   "main": "electron/main.cjs",
