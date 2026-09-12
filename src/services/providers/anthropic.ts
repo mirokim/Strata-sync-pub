@@ -91,6 +91,8 @@ export async function streamCompletion(
     'Content-Type': 'application/json',
     'x-api-key': apiKey,
     'anthropic-version': API_VERSION,
+    // Required when the page itself calls the API (web build); harmless in Electron
+    'anthropic-dangerous-direct-browser-access': 'true',
   }
   if (useThinking) {
     headers['anthropic-beta'] = 'interleaved-thinking-2025-05-14'

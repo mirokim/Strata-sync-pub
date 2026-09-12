@@ -162,7 +162,9 @@ describe('SettingsPanel', () => {
     // The "add vault" button is only offered inside Electron (window.vaultAPI present) and only
     // while no vault has been registered yet.
     const prev = (window as any).vaultAPI
+    const prevElectron = (window as any).electronAPI
     ;(window as any).vaultAPI = {}
+    ;(window as any).electronAPI = { isElectron: true, platform: 'test' } // the web build has vaultAPI too, but no folder picker
     try {
       resetStore(true)
       render(<SettingsPanel />)
@@ -170,6 +172,38 @@ describe('SettingsPanel', () => {
       expect(screen.getByTestId('vault-select-btn')).toBeInTheDocument()
     } finally {
       ;(window as any).vaultAPI = prev
+      ;(window as any).electronAPI = prevElectron
+    }
+  })
+
+  it('web build: hides Electron-only tabs and shows the Server tab', () => {
+    // No electronAPI → web mode
+    const prevElectron = (window as any).electronAPI
+    delete (window as any).electronAPI
+    try {
+      resetStore(true)
+      render(<SettingsPanel />)
+      expect(screen.getByText('Server')).toBeInTheDocument()
+      for (const hidden of ['Cron Jobs', 'Slack Bot', 'Team Sync', 'Vault Manager', 'MiroFish', 'Edit Agent', 'Jira Import', 'Trash']) {
+        expect(screen.queryByText(hidden)).toBeNull()
+      }
+      expect(screen.getAllByText('AI Settings').length).toBeGreaterThan(0)
+    } finally {
+      ;(window as any).electronAPI = prevElectron
+    }
+  })
+
+  it('desktop build: shows Electron tabs and no Server tab', () => {
+    const prevElectron = (window as any).electronAPI
+    ;(window as any).electronAPI = { isElectron: true, platform: 'test' }
+    try {
+      resetStore(true)
+      render(<SettingsPanel />)
+      expect(screen.queryByText('Server')).toBeNull()
+      expect(screen.getByText('Team Sync')).toBeInTheDocument()
+      expect(screen.getByText('Cron Jobs')).toBeInTheDocument()
+    } finally {
+      ;(window as any).electronAPI = prevElectron
     }
   })
 })

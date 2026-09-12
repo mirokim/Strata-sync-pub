@@ -93,6 +93,8 @@ export async function computerUseDecide(
       'Content-Type': 'application/json',
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
+      // Required when the page itself calls the API (web build); harmless in Electron
+      'anthropic-dangerous-direct-browser-access': 'true',
       'anthropic-beta': COMPUTER_USE_BETA,
     },
     body: JSON.stringify({

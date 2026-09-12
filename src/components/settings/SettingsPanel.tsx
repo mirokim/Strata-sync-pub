@@ -39,6 +39,8 @@ import UsageTab from './tabs/UsageTab'
 import JiraDispatchTab from './tabs/JiraDispatchTab'
 import ConfluencePublishTab from './tabs/ConfluencePublishTab'
 import CronJobTab from './tabs/CronJobTab'
+import ServerTab from './tabs/ServerTab'
+import { isWebMode } from '@/web/config'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -46,7 +48,7 @@ type SettingsTab =
   | 'stats' | 'trash'
   | 'general' | 'ai' | 'search' | 'vector-embed' | 'personas' | 'debate' | 'shortcuts' | 'project' | 'tags'
   | 'confluence' | 'confluence-publish' | 'slack-bot' | 'jira' | 'jira-dispatch' | 'vault-manager' | 'mirofish'
-  | 'edit-agent' | 'cron-jobs' | 'usage' | 'team-sync'
+  | 'edit-agent' | 'cron-jobs' | 'usage' | 'team-sync' | 'server'
   | 'about'
 
 type NavItem = { id: SettingsTab; icon: React.ElementType; label: string }
@@ -77,6 +79,7 @@ const NAV: NavGroup[] = [
     label: 'Vault',
     items: [
       { id: 'stats',         icon: BarChart2, label: 'Statistics' },
+      { id: 'server',        icon: Cloud,     label: 'Server' },
       { id: 'vault-manager', icon: HardDrive, label: 'Vault Manager' },
       { id: 'team-sync',     icon: Cloud,     label: 'Team Sync' },
       { id: 'usage',         icon: Coins,     label: 'Token Usage' },
@@ -105,6 +108,21 @@ const NAV: NavGroup[] = [
   },
 ]
 
+/**
+ * Tabs that drive something only the Electron main process has (local processes, cron, the
+ * desktop sync engine, Python tools). The web build hides them; `server` exists only there.
+ */
+const ELECTRON_ONLY: ReadonlySet<SettingsTab> = new Set<SettingsTab>([
+  'confluence', 'confluence-publish', 'jira', 'jira-dispatch', 'slack-bot',
+  'edit-agent', 'cron-jobs', 'mirofish', 'vault-manager', 'team-sync', 'trash',
+])
+
+export function visibleNav(web = isWebMode()): NavGroup[] {
+  return NAV
+    .map(g => ({ ...g, items: g.items.filter(i => (web ? !ELECTRON_ONLY.has(i.id) : i.id !== 'server')) }))
+    .filter(g => g.items.length > 0)
+}
+
 const ALL_ITEMS = NAV.flatMap(g => g.items)
 
 // ── Tab content dispatcher ────────────────────────────────────────────────────
@@ -129,6 +147,7 @@ function renderTabContent(tab: SettingsTab) {
     case 'slack-bot':     return <SlackBotTab />
     case 'vault-manager': return <VaultManagerTab />
     case 'team-sync':     return <TeamSyncTab />
+    case 'server':        return <ServerTab />
     case 'mirofish':   return <MirofishTab />
     case 'edit-agent': return <EditAgentTab />
     case 'cron-jobs':  return <CronJobTab />
@@ -144,6 +163,7 @@ export default function SettingsPanel() {
   const { resetPersonaModels } = useSettingsStore()
   const setCenterTab = useUIStore(s => s.setCenterTab)
   const [activeTab, setActiveTab] = useState<SettingsTab>('ai')
+  const nav = visibleNav()
 
   const activeLabel = ALL_ITEMS.find(i => i.id === activeTab)?.label ?? ''
   const close = () => setCenterTab('graph')
@@ -172,7 +192,7 @@ export default function SettingsPanel() {
 
         {/* Nav groups */}
         <div className="flex-1 overflow-y-auto py-2">
-          {NAV.map((group, gi) => (
+          {nav.map((group, gi) => (
             <div key={group.label} className={gi > 0 ? 'mt-3' : ''}>
               <div
                 className="px-4 pb-1 text-xs font-semibold tracking-wider uppercase"
@@ -204,7 +224,7 @@ export default function SettingsPanel() {
                 )
               })}
 
-              {gi < NAV.length - 1 && (
+              {gi < nav.length - 1 && (
                 <div className="mx-4 mt-3" style={{ borderTop: '1px solid var(--color-border)' }} />
               )}
             </div>

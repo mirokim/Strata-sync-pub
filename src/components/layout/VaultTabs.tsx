@@ -8,6 +8,7 @@
  */
 
 import { useCallback } from 'react'
+import { isWebMode } from '@/web/config'
 import { Plus, X } from 'lucide-react'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useVaultLoader } from '@/hooks/useVaultLoader'
@@ -17,7 +18,8 @@ export default function VaultTabs() {
   const { vaults, activeVaultId, switchVault, addVault, removeVault } = useVaultStore()
   const { loadVault } = useVaultLoader()
 
-  const isElectron = Boolean(typeof window !== 'undefined' && window.vaultAPI)
+  // The web build has exactly one vault (the team server): no adding/switching
+  const isElectron = Boolean(typeof window !== 'undefined' && window.vaultAPI) && !isWebMode()
   const vaultEntries = Object.entries(vaults)
 
   const handleSwitch = useCallback(async (id: string) => {

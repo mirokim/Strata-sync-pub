@@ -3,10 +3,24 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 
-export default defineConfig({
-  plugins: [react(), tailwindcss()],
+/**
+ * Web build: the team server is a user-entered URL, so `connect-src` must allow any https origin
+ * (plus localhost for `wrangler dev`). The Electron build keeps the strict allowlist in index.html.
+ */
+function webCsp() {
+  return {
+    name: 'strata-web-csp',
+    transformIndexHtml(html: string) {
+      return html.replace(/connect-src [^;]+;/, "connect-src 'self' https: http://127.0.0.1:* http://localhost:*;")
+    },
+  }
+}
+
+// `--mode web` (Vercel build) serves from the site root; Electron loads dist/ over file:// and needs relative URLs.
+export default defineConfig(({ mode }) => ({
+  plugins: [react(), tailwindcss(), ...(mode === 'web' ? [webCsp()] : [])],
   assetsInclude: ['**/*.wasm'],
-  base: './',
+  base: mode === 'web' ? '/' : './',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -17,16 +31,16 @@ export default defineConfig({
   server: {
     port: 5277,
     watch: {
-      // 볼트 폴더 변경 시 Vite HMR 리로드 방지 (personas.md 저장 → 무한 재로드 루프 차단)
+      // Keep vault folder changes from triggering Vite HMR reloads (saving personas.md → infinite reload loop)
       ignored: [
-        '**/refined_vault/**',   // 볼트 — vault watcher가 별도 처리
+        '**/refined_vault/**',   // the vault — handled by the vault watcher
         '**/node_modules/**',
-        '**/__pycache__/**',     // Python 컴파일 캐시 (tools 실행 시 생성)
+        '**/__pycache__/**',     // Python bytecode cache (created when tools run)
         '**/*.pyc',
-        '**/*.txt',              // 스크립트 결과 파일 (audit_result.txt 등)
-        '**/logs/**',            // 세션 로그 (Edit Agent 작성)
-        '**/cache/**',           // 봇 캐시
-        '**/mcp-config.json',    // MCP 설정 파일 — GUI 저장 시 HMR 리로드 방지
+        '**/*.txt',              // script result files (audit_result.txt etc.)
+        '**/logs/**',            // session logs (written by the Edit Agent)
+        '**/cache/**',           // bot cache
+        '**/mcp-config.json',    // MCP config — saving from the GUI must not reload
       ],
     },
   },
@@ -45,4 +59,4 @@ export default defineConfig({
       },
     },
   },
-})
+}))

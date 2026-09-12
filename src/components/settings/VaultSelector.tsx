@@ -5,132 +5,32 @@
  * - Lists all registered vaults with doc counts
  * - Switch active vault, reload, remove
  * - Add new vault (max 8)
- * - fs.watch subscription for active vault
+ * (change watching lives in useVaultWatcher, mounted in App)
  */
 
-import { useEffect, useCallback, useRef } from 'react'
+import { useCallback } from 'react'
 import { FolderOpen, RefreshCw, X, Loader2, AlertCircle, Plus } from 'lucide-react'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useGraphStore } from '@/stores/graphStore'
 import { useBackendStore } from '@/stores/backendStore'
 import { useVaultLoader } from '@/hooks/useVaultLoader'
-import { tfidfIndex } from '@/lib/graphAnalysis'
-import { updateDocInWorker } from '@/lib/bm25WorkerClient'
-import { buildAdjacencyMap } from '@/lib/graphRAG'
-import { parseMarkdownFile } from '@/lib/markdownParser'
-import { invalidateTfIdfCache } from '@/lib/tfidfCache'
-import { buildGraph } from '@/lib/graphBuilder'
+import { suppressVaultWatch } from '@/hooks/useVaultWatcher'
+import { isWebMode } from '@/web/config'
 
 export default function VaultSelector() {
   const {
     vaults, activeVaultId, vaultPath, loadedDocuments,
     isLoading, error, vaultDocsCache,
-    addVault, removeVault, switchVault, clearVault, setWatchDiff,
+    addVault, removeVault, switchVault, clearVault,
   } = useVaultStore()
   const { isIndexing, chunkCount } = useBackendStore()
   const { loadVault, loadVaultCached } = useVaultLoader()
 
-  const suppressWatchRef  = useRef(false)
-  const suppressTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const suppressWatch = suppressVaultWatch
 
-  const suppressWatch = useCallback(() => {
-    if (suppressTimerRef.current) clearTimeout(suppressTimerRef.current)
-    suppressWatchRef.current = true
-    suppressTimerRef.current = setTimeout(() => { suppressWatchRef.current = false }, 3000)
-  }, [])
 
-  useEffect(() => {
-    return () => {
-      if (suppressTimerRef.current) clearTimeout(suppressTimerRef.current)
-    }
-  }, [])
-
-  // Subscribe to fs.watch events for the active vault
-  useEffect(() => {
-    if (!window.vaultAPI || !vaultPath) return
-    return window.vaultAPI.onChanged(async ({ vaultPath: changedVaultPath, changedFile }) => {
-      const currentVaultPath = useVaultStore.getState().vaultPath
-      if (!currentVaultPath) return
-      if (useVaultStore.getState().isLoading) return
-      if (suppressWatchRef.current) return
-      if (!useGraphStore.getState().graphLayoutReady) return
-
-      // Only attempt incremental update when a specific changed file is identified
-      if (changedFile && tfidfIndex.isBuilt && window.vaultAPI?.readFile) {
-        try {
-          const sep = currentVaultPath.includes('\\') ? '\\' : '/'
-          const absolutePath = `${currentVaultPath}${sep}${changedFile}`
-          const content = await window.vaultAPI.readFile(absolutePath)
-          if (content != null) {
-            const relativePath = changedFile.replace(/\\/g, '/')
-            const file = { relativePath, absolutePath, content, mtime: Date.now() }
-            const parsedDoc = parseMarkdownFile(file)
-            const { loadedDocuments, setLoadedDocuments, setWatchDiff } = useVaultStore.getState()
-            // parseMarkdownFile does not go through pushWithUniqueId, so it reverts a
-            // collision-resolved id (`_2`) to the raw id. Keep the existing id when a document at the same path exists.
-            const existing = loadedDocuments?.find(d => d.absolutePath === absolutePath)
-            const updatedDoc = existing ? { ...parsedDoc, id: existing.id } : parsedDoc
-
-            // Diff calculation — compare with previous rawContent
-            const prevDoc = loadedDocuments?.find(d => d.id === updatedDoc.id)
-            if (prevDoc?.rawContent != null) {
-              const prevLines = prevDoc.rawContent.split('\n')
-              const newLines = content.split('\n')
-              const prevSet = new Set(prevLines)
-              const newSet = new Set(newLines)
-              const added = newLines.filter(l => l.trim() && !prevSet.has(l)).length
-              const removed = prevLines.filter(l => l.trim() && !newSet.has(l)).length
-              const previewLine = newLines.find(l => l.trim() && !prevSet.has(l)) ?? ''
-              setWatchDiff({
-                filePath: relativePath,
-                added,
-                removed,
-                preview: previewLine.slice(0, 80),
-              })
-              // Auto-close after 8 seconds
-              setTimeout(() => {
-                if (useVaultStore.getState().watchDiff?.filePath === relativePath) {
-                  setWatchDiff(null)
-                }
-              }, 8000)
-            }
-
-            if (loadedDocuments) {
-              // Incremental document list update
-              const newDocs = loadedDocuments.map(d => d.id === updatedDoc.id ? updatedDoc : d)
-              const isNew = !loadedDocuments.some(d => d.id === updatedDoc.id)
-              if (isNew) newDocs.push(updatedDoc)
-              setLoadedDocuments(newDocs)
-
-              // Incremental graph update
-              const { nodes: newNodes, links: newLinks } = buildGraph(newDocs)
-              useGraphStore.getState().setGraph(newNodes, newLinks)
-
-              // BM25 incremental update (worker)
-              const fingerprint = String(Date.now())
-              const adj = buildAdjacencyMap(newLinks)
-              const { serialized, implicitLinks } = await updateDocInWorker(
-                tfidfIndex.serialize(fingerprint), updatedDoc, adj, fingerprint
-              )
-              tfidfIndex.restore(serialized)
-              tfidfIndex.setImplicitLinks(implicitLinks, adj)
-              // Saving with a Date.now() fingerprint never matches loadTfIdfCache's
-              // buildFingerprint(id:mtime), overwriting a valid cache and forcing a full rebuild on
-              // every startup. Only invalidate, and let the next vault load rewrite it with the correct fingerprint.
-              invalidateTfIdfCache(currentVaultPath).catch(() => {})
-            }
-            return  // Incremental update complete — full reload not needed
-          }
-        } catch {
-          // Fallback to full reload on incremental failure
-        }
-      }
-
-      loadVault(currentVaultPath)
-    })
-  }, [vaultPath, loadVault])
-
-  const isElectron   = Boolean(window.vaultAPI)
+  // Adding/switching vaults needs a folder picker; the web build is bound to one team server
+  const isElectron   = Boolean(window.vaultAPI) && !isWebMode()
   const vaultEntries = Object.entries(vaults)
 
   // ── Add new vault ──────────────────────────────────────────────────────────
@@ -232,7 +132,7 @@ export default function VaultSelector() {
           background: 'rgba(245,158,11,0.08)',
           border: '1px solid rgba(245,158,11,0.2)',
         }}>
-          Vault selection is only available in the Electron app.
+          {isWebMode() ? 'This browser is connected to the team vault. Change the server in Settings → Server.' : 'Vault selection is only available in the Electron app.'}
         </p>
       )}
 

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useUIStore } from '@/stores/uiStore'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useVaultLoader } from '@/hooks/useVaultLoader'
+import { useVaultWatcher } from '@/hooks/useVaultWatcher'
 import { usePersonaVaultSaver } from '@/hooks/usePersonaVaultSaver'
 import { useRagApi } from '@/hooks/useRagApi'
 import { useSettingsStore } from '@/stores/settingsStore'
@@ -29,6 +30,7 @@ export default function App() {
     return p ? (CRASH_LABELS[p] ?? `Restarted due to error (${p}).`) : null
   })
   const { vaultPath, loadVault, loadVaultBackground } = useVaultLoader()
+  useVaultWatcher()
   usePersonaVaultSaver()
   useRagApi()
   useEditAgent()
