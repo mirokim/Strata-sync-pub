@@ -1,6 +1,6 @@
 """
 Jira JSON → Markdown conversion script
-매뉴얼: sections/s10_jira_fetch.md, s11_jira_aggregate.md, s12_jira_crosslink.md
+Manual: sections/s10_jira_fetch.md, s11_jira_aggregate.md, s12_jira_crosslink.md
 """
 
 import json
@@ -12,7 +12,7 @@ from datetime import datetime, date, timedelta
 # ── Configuration ───────────────────────────────────────────────────────────────
 BASE_DIR        = os.path.dirname(os.path.abspath(__file__))
 ISSUES_PATH     = os.path.join(BASE_DIR, "issues.json")
-ATT_DIR         = os.path.join(BASE_DIR, "_attachments")   # 이슈키 폴더 하위
+ATT_DIR         = os.path.join(BASE_DIR, "_attachments")   # Under per-issue-key folders
 OUT_DIR         = os.path.join(BASE_DIR, "jira")
 RAW_DIR         = os.path.join(OUT_DIR, "raw")
 TODAY           = date.today().isoformat()
@@ -75,7 +75,7 @@ TYPE_MAP = {
     "guide": "guide", "manual": "guide",
 }
 STATUS_MAP = {
-    "Complete": "outdated", "닫힘": "outdated", "해결됨": "outdated",
+    "완료": "outdated", "닫힘": "outdated", "해결됨": "outdated",
     "done": "outdated", "closed": "outdated", "resolved": "outdated",
     "취소": "deprecated", "won't fix": "deprecated", "cancelled": "deprecated",
 }
@@ -107,7 +107,7 @@ def triage(issue: dict) -> str:
     # Empty ticket: no description and no comments
     if desc_len == 0 and comment_count == 0:
         return "delete"
-    # 부작업: description 50자 미만 + 댓글 없음
+    # Sub-task (부작업): description under 50 chars + no comments
     if itype == "부작업" and desc_len < 50 and comment_count == 0:
         return "delete"
 
@@ -127,7 +127,7 @@ def triage(issue: dict) -> str:
 
     return "skip"
 
-# ── 개별 이슈 MD 생성 ──────────────────────────────────────────────────
+# ── Individual issue MD generation ──────────────────────────────────────
 def build_issue_md(issue: dict, weight: str, attachments: dict | None = None) -> str:
     key           = issue["key"]
     summary       = issue.get("summary", "")
@@ -235,7 +235,7 @@ def build_issue_md(issue: dict, weight: str, attachments: dict | None = None) ->
     return "\n".join(fm) + "\n\n" + "\n".join(body)
 
 
-# ── Epic 집계 문서 ─────────────────────────────────────────────────────
+# ── Epic aggregate document ─────────────────────────────────────────────
 def build_epic_md(epic: dict, children: list[dict]) -> str:
     key      = epic["key"]
     summary  = epic.get("summary", "")
@@ -244,7 +244,7 @@ def build_epic_md(epic: dict, children: list[dict]) -> str:
     created  = epic.get("created", "")
     desc     = (epic.get("description", "") or "").strip()
 
-    done_statuses = {"Complete", "닫힘", "해결됨", "done", "closed", "resolved"}
+    done_statuses = {"완료", "닫힘", "해결됨", "done", "closed", "resolved"}
     status_counts: dict[str, int] = defaultdict(int)
     for ch in children:
         status_counts[ch.get("status", "기타")] += 1
@@ -306,9 +306,9 @@ def build_epic_md(epic: dict, children: list[dict]) -> str:
     return fm + "\n\n" + "\n".join(body)
 
 
-# ── Release 집계 문서 ──────────────────────────────────────────────────
+# ── Release aggregate document ──────────────────────────────────────────
 def build_release_md(version: str, issues: list[dict]) -> str:
-    done_statuses = {"Complete", "닫힘", "해결됨", "done", "closed", "resolved"}
+    done_statuses = {"완료", "닫힘", "해결됨", "done", "closed", "resolved"}
     total = len(issues)
 
     status_counts: dict[str, int] = defaultdict(int)
@@ -329,7 +329,7 @@ def build_release_md(version: str, issues: list[dict]) -> str:
     ])
 
     body = [f"# Release {version}", "",
-            f"> 전체 이슈 {total}건 | Complete율 {completion}", "",
+            f"> 전체 이슈 {total}건 | 완료율 {completion}", "",
             "## 상태 현황", "", "| 상태 | 건수 | 비율 |", "|------|------|------|"]
     for s, cnt in sorted(status_counts.items(), key=lambda x: -x[1]):
         pct = f"{cnt * 100 // total}%" if total else "—"
@@ -337,7 +337,7 @@ def build_release_md(version: str, issues: list[dict]) -> str:
     body += [f"| **합계** | **{total}** | — |", ""]
 
     if active_issues:
-        body += ["## 미Complete 이슈", "", "| Key | 제목 | 상태 | 담당 |",
+        body += ["## 미완료 이슈", "", "| Key | 제목 | 상태 | 담당 |",
                  "|-----|------|------|------|"]
         for iss in active_issues[:30]:
             body.append(
@@ -353,25 +353,25 @@ def build_release_md(version: str, issues: list[dict]) -> str:
 
 # ── Main ───────────────────────────────────────────────────────────────
 def main():
-    print("issues.json 로드 중...")
+    print("Loading issues.json...")
     with open(ISSUES_PATH, encoding="utf-8") as f:
         issues = json.load(f)
-    print(f"  총 {len(issues)}개 이슈")
+    print(f"  {len(issues)} issues total")
 
-    print("첨부파일 인덱스 구성 중...")
+    print("Building attachment index...")
     att_index = build_attachment_index(ATT_DIR)
     att_total = sum(len(v["images"]) + len(v["docs"]) for v in att_index.values())
-    print(f"  첨부파일 있는 이슈: {len(att_index)}개 | Total files: {att_total}개")
+    print(f"  Issues with attachments: {len(att_index)} | Total files: {att_total}")
 
     os.makedirs(RAW_DIR, exist_ok=True)
 
     stats = {"delete": 0, "skip": 0, "low": 0}
     epic_issues: list[dict]            = []
     release_map: dict[str, list[dict]] = defaultdict(list)
-    # parent_key 기반 epic→children 매핑
+    # parent_key-based epic→children mapping
     parent_map:  dict[str, list[dict]] = defaultdict(list)
 
-    print("Triage + 개별 MD 생성 중...")
+    print("Triage + generating individual MD files...")
     for issue in issues:
         decision = triage(issue)
 
@@ -381,7 +381,7 @@ def main():
 
         stats[decision] += 1
 
-        # parent_map 구성 (parent_key가 있으면 등록)
+        # Build parent_map (register when parent_key exists)
         pk = issue.get("parent_key", "")
         if pk:
             parent_map[pk].append(issue)
@@ -402,13 +402,13 @@ def main():
                 if v:
                     release_map[v].append(issue)
 
-    print(f"  삭제: {stats['delete']}개 | skip: {stats['skip']}개 | low: {stats['low']}개")
+    print(f"  delete: {stats['delete']} | skip: {stats['skip']} | low: {stats['low']}")
 
-    # ── Epic 집계 문서 ─────────────────────────────────────────────────
-    print(f"\nEpic 집계 문서 생성 중... ({len(epic_issues)}개 Epic)")
+    # ── Epic aggregate documents ────────────────────────────────────────
+    print(f"\nGenerating Epic aggregate documents... ({len(epic_issues)} Epics)")
     for epic in epic_issues:
         epic_key = epic["key"]
-        # parent_key 기반 우선, fallback으로 fix_versions 동일 이슈
+        # Prefer parent_key; fall back to issues with the same fix_versions
         children = parent_map.get(epic_key, [])
         if not children:
             epic_fv = epic.get("fix_versions", "").strip()
@@ -425,24 +425,24 @@ def main():
         with open(fpath, "w", encoding="utf-8") as f:
             f.write(build_epic_md(epic, children))
 
-    print(f"  {len(epic_issues)}개 Epic 집계 문서 생성 Complete")
+    print(f"  {len(epic_issues)} Epic aggregate documents generated")
 
-    # ── Release 집계 문서 ─────────────────────────────────────────────
+    # ── Release aggregate documents ─────────────────────────────────────
     release_candidates = {v: iss for v, iss in release_map.items() if len(iss) >= 3}
-    print(f"\nRelease 집계 문서 생성 중... ({len(release_candidates)}개 버전)")
+    print(f"\nGenerating Release aggregate documents... ({len(release_candidates)} versions)")
     for version, version_issues in release_candidates.items():
         fpath = os.path.join(OUT_DIR, f"Release {slugify(version)}.md")
         with open(fpath, "w", encoding="utf-8") as f:
             f.write(build_release_md(version, version_issues))
-    print(f"  {len(release_candidates)}개 Release 집계 문서 생성 Complete")
+    print(f"  {len(release_candidates)} Release aggregate documents generated")
 
-    # ── 최종 통계 ─────────────────────────────────────────────────────
+    # ── Final statistics ────────────────────────────────────────────────
     raw_count = len(os.listdir(RAW_DIR))
     agg_count = len([f for f in os.listdir(OUT_DIR) if f.endswith(".md")])
     print(f"\nComplete!")
-    print(f"  raw/ 개별 이슈: {raw_count}개")
-    print(f"  집계 문서: {agg_count}개")
-    print(f"  출력 경로: {OUT_DIR}")
+    print(f"  raw/ individual issues: {raw_count}")
+    print(f"  Aggregate documents: {agg_count}")
+    print(f"  Output path: {OUT_DIR}")
 
 
 if __name__ == "__main__":

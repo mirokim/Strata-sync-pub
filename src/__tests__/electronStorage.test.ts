@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import type { StateStorage } from 'zustand/middleware'
 
-// ── 헬퍼: 모듈을 매번 새로 임포트하여 싱글턴 상태(pendingWrites 등) 초기화 ─────
+// ── Helper: re-import the module each time to reset singleton state (pendingWrites etc.) ──
 async function importFresh(): Promise<StateStorage> {
   vi.resetModules()
   const mod = await import('@/lib/electronStorage')
   return mod.electronStorage
 }
 
-// ── settingsAPI 모킹 헬퍼 ─────────────────────────────────────────────────────
+// ── settingsAPI mock helper ───────────────────────────────────────────────────
 function installSettingsAPI(overrides?: Partial<NonNullable<Window['settingsAPI']>>) {
   window.settingsAPI = {
     read: vi.fn().mockResolvedValue(null),
@@ -31,35 +31,35 @@ describe('electronStorage — getItem', () => {
     vi.restoreAllMocks()
   })
 
-  it('비-Electron 환경: localStorage 값을 반환한다', async () => {
+  it('non-Electron environment: returns the localStorage value', async () => {
     removeSettingsAPI()
-    localStorage.setItem('rembrandt-settings', '{"theme":"dark"}')
+    localStorage.setItem('strata-sync-settings', '{"theme":"dark"}')
     const storage = await importFresh()
 
-    const result = await storage.getItem('rembrandt-settings')
+    const result = await storage.getItem('strata-sync-settings')
     expect(result).toBe('{"theme":"dark"}')
   })
 
-  it('비-Electron 환경: 키가 없으면 null을 반환한다', async () => {
+  it('non-Electron environment: returns null when the key is missing', async () => {
     removeSettingsAPI()
     const storage = await importFresh()
 
-    const result = await storage.getItem('rembrandt-settings')
+    const result = await storage.getItem('strata-sync-settings')
     expect(result).toBeNull()
   })
 
-  it('Electron 환경: settingsAPI.read 결과를 JSON 문자열로 반환한다', async () => {
+  it('Electron environment: returns the settingsAPI.read result as a JSON string', async () => {
     installSettingsAPI({
       read: vi.fn().mockResolvedValue({ theme: 'dark', fontSize: 14 }),
     })
     const storage = await importFresh()
 
-    const result = await storage.getItem('rembrandt-settings')
+    const result = await storage.getItem('strata-sync-settings')
     expect(result).toBe(JSON.stringify({ theme: 'dark', fontSize: 14 }))
     expect(window.settingsAPI!.read).toHaveBeenCalledWith('settings.json')
   })
 
-  it('Electron 환경: KEY_TO_FILE에 없는 키는 localStorage로 폴백한다', async () => {
+  it('Electron environment: keys not in KEY_TO_FILE fall back to localStorage', async () => {
     installSettingsAPI()
     localStorage.setItem('unknown-key', '{"x":1}')
     const storage = await importFresh()
@@ -69,55 +69,55 @@ describe('electronStorage — getItem', () => {
     expect(window.settingsAPI!.read).not.toHaveBeenCalled()
   })
 
-  it('Electron 환경, IPC 실패: localStorage로 폴백한다', async () => {
+  it('Electron environment, IPC failure: falls back to localStorage', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     installSettingsAPI({
       read: vi.fn().mockRejectedValue(new Error('IPC timeout')),
     })
-    localStorage.setItem('rembrandt-settings', '{"fallback":true}')
+    localStorage.setItem('strata-sync-settings', '{"fallback":true}')
     const storage = await importFresh()
 
-    const result = await storage.getItem('rembrandt-settings')
+    const result = await storage.getItem('strata-sync-settings')
     expect(result).toBe('{"fallback":true}')
     expect(errorSpy).toHaveBeenCalled()
     errorSpy.mockRestore()
   })
 
-  it('Electron 환경, 마이그레이션: 파일 미존재 시 localStorage → 파일로 복사 후 반환한다', async () => {
+  it('Electron environment, migration: when the file is missing, copies localStorage → file and returns it', async () => {
     const writeMock = vi.fn().mockResolvedValue({ ok: true })
     installSettingsAPI({
       read: vi.fn().mockResolvedValue(null),
       write: writeMock,
     })
-    localStorage.setItem('rembrandt-settings', '{"migrated":true}')
+    localStorage.setItem('strata-sync-settings', '{"migrated":true}')
     const storage = await importFresh()
 
-    const result = await storage.getItem('rembrandt-settings')
+    const result = await storage.getItem('strata-sync-settings')
 
     expect(result).toBe('{"migrated":true}')
     expect(writeMock).toHaveBeenCalledWith('settings.json', { migrated: true })
   })
 
-  it('Electron 환경, 마이그레이션: 파일도 localStorage도 없으면 null을 반환한다', async () => {
+  it('Electron environment, migration: returns null when neither file nor localStorage exists', async () => {
     installSettingsAPI({
       read: vi.fn().mockResolvedValue(null),
     })
     const storage = await importFresh()
 
-    const result = await storage.getItem('rembrandt-settings')
+    const result = await storage.getItem('strata-sync-settings')
     expect(result).toBeNull()
   })
 
-  it('Electron 환경, 마이그레이션: write 실패 시 경고 후 localStorage 값을 반환한다', async () => {
+  it('Electron environment, migration: on write failure, warns and returns the localStorage value', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     installSettingsAPI({
       read: vi.fn().mockResolvedValue(null),
       write: vi.fn().mockRejectedValue(new Error('disk full')),
     })
-    localStorage.setItem('rembrandt-vault', '{"docs":[]}')
+    localStorage.setItem('strata-sync-vault', '{"docs":[]}')
     const storage = await importFresh()
 
-    const result = await storage.getItem('rembrandt-vault')
+    const result = await storage.getItem('strata-sync-vault')
 
     expect(result).toBe('{"docs":[]}')
     expect(warnSpy).toHaveBeenCalled()
@@ -140,52 +140,52 @@ describe('electronStorage — setItem', () => {
     vi.restoreAllMocks()
   })
 
-  it('비-Electron 환경: localStorage에만 기록한다', async () => {
+  it('non-Electron environment: writes only to localStorage', async () => {
     removeSettingsAPI()
     const storage = await importFresh()
 
-    storage.setItem('rembrandt-settings', '{"a":1}')
-    expect(localStorage.getItem('rembrandt-settings')).toBe('{"a":1}')
+    storage.setItem('strata-sync-settings', '{"a":1}')
+    expect(localStorage.getItem('strata-sync-settings')).toBe('{"a":1}')
   })
 
-  it('Electron 환경: localStorage에 즉시 기록하고 500ms 후 IPC write를 실행한다', async () => {
+  it('Electron environment: writes to localStorage immediately and runs IPC write after 500ms', async () => {
     const writeMock = vi.fn().mockResolvedValue({ ok: true })
     installSettingsAPI({ write: writeMock })
     const storage = await importFresh()
 
-    storage.setItem('rembrandt-settings', '{"b":2}')
+    storage.setItem('strata-sync-settings', '{"b":2}')
 
-    // localStorage에 즉시 기록됨
-    expect(localStorage.getItem('rembrandt-settings')).toBe('{"b":2}')
-    // IPC는 아직 호출되지 않음
+    // written to localStorage immediately
+    expect(localStorage.getItem('strata-sync-settings')).toBe('{"b":2}')
+    // IPC not called yet
     expect(writeMock).not.toHaveBeenCalled()
 
-    // 500ms 경과
+    // 500ms elapsed
     vi.advanceTimersByTime(500)
     expect(writeMock).toHaveBeenCalledWith('settings.json', { b: 2 })
   })
 
-  it('Electron 환경, 디바운스: 빠른 연속 호출 시 마지막 값으로 한 번만 IPC write한다', async () => {
+  it('Electron environment, debounce: rapid successive calls trigger a single IPC write with the last value', async () => {
     const writeMock = vi.fn().mockResolvedValue({ ok: true })
     installSettingsAPI({ write: writeMock })
     const storage = await importFresh()
 
-    storage.setItem('rembrandt-settings', '{"v":1}')
+    storage.setItem('strata-sync-settings', '{"v":1}')
     vi.advanceTimersByTime(200)
-    storage.setItem('rembrandt-settings', '{"v":2}')
+    storage.setItem('strata-sync-settings', '{"v":2}')
     vi.advanceTimersByTime(200)
-    storage.setItem('rembrandt-settings', '{"v":3}')
+    storage.setItem('strata-sync-settings', '{"v":3}')
 
-    // 아직 마지막 호출 후 500ms가 지나지 않았으므로 호출 없음
+    // no call yet since 500ms have not passed since the last call
     expect(writeMock).not.toHaveBeenCalled()
 
-    // 마지막 setItem 후 500ms 경과
+    // 500ms elapsed after the last setItem
     vi.advanceTimersByTime(500)
     expect(writeMock).toHaveBeenCalledTimes(1)
     expect(writeMock).toHaveBeenCalledWith('settings.json', { v: 3 })
   })
 
-  it('Electron 환경: KEY_TO_FILE에 없는 키는 IPC write를 건너뛴다', async () => {
+  it('Electron environment: keys not in KEY_TO_FILE skip the IPC write', async () => {
     const writeMock = vi.fn().mockResolvedValue({ ok: true })
     installSettingsAPI({ write: writeMock })
     const storage = await importFresh()
@@ -213,42 +213,42 @@ describe('electronStorage — flushWrite (beforeunload)', () => {
     vi.restoreAllMocks()
   })
 
-  it('beforeunload 이벤트 시 대기 중인 디바운스 쓰기를 즉시 실행한다', async () => {
+  it('flushes pending debounced writes immediately on beforeunload', async () => {
     const writeMock = vi.fn().mockResolvedValue({ ok: true })
     installSettingsAPI({ write: writeMock })
     const storage = await importFresh()
 
-    storage.setItem('rembrandt-settings', '{"flush":true}')
+    storage.setItem('strata-sync-settings', '{"flush":true}')
     expect(writeMock).not.toHaveBeenCalled()
 
-    // beforeunload 이벤트 발생
+    // beforeunload event fires
     window.dispatchEvent(new Event('beforeunload'))
 
     expect(writeMock).toHaveBeenCalledWith('settings.json', { flush: true })
   })
 
-  it('flushWrite 시 JSON.parse 에러가 발생해도 크래시하지 않는다', async () => {
+  it('does not crash when JSON.parse throws during flushWrite', async () => {
     const writeMock = vi.fn().mockResolvedValue({ ok: true })
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     installSettingsAPI({ write: writeMock })
     const storage = await importFresh()
 
-    // invalid JSON을 setItem — localStorage에는 기록되고 pendingWrites에도 등록됨
-    storage.setItem('rembrandt-settings', 'not-valid-json{{{')
+    // setItem with invalid JSON — written to localStorage and registered in pendingWrites
+    storage.setItem('strata-sync-settings', 'not-valid-json{{{')
 
-    // beforeunload — JSON.parse 실패해도 에러 없이 진행
+    // beforeunload — proceeds without error even if JSON.parse fails
     expect(() => {
       window.dispatchEvent(new Event('beforeunload'))
     }).not.toThrow()
 
-    // write는 호출되지 않아야 한다 (JSON.parse 실패)
+    // write must not be called (JSON.parse failed)
     expect(writeMock).not.toHaveBeenCalled()
-    // 에러 로그가 출력됨
+    // error log is emitted
     expect(errorSpy).toHaveBeenCalled()
     errorSpy.mockRestore()
   })
 
-  it('대기 중인 쓰기가 없으면 beforeunload가 아무 작업도 하지 않는다', async () => {
+  it('beforeunload does nothing when there are no pending writes', async () => {
     const writeMock = vi.fn().mockResolvedValue({ ok: true })
     installSettingsAPI({ write: writeMock })
     await importFresh()
@@ -258,13 +258,13 @@ describe('electronStorage — flushWrite (beforeunload)', () => {
     expect(writeMock).not.toHaveBeenCalled()
   })
 
-  it('여러 키에 대한 대기 쓰기를 한 번에 모두 flush한다', async () => {
+  it('flushes pending writes for multiple keys at once', async () => {
     const writeMock = vi.fn().mockResolvedValue({ ok: true })
     installSettingsAPI({ write: writeMock })
     const storage = await importFresh()
 
-    storage.setItem('rembrandt-settings', '{"s":1}')
-    storage.setItem('rembrandt-vault', '{"v":1}')
+    storage.setItem('strata-sync-settings', '{"s":1}')
+    storage.setItem('strata-sync-vault', '{"v":1}')
 
     window.dispatchEvent(new Event('beforeunload'))
 
@@ -283,15 +283,15 @@ describe('electronStorage — removeItem', () => {
     removeSettingsAPI()
   })
 
-  it('localStorage에서 항목을 제거한다', async () => {
-    localStorage.setItem('rembrandt-settings', '{"del":true}')
+  it('removes the item from localStorage', async () => {
+    localStorage.setItem('strata-sync-settings', '{"del":true}')
     const storage = await importFresh()
 
-    storage.removeItem('rembrandt-settings')
-    expect(localStorage.getItem('rembrandt-settings')).toBeNull()
+    storage.removeItem('strata-sync-settings')
+    expect(localStorage.getItem('strata-sync-settings')).toBeNull()
   })
 
-  it('존재하지 않는 키를 제거해도 에러가 발생하지 않는다', async () => {
+  it('does not throw when removing a non-existent key', async () => {
     const storage = await importFresh()
 
     expect(() => {

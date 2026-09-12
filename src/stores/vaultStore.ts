@@ -12,10 +12,10 @@ import { electronStorage as electronStorageAdapter } from '@/lib/electronStorage
 import type { LoadedDocument } from '@/types'
 import { invalidateGraphRAGCache } from '@/lib/graphRAG'
 
-/** 이미지 파일 경로 레지스트리: filename → { relativePath, absolutePath } */
+/** Image file path registry: filename → { relativePath, absolutePath } */
 export type ImagePathRegistry = Record<string, { relativePath: string; absolutePath: string }>
 
-/** 등록된 볼트 항목 */
+/** A registered vault entry */
 export interface VaultEntry {
   path: string
   label: string
@@ -30,15 +30,15 @@ interface VaultState {
   vaultPath: string | null
   /** Runtime: parsed documents (not persisted) */
   loadedDocuments: LoadedDocument[] | null
-  /** Runtime: 볼트별 문서 캐시 — Slack 봇 전체 볼트 검색용 */
+  /** Runtime: per-vault document cache — for Slack bot all-vault search */
   vaultDocsCache: Record<string, LoadedDocument[]>
-  /** Runtime: 볼트별 메타 캐시 (imageRegistry + folders) */
+  /** Runtime: per-vault metadata cache (imageRegistry + folders) */
   vaultMetaCache: Record<string, { imageRegistry: ImagePathRegistry | null; folders: string[] }>
   /** Runtime: all known subfolder paths in the vault (relative to vault root) */
   vaultFolders: string[]
   /** Runtime: image filename → path lookup table (from vault load) */
   imagePathRegistry: ImagePathRegistry | null
-  /** Runtime: 사전 인덱싱된 이미지 데이터 캐시: filename → base64 dataUrl */
+  /** Runtime: pre-indexed image data cache: filename → base64 dataUrl */
   imageDataCache: Record<string, string>
   /** Runtime: true while loading/parsing files */
   isLoading: boolean
@@ -52,15 +52,15 @@ interface VaultState {
   error: string | null
   /** Runtime: total MD file count detected at load start (null = not yet known) */
   pendingFileCount: number | null
-  /** Runtime: 백그라운드 볼트 인덱싱 진행 정보 */
+  /** Runtime: background vault indexing progress */
   bgLoadingInfo: { label: string; done: number; total: number } | null
-  /** Runtime: 마지막 파일 변경 diff 정보 */
+  /** Runtime: last file-change diff info */
   watchDiff: { filePath: string; added: number; removed: number; preview: string } | null
 
   // ── Setters ────────────────────────────────────────────────────────────────
   setVaultPath: (path: string | null) => void
   setLoadedDocuments: (docs: LoadedDocument[] | null) => void
-  /** Slack 봇용: 모든 볼트 문서를 병합해서 반환 */
+  /** For the Slack bot: returns all vault documents merged */
   getAllVaultDocs: () => LoadedDocument[]
   setVaultFolders: (folders: string[]) => void
   setImagePathRegistry: (registry: ImagePathRegistry | null) => void
@@ -74,21 +74,21 @@ interface VaultState {
   setPendingFileCount: (count: number | null) => void
   /** Clear vault path + documents + error */
   clearVault: () => void
-  /** 볼트 문서를 캐시에 저장 (백그라운드 사전 인덱싱용) */
+  /** Store vault documents in the cache (for background pre-indexing) */
   cacheVaultDocs: (vaultId: string, docs: LoadedDocument[]) => void
-  /** 백그라운드 인덱싱 진행 정보 설정 */
+  /** Set background indexing progress */
   setBgLoadingInfo: (info: { label: string; done: number; total: number } | null) => void
-  /** 파일 변경 diff 설정 */
+  /** Set the file-change diff */
   setWatchDiff: (diff: VaultState['watchDiff']) => void
 
   // ── Multi-Vault ────────────────────────────────────────────────────────────
-  /** 새 볼트를 등록하고 ID를 반환합니다. 자동 전환 없음. */
+  /** Registers a new vault and returns its ID. Does not switch automatically. */
   addVault: (path: string, label?: string) => string
-  /** 볼트를 제거합니다. 현재 활성 볼트라면 다른 볼트로 전환. */
+  /** Removes a vault. If it is the active vault, switches to another one. */
   removeVault: (id: string) => void
-  /** 활성 볼트를 전환하고 vaultPath를 업데이트합니다. */
+  /** Switches the active vault and updates vaultPath. */
   switchVault: (id: string) => void
-  /** 볼트 라벨을 변경합니다. */
+  /** Renames a vault label. */
   updateVaultLabel: (id: string, label: string) => void
 }
 
@@ -100,7 +100,7 @@ function labelFromPath(path: string): string {
   return path.split(/[/\\]/).filter(Boolean).pop() ?? path
 }
 
-/** LRU 접근 순서 추적 배열 — 배열 끝이 가장 최근 접근 */
+/** LRU access-order tracking array — the end of the array is the most recent */
 let _imageAccessOrder: string[] = []
 
 export const useVaultStore = create<VaultState>()(
@@ -161,9 +161,9 @@ export const useVaultStore = create<VaultState>()(
       },
 
       setLoadedDocuments: (loadedDocuments) => set((s) => {
-        // 문서 집합이 바뀌면 graphRAG 의 docMap/sectionMap/소문자 캐시를 명시적으로 비운다.
-        // 지문 기반 자가 무효화가 있지만, 볼트 전환·에디터 저장·파일 워처 등 모든 경로를
-        // 한 곳에서 확실히 커버하기 위한 것이다.
+        // Explicitly clear graphRAG's docMap/sectionMap/lowercase caches whenever the document set changes.
+        // Fingerprint-based self-invalidation exists, but this reliably covers every path
+        // (vault switch, editor save, file watcher, ...) from a single place.
         invalidateGraphRAGCache()
         if (loadedDocuments && s.activeVaultId) {
           const label = s.vaults[s.activeVaultId]?.label ?? s.activeVaultId
@@ -313,7 +313,7 @@ export const useVaultStore = create<VaultState>()(
       },
     }),
     {
-      name: 'rembrandt-vault',
+      name: 'strata-sync-vault',
       storage: createJSONStorage(() => electronStorageAdapter),
       // Persist vaultPath, vaults, activeVaultId
       partialize: (state) => ({

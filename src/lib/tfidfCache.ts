@@ -1,15 +1,15 @@
 /**
  * tfidfCache.ts — IndexedDB persistence for the TF-IDF index.
  *
- * 볼트를 다시 열 때 파일이 바뀌지 않았으면 재계산 없이 캐시를 복원합니다.
+ * When the vault is reopened and no files have changed, the cache is restored without recomputation.
  *
  * Cache key : vaultPath (string)
- * Invalidation : docs 목록의 id + mtime 지문(fingerprint)이 달라지면 miss
- * Schema version : SerializedTfIdf.schemaVersion 이 다르면 miss
+ * Invalidation : miss when the id + mtime fingerprint of the docs list differs
+ * Schema version : miss when SerializedTfIdf.schemaVersion differs
  *
- * 캐시에는 사전 계산된 `implicitLinks` 도 함께 저장된다. 지문이 같으면 문서와
- * WikiLink 도 같으므로 O(N²) 묵시적 링크 탐색을 실행마다 반복할 필요가 없다.
- * (실측 64초 → 0초)
+ * The cache also stores the precomputed `implicitLinks`. If the fingerprint matches, the
+ * documents and WikiLinks are the same too, so the O(N²) implicit link search need not be repeated on every run.
+ * (measured: 64s → 0s)
  */
 
 import type { SerializedTfIdf } from './graphAnalysis'
@@ -17,7 +17,7 @@ import { TFIDF_SCHEMA_VERSION } from './graphAnalysis'
 import type { LoadedDocument } from '@/types'
 import { logger } from './logger'
 
-const DB_NAME = 'rembrandt-tfidf-cache'
+const DB_NAME = 'strata-sync-tfidf-cache'
 const STORE = 'index'
 const DB_VERSION = 1
 
@@ -61,8 +61,8 @@ async function idbPut(db: IDBDatabase, key: string, value: unknown): Promise<voi
 // ── Fingerprint ────────────────────────────────────────────────────────────
 
 /**
- * 볼트 문서 목록으로부터 캐시 유효성 검사용 지문을 생성합니다.
- * 파일이 추가/삭제/수정되면 지문이 달라져 캐시 미스가 발생합니다.
+ * Builds a fingerprint from the vault document list for cache validation.
+ * Adding/removing/modifying a file changes the fingerprint and causes a cache miss.
  */
 export function buildFingerprint(docs: LoadedDocument[]): string {
   return [...docs]
@@ -74,8 +74,8 @@ export function buildFingerprint(docs: LoadedDocument[]): string {
 // ── Public API ────────────────────────────────────────────────────────────
 
 /**
- * IndexedDB에서 TF-IDF 캐시를 읽습니다.
- * 캐시 미스(없음 / 지문 불일치 / 스키마 버전 불일치) 시 null을 반환합니다.
+ * Reads the TF-IDF cache from IndexedDB.
+ * Returns null on cache miss (absent / fingerprint mismatch / schema version mismatch).
  */
 export async function loadTfIdfCache(
   vaultPath: string,
@@ -92,14 +92,14 @@ export async function loadTfIdfCache(
     if (cached.fingerprint !== fingerprint) return null
     return cached
   } catch (err) {
-    logger.warn('[tfidfCache] 캐시 읽기 실패:', err)
+    logger.warn('[tfidfCache] Failed to read cache:', err)
     return null
   }
 }
 
 /**
- * 특정 볼트의 TF-IDF 캐시를 IndexedDB에서 삭제합니다.
- * Edit Agent가 파일을 수정한 후 호출 → 다음 검색 시 인덱스 재빌드.
+ * Deletes a specific vault's TF-IDF cache from IndexedDB.
+ * Called after the Edit Agent modifies files → index is rebuilt on the next search.
  */
 export async function invalidateTfIdfCache(vaultPath: string): Promise<void> {
   try {
@@ -110,15 +110,15 @@ export async function invalidateTfIdfCache(vaultPath: string): Promise<void> {
       req.onsuccess = () => resolve()
       req.onerror = () => reject(req.error)
     })
-    logger.debug('[tfidfCache] 캐시 무효화 완료')
+    logger.debug('[tfidfCache] Cache invalidated')
   } catch (err) {
-    logger.warn('[tfidfCache] 캐시 무효화 실패:', err)
+    logger.warn('[tfidfCache] Failed to invalidate cache:', err)
   }
 }
 
 /**
- * TF-IDF 인덱스를 IndexedDB에 저장합니다.
- * 실패해도 앱 동작에는 영향 없음 (경고 로그만 출력).
+ * Saves the TF-IDF index to IndexedDB.
+ * Failure does not affect app behavior (only a warning is logged).
  */
 export async function saveTfIdfCache(
   vaultPath: string,
@@ -127,8 +127,8 @@ export async function saveTfIdfCache(
   try {
     const db = await openDB()
     await idbPut(db, vaultPath, data)
-    logger.debug(`[tfidfCache] 캐시 저장 완료 (${data.docs.length}개 문서, 묵시적 링크 ${data.implicitLinks?.length ?? 0}개)`)
+    logger.debug(`[tfidfCache] Cache saved (${data.docs.length} docs, ${data.implicitLinks?.length ?? 0} implicit links)`)
   } catch (err) {
-    logger.warn('[tfidfCache] 캐시 저장 실패:', err)
+    logger.warn('[tfidfCache] Failed to save cache:', err)
   }
 }
