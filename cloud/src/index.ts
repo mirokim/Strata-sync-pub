@@ -15,6 +15,10 @@ import { runNightly, semanticSearch, type NightlyDeps, type VectorStore, type Ve
 import { applyR2Events, type R2EventMessage } from './r2events.js'
 import { reviewDocument, shouldEnqueueReview, type ReviewJob, type LlmCall } from './review.js'
 import Anthropic from '@anthropic-ai/sdk'
+import { preflight, withCors } from './cors.js'
+import { handleMcpRequest } from './mcp.js'
+import { invalidateVaultView } from './vaultIndex.js'
+import { buildProposal } from '../../mcp/src/proposals.js'
 
 export interface Env {
   VAULT: R2Bucket
@@ -33,6 +37,8 @@ export interface Env {
   REVIEW_MODEL?: string
   /** Comma-separated vault folders eligible for review; empty = every non-underscore folder. */
   REVIEW_FOLDERS?: string
+  /** Browser origins allowed to call the API (comma-separated, or `*`). Empty = no browser access. */
+  ALLOWED_ORIGINS?: string
 }
 
 const DEFAULT_REVIEW_MODEL = 'claude-opus-5'
@@ -62,66 +68,11 @@ function bearer(req: Request): string | null {
 }
 
 export default {
+  /** CORS wrapper around `route` — the web app on Vercel calls this API from the browser. */
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    const url = new URL(req.url)
-
-    if (url.pathname === '/health') return json(200, { ok: true, service: 'strata-sync-cloud' })
-    if (!url.pathname.startsWith('/v1/')) return json(404, { error: 'not found' })
-
-    if (!env.TEAM_TOKEN) return json(503, { error: 'TEAM_TOKEN secret not configured' })
-    if (!tokenMatches(bearer(req), env.TEAM_TOKEN)) return json(401, { error: 'unauthorized' })
-
-    const deps = baseDeps(env)
-
-    try {
-      if (url.pathname === '/v1/search' && req.method === 'POST') {
-        if (!env.AI || !env.VECTORS) return json(503, { error: 'semantic search not configured (AI / Vectorize bindings missing)' })
-        const body = await req.json().catch(() => ({})) as { query?: unknown; topK?: unknown }
-        if (typeof body.query !== 'string') return json(400, { error: 'query (string) required' })
-        const hits = await semanticSearch(embedder(env.AI), vectorQuery(env.VECTORS), body.query, Number(body.topK ?? 10))
-        return json(200, { hits })
-      }
-      if (url.pathname === '/v1/lint/run' && req.method === 'POST') {
-        // Manual trigger of the nightly batch (same code the cron runs)
-        const result = await runNightly(nightlyDeps(env))
-        return json(200, result)
-      }
-      if (url.pathname === '/v1/manifest' && req.method === 'GET') {
-        const since = Number(url.searchParams.get('since') ?? '0')
-        return toResponse(await getManifest(deps, since))
-      }
-      if (url.pathname === '/v1/file') {
-        const path = url.searchParams.get('path')
-        const author = decodeHeader(req.headers.get('x-author'))
-        if (req.method === 'GET') return toResponse(await getFile(deps, path))
-        if (req.method === 'PUT') {
-          const declared = Number(req.headers.get('content-length'))
-          if (Number.isFinite(declared) && declared > deps.maxFileBytes) return json(413, { error: `file larger than ${deps.maxFileBytes} bytes` })
-          const body = new Uint8Array(await req.arrayBuffer())
-          const result = await putFile(deps, {
-            path, body,
-            ifMatch: parseIfMatch(req.headers.get('if-match')),
-            createOnly: req.headers.get('if-none-match') === '*',
-            mtime: Number(req.headers.get('x-mtime')),
-            author,
-          })
-          // A new version of a design document → queue a director review (fire-and-forget)
-          if ((result.status === 200 || result.status === 201) && env.REVIEW_QUEUE && result.body) {
-            const row = result.body as { path: string; etag: string; deleted: boolean; size: number; author: string }
-            if (shouldEnqueueReview(row, reviewFolders(env))) {
-              ctx.waitUntil(env.REVIEW_QUEUE.send({ path: row.path, etag: row.etag }).catch(e => console.error('[review] enqueue failed', e)))
-            }
-          }
-          return toResponse(result)
-        }
-        if (req.method === 'DELETE') return toResponse(await deleteFile(deps, path, parseIfMatch(req.headers.get('if-match')), author))
-        return json(405, { error: 'method not allowed' })
-      }
-      return json(404, { error: 'not found' })
-    } catch (e) {
-      console.error('[sync] unhandled', e)
-      return json(500, { error: 'internal error' })
-    }
+    if (req.method === 'OPTIONS') return preflight(req, env.ALLOWED_ORIGINS)
+    const res = await route(req, env, ctx)
+    return withCors(res, req, env.ALLOWED_ORIGINS)
   },
 
   /** Cron trigger (wrangler.toml [triggers]) — the nightly lint + embedding batch. */
@@ -195,6 +146,117 @@ function anthropicLlm(env: Env): LlmCall | null {
     })
     if (res.stop_reason === 'refusal') return '_(the model declined to review this section)_'
     return res.content.filter(b => b.type === 'text').map(b => b.text).join('\n')
+  }
+}
+
+/**
+ * All HTTP routing; `fetch` only wraps it with CORS. Exported so tests can drive the routes with
+ * in-memory stores (`deps`) instead of D1/R2 bindings.
+ */
+export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?: SyncDeps): Promise<Response> {
+  const url = new URL(req.url)
+
+  if (url.pathname === '/health') return json(200, { ok: true, service: 'strata-sync-cloud' })
+  if (!url.pathname.startsWith('/v1/') && url.pathname !== '/mcp') return json(404, { error: 'not found' })
+
+  if (!env.TEAM_TOKEN) return json(503, { error: 'TEAM_TOKEN secret not configured' })
+  if (!tokenMatches(bearer(req), env.TEAM_TOKEN)) return json(401, { error: 'unauthorized' })
+
+  deps ??= baseDeps(env)
+
+  try {
+    // ── Remote MCP (Claude Code / Cursor over Streamable HTTP) ────────────────
+    if (url.pathname === '/mcp') {
+      const semantic = env.AI && env.VECTORS
+        ? (q: string, k: number) => semanticSearch(embedder(env.AI!), vectorQuery(env.VECTORS!), q, k)
+        : undefined
+      return handleMcpRequest(req, { ...deps, semanticSearch: semantic, author: decodeHeader(req.headers.get('x-author')) || 'mcp' })
+    }
+
+    // ── Web client: documents with content, paged by sequence ─────────────────
+    if (url.pathname === '/v1/docs' && req.method === 'GET') {
+      const after = Number(url.searchParams.get('after') ?? '0')
+      const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? '200'), 1), 500)
+      if (!Number.isFinite(after) || after < 0) return json(400, { error: 'after must be a non-negative integer' })
+      const rows = await deps.meta.listSince(Math.floor(after), limit)
+      const head = await deps.meta.head()
+      const docs = []
+      for (const row of rows) {
+        if (row.deleted || !row.path.toLowerCase().endsWith('.md')) { docs.push({ ...row, content: null }); continue }
+        const bytes = await deps.blobs.get(row.path)
+        docs.push({ ...row, content: bytes ? new TextDecoder().decode(bytes) : null })
+      }
+      const next = rows.length === limit ? rows[rows.length - 1].seq : null
+      return json(200, { head, next, docs })
+    }
+
+    // ── Bots / scripts: record an agent proposal ───────────────────────────────
+    if (url.pathname === '/v1/propose' && req.method === 'POST') {
+      const body = await req.json().catch(() => ({})) as { title?: unknown; body?: unknown; tags?: unknown; links?: unknown; source?: unknown }
+      const title = typeof body.title === 'string' ? body.title.trim() : ''
+      const text = typeof body.body === 'string' ? body.body.trim() : ''
+      if (!title || !text) return json(400, { error: 'title and body required' })
+      const proposal = buildProposal({
+        title, body: text,
+        tags: Array.isArray(body.tags) ? body.tags.map(String) : [],
+        links: Array.isArray(body.links) ? body.links.map(String) : [],
+        source: typeof body.source === 'string' ? body.source.slice(0, 80) : 'bot',
+      })
+      let rel = proposal.relPath
+      for (let n = 2; (await deps.meta.get(rel))?.deleted === false; n++) rel = proposal.relPath.replace(/\.md$/, `-${n}.md`)
+      const r = await putFile(deps, { path: rel, body: new TextEncoder().encode(proposal.content), mtime: Date.now(), author: decodeHeader(req.headers.get('x-author')) || 'bot', createOnly: true })
+      if (r.status >= 400) return toResponse(r)
+      invalidateVaultView()
+      return json(200, { ok: true, path: rel, title: proposal.title })
+    }
+
+    if (url.pathname === '/v1/search' && req.method === 'POST') {
+      if (!env.AI || !env.VECTORS) return json(503, { error: 'semantic search not configured (AI / Vectorize bindings missing)' })
+      const body = await req.json().catch(() => ({})) as { query?: unknown; topK?: unknown }
+      if (typeof body.query !== 'string') return json(400, { error: 'query (string) required' })
+      const hits = await semanticSearch(embedder(env.AI), vectorQuery(env.VECTORS), body.query, Number(body.topK ?? 10))
+      return json(200, { hits })
+    }
+    if (url.pathname === '/v1/lint/run' && req.method === 'POST') {
+      // Manual trigger of the nightly batch (same code the cron runs)
+      const result = await runNightly(nightlyDeps(env))
+      return json(200, result)
+    }
+    if (url.pathname === '/v1/manifest' && req.method === 'GET') {
+      const since = Number(url.searchParams.get('since') ?? '0')
+      return toResponse(await getManifest(deps, since))
+    }
+    if (url.pathname === '/v1/file') {
+      const path = url.searchParams.get('path')
+      const author = decodeHeader(req.headers.get('x-author'))
+      if (req.method === 'GET') return toResponse(await getFile(deps, path))
+      if (req.method === 'PUT') {
+        const declared = Number(req.headers.get('content-length'))
+        if (Number.isFinite(declared) && declared > deps.maxFileBytes) return json(413, { error: `file larger than ${deps.maxFileBytes} bytes` })
+        const body = new Uint8Array(await req.arrayBuffer())
+        const result = await putFile(deps, {
+          path, body,
+          ifMatch: parseIfMatch(req.headers.get('if-match')),
+          createOnly: req.headers.get('if-none-match') === '*',
+          mtime: Number(req.headers.get('x-mtime')),
+          author,
+        })
+        // A new version of a design document → queue a director review (fire-and-forget)
+        if ((result.status === 200 || result.status === 201) && env.REVIEW_QUEUE && result.body) {
+          const row = result.body as { path: string; etag: string; deleted: boolean; size: number; author: string }
+          if (shouldEnqueueReview(row, reviewFolders(env))) {
+            ctx.waitUntil(env.REVIEW_QUEUE.send({ path: row.path, etag: row.etag }).catch(e => console.error('[review] enqueue failed', e)))
+          }
+        }
+        return toResponse(result)
+      }
+      if (req.method === 'DELETE') return toResponse(await deleteFile(deps, path, parseIfMatch(req.headers.get('if-match')), author))
+      return json(405, { error: 'method not allowed' })
+    }
+    return json(404, { error: 'not found' })
+  } catch (e) {
+    console.error('[sync] unhandled', e)
+    return json(500, { error: 'internal error' })
   }
 }
 
