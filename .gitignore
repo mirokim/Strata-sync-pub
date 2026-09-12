@@ -56,3 +56,7 @@ logs/
 
 # Unpacked DOCX intermediate (regenerate with scripts/office/unpack.py)
 manual/manual_unpacked/
+
+# MCP runtime caches (written next to mcp-config.json)
+implicit_links_cache.json
+vector_cache.json
