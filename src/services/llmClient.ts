@@ -4,7 +4,7 @@ import type { AnthropicTool, AgentLoopOpts, AgentMsg } from '@/services/agentLoo
 import { runAgentLoop } from '@/services/agentLoop'
 import type { ConversionMeta } from '@/lib/mdConverter'
 import { logger } from '@/lib/logger'
-import { MODEL_OPTIONS, getProviderForModel, WORKER_MODELS } from '@/lib/modelConfig'
+import { MODEL_OPTIONS, getProviderForModel, WORKER_MODEL_IDS } from '@/lib/modelConfig'
 import { PERSONA_PROMPTS, buildProjectContext } from '@/lib/personaPrompts'
 import { selectMockResponse } from '@/data/mockResponses'
 import { useSettingsStore, getApiKey } from '@/stores/settingsStore'
@@ -314,7 +314,7 @@ export async function expandQueryWithLLM(query: string, apiKey: string): Promise
   try {
     const { streamCompletion } = await import('./providers/anthropic')
     await streamCompletion(
-      apiKey, WORKER_MODELS['anthropic'],
+      apiKey, WORKER_MODEL_IDS.anthropic,
       '검색 쿼리 확장 전문가입니다. 입력 쿼리와 의미적으로 관련된 핵심 키워드를 2~3개 추가해 하나의 자연스러운 문장으로 만드세요. 원본 쿼리의 핵심 의미를 유지하면서 동의어, 관련 개념을 포함하세요. 텍스트만 출력하세요.',
       [{ role: 'user' as const, content: query }],
       (c: string) => { result += c },
@@ -370,7 +370,7 @@ export async function llmRerankCandidates<T extends { doc_id: string; score: num
   try {
     const { streamCompletion } = await import('./providers/anthropic')
     await streamCompletion(
-      apiKey, WORKER_MODELS['anthropic'],
+      apiKey, WORKER_MODEL_IDS.anthropic,
       '각 문서의 쿼리 관련성을 0–10으로 평가하세요. 반드시 "인덱스:점수" 쌍을 쉼표로 구분해 출력하세요. 예: 0:8,1:3,2:9. 다른 텍스트 없이 이 형식만 출력하세요.',
       [{ role: 'user' as const, content: `쿼리: ${query}\n\n문서 목록:\n${list}` }],
       (c: string) => { result += c },
@@ -503,7 +503,7 @@ const withTimeout = <T>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
  */
 export function getWorkerModelId(currentModelId: string): { modelId: string; provider: ProviderId } {
   const provider: ProviderId = getProviderForModel(currentModelId) ?? 'anthropic'
-  return { modelId: WORKER_MODELS[provider] ?? currentModelId, provider }
+  return { modelId: WORKER_MODEL_IDS[provider as keyof typeof WORKER_MODEL_IDS] ?? currentModelId, provider }
 }
 
 /**
