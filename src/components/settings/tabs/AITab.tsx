@@ -17,7 +17,7 @@ function EnvHint({ provider }: { provider: string }) {
   return (
     <span
       className="text-[10px] ml-1 shrink-0"
-      style={{ color: hasKey ? '#4caf50' : 'var(--color-text-muted)' }}
+      style={{ color: hasKey ? 'var(--color-success)' : 'var(--color-text-muted)' }}
       title={hasKey ? 'API key configured' : 'API key not set'}
     >
       {hasKey ? '●' : '○'}
@@ -42,7 +42,7 @@ export default function AITab() {
         <h3 className="text-[13px] font-semibold mb-1" style={{ color: 'var(--color-text-secondary)' }}>API Keys</h3>
         <p className="text-xs mb-3" style={{ color: 'var(--color-text-muted)' }}>
           Enter API keys for each AI provider.{' '}
-          <span style={{ color: '#f59e0b' }}>⚠ Keys are stored in plain text in this device's local storage. Delete keys after use on shared computers.</span>
+          <span style={{ color: 'var(--color-warning)' }}>⚠ Keys are stored in plain text in this device's local storage. Delete keys after use on shared computers.</span>
         </p>
         <div className="flex flex-col gap-2.5">
           {API_KEY_PROVIDERS.map(({ id, label, placeholder }) => {
@@ -58,7 +58,7 @@ export default function AITab() {
                   {label}
                   <span
                     className="text-[10px] ml-1.5"
-                    style={{ color: hasKey ? '#4caf50' : 'var(--color-text-muted)' }}
+                    style={{ color: hasKey ? 'var(--color-success)' : 'var(--color-text-muted)' }}
                   >{hasKey ? '●' : '○'}</span>
                 </div>
                 <div className="flex-1 relative">
@@ -230,7 +230,7 @@ export default function AITab() {
             borderRadius: 2,
             padding: '7px 9px',
             fontSize: 13,
-            fontFamily: 'ui-monospace, monospace',
+            fontFamily: 'var(--ea-font-mono)',
             color: 'var(--color-text-primary)',
             resize: 'vertical',
             lineHeight: 1.6,
@@ -410,7 +410,7 @@ export default function AITab() {
             borderRadius: 2,
             padding: '7px 9px',
             fontSize: 13,
-            fontFamily: 'ui-monospace, monospace',
+            fontFamily: 'var(--ea-font-mono)',
             color: 'var(--color-text-primary)',
             resize: 'vertical',
             lineHeight: 1.6,
@@ -444,7 +444,7 @@ export default function AITab() {
             borderRadius: 2,
             padding: '7px 9px',
             fontSize: 13,
-            fontFamily: 'ui-monospace, monospace',
+            fontFamily: 'var(--ea-font-mono)',
             color: 'var(--color-text-primary)',
             resize: 'vertical',
             lineHeight: 1.6,

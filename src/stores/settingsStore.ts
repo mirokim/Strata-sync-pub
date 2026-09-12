@@ -1,41 +1,45 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist } from 'zustand/middleware'
 import type { DirectorId, ProviderId } from '@/types'
-import { DEFAULT_PERSONA_MODELS, DEFAULT_MODEL_ID, MODEL_OPTIONS, envKeyForProvider } from '@/lib/modelConfig'
-import { BFS_DEFAULT_HOPS, BFS_DEFAULT_MAX_DOCS } from '@/lib/constants'
+import { DEFAULT_PERSONA_MODELS, MODEL_OPTIONS, envKeyForProvider } from '@/lib/modelConfig'
 import type { VaultPersonaConfig } from '@/lib/personaVaultConfig'
+import { electronStorage as electronStorageAdapter } from '@/lib/electronStorage'
 
-// Sentinel key used when migrating legacy single settings to per-vault Record
+// Sentinel key used when migrating the legacy single config into a per-vault Record
 export const MIGRATED_CONFIG_KEY = '__migrated__'
 
 // ── Search / RAG tuning config ────────────────────────────────────────────────
 
 export interface SearchConfig {
-  // Filename vs body weight
-  filenameWeight: number          // score per filename hit (default 10)
-  bodyWeight: number              // score per body hit (default 1)
+  // Filename vs body weighting
+  filenameWeight: number          // Score per filename hit (default 10)
+  bodyWeight: number              // Score per body hit (default 1)
   // Recency boost
-  recencyHalfLifeDays: number     // half-life in days (default 180)
-  recencyCoeffNormal: number      // normal query recency coefficient (default 0.4)
-  recencyCoeffHot: number         // recency intent query recency coefficient (default 2.0)
+  recencyHalfLifeDays: number     // Half-life in days (default 180)
+  recencyCoeffNormal: number      // Recency coefficient for normal queries (default 0.4)
+  recencyCoeffHot: number         // Recency coefficient for "latest" intent queries (default 2.0)
   // Candidate counts
-  directCandidatesNormal: number  // normal query direct search candidates (default 20)
-  directCandidatesRecency: number // recency intent direct search candidates (default 50)
-  directHitSeeds: number          // top N direct search results to use as BFS seeds (default 8)
-  bm25Candidates: number          // BM25 fallback candidates (default 8)
-  rerankSeeds: number             // seed count after rerank (default 5)
+  directCandidatesNormal: number  // Direct-search candidates for normal queries (default 20)
+  directCandidatesRecency: number // Direct-search candidates for "latest" intent queries (default 50)
+  directHitSeeds: number          // Top N direct hits used as BFS seeds (default 8)
+  bm25Candidates: number          // BM25 fallback candidate count (default 8)
+  rerankSeeds: number             // Seed count after rerank (default 5)
   // Thresholds
   minDirectHitScore: number       // hasStrongDirectHit threshold (default 0.2)
-  minPinnedScore: number          // full body direct injection threshold (default 0.4)
-  minBm25Score: number            // BM25 minimum valid score (default 0.05)
+  minPinnedScore: number          // Threshold for injecting the full body directly (default 0.4)
+  minBm25Score: number            // Minimum valid BM25 score (default 0.2, absolute scale)
   // Reranking weights
-  rerankVectorWeight: number      // vector score weight (default 0.6)
-  rerankKeywordWeight: number     // keyword score weight (default 0.3)
+  rerankVectorWeight: number      // Vector score weight (default 0.6)
+  rerankKeywordWeight: number     // Keyword score weight (default 0.3)
   // Graph traversal
-  bfsMaxHops: number              // BFS max hops (default 3)
-  bfsMaxDocs: number              // BFS max collected documents (default 20)
-  // Small vault full injection
-  fullVaultThreshold: number      // inject all without RAG if total vault chars is below this (0=disabled, default 60000)
+  bfsMaxHops: number              // Max BFS hops (default 3)
+  bfsMaxDocs: number              // Max documents collected by BFS (default 20)
+  // Full injection for small vaults
+  fullVaultThreshold: number      // Inject the whole vault without RAG when its total character count is at or below this (0=disabled, default 60000)
+  // AI search quality improvements
+  queryExpansion: boolean   // Query expansion — enrich search terms with an LLM (Haiku) (default: false)
+  llmRerank:      boolean   // LLM reranking — re-evaluate candidates with an LLM (Haiku) (default: false)
+  metadataFilter: boolean   // Metadata filter — detect speaker/tags and pre-filter (default: true)
 }
 
 export const DEFAULT_SEARCH_CONFIG: SearchConfig = {
@@ -43,27 +47,54 @@ export const DEFAULT_SEARCH_CONFIG: SearchConfig = {
   bodyWeight: 1,
   recencyHalfLifeDays: 180,
   recencyCoeffNormal: 0.4,
-  recencyCoeffHot: 2.0,
+  recencyCoeffHot: 0.8,
   directCandidatesNormal: 20,
   directCandidatesRecency: 50,
   directHitSeeds: 8,
-  bm25Candidates: 8,
+  bm25Candidates: 20,
   rerankSeeds: 5,
   minDirectHitScore: 0.2,
-  minPinnedScore: 0.4,
-  minBm25Score: 0.05,
+  minPinnedScore: 0.55,
+  minBm25Score: 0.2,
   rerankVectorWeight: 0.6,
   rerankKeywordWeight: 0.3,
-  bfsMaxHops: BFS_DEFAULT_HOPS,
-  bfsMaxDocs: BFS_DEFAULT_MAX_DOCS,
+  bfsMaxHops: 3,
+  bfsMaxDocs: 20,
   fullVaultThreshold: 60000,
+  queryExpansion: false,
+  llmRerank:      false,
+  metadataFilter: true,
+}
+
+// ── Reasoning / Insight config ────────────────────────────────────────────────
+
+export interface ReasoningConfig {
+  structuredReasoning: boolean  // Structured reasoning prompt — forces an [Observation]→[Connection]→[Analysis]→[Conclusion] structure for analytical questions (default: false)
+  extendedThinking:    boolean  // Claude Extended Thinking — enables the internal reasoning process (Anthropic only, default: false)
+  thinkingBudget:      number   // Extended Thinking token budget (default: 8000)
+}
+
+export const DEFAULT_REASONING_CONFIG: ReasoningConfig = {
+  structuredReasoning: false,
+  extendedThinking:    false,
+  thinkingBudget:      8000,
+}
+
+// ── Cron Job config ──────────────────────────────────────────────────────────
+
+export interface CronJobConfig {
+  id: string
+  enabled: boolean
+  cronExpression: string
+  intervalMinutes: number
+  schedulable: boolean
 }
 
 // ── Per-vault integration config types ────────────────────────────────────────
 
 export interface ConfluenceConfig {
   baseUrl: string
-  /** Auth type:
+  /** Auth method:
    *  cloud       — Atlassian Cloud: Basic auth (email + API token)
    *  server_pat  — Server/Data Center: Bearer PAT (token only, no email needed)
    *  server_basic — Server/Data Center: Basic auth (username + password) */
@@ -72,9 +103,9 @@ export interface ConfluenceConfig {
   apiToken: string   // cloud/server_basic: API token or password; server_pat: PAT
   spaceKey: string
   targetFolder: string
-  /** Minimum creation date for pages to fetch (YYYY-MM-DD). Default: 2026-01-01 */
+  /** Earliest creation date of pages to import (YYYY-MM-DD). Default: 2026-01-01 */
   dateFrom: string
-  /** Maximum creation date for pages to fetch (YYYY-MM-DD). Empty means no limit */
+  /** Latest creation date of pages to import (YYYY-MM-DD). Empty = no limit */
   dateTo: string
   bypassSSL: boolean
   autoSync: boolean
@@ -91,9 +122,9 @@ export interface JiraConfig {
   bypassSSL: boolean
   dateFrom: string
   dateTo: string
-  targetFolder: string            // auto-sync save folder (default: 'jira')
-  autoSync: boolean               // auto-sync enabled
-  autoSyncIntervalMinutes: number // sync interval (minutes, default: 60)
+  targetFolder: string            // Auto-sync target folder (default: 'jira')
+  autoSync: boolean               // Enable auto-sync
+  autoSyncIntervalMinutes: number // Sync interval (minutes, default: 60)
 }
 
 const DEFAULT_DATE_FROM = '2026-01-01'
@@ -104,9 +135,9 @@ export interface JiraTeamMember {
   id: string              // local UUID
   name: string
   jiraAccountId: string   // from Jira API
-  role: string            // art director, game designer etc.
+  role: string            // Art Director, Game Designer, etc.
   responsibilities: string  // multiline plain text
-  component: string       // Jira component name (e.g., [V1_Art] Concept Art)
+  component: string       // Jira component name (e.g. [V1_Art] Concept Art)
 }
 
 // ── Edit Agent config ──────────────────────────────────────────────────────────
@@ -182,7 +213,7 @@ export interface ProjectInfo {
   scale: string
   teamSize: string
   description: string
-  /** Team members in plain-text format: "art: 홍길동, 이순신\nchief: 김철수" */
+  /** Team members in plain-text format: "art: Alice, Bob\nchief: Carol" */
   teamMembers: string
   /** Raw project info as pasted/uploaded MD content (replaces individual fields in UI) */
   rawProjectInfo: string
@@ -280,7 +311,7 @@ interface SettingsState {
   multiAgentRAG: boolean
   /** Web search: Worker LLM autonomously decides whether to search DuckDuckGo */
   webSearch: boolean
-  /** Citation mode: workers extract verbatim quotes instead of summaries; chief marks inferences as (추론) */
+  /** Citation mode: workers extract verbatim quotes instead of summaries; chief marks inferences as (inference) */
   citationMode: boolean
   /** Global RAG document-reference instructions (injected into every persona's system prompt) */
   ragInstruction: string
@@ -291,6 +322,7 @@ interface SettingsState {
     botToken: string
     appToken: string
     model: string
+    sendImages: boolean
   }
   /** Per-vault Jira configurations (keyed by vault ID) */
   jiraConfigs: Record<string, JiraConfig>
@@ -298,6 +330,8 @@ interface SettingsState {
   confluenceConfigs: Record<string, ConfluenceConfig>
   /** Search / RAG scoring parameters */
   searchConfig: SearchConfig
+  /** AI reasoning & insight enhancement config */
+  reasoningConfig: ReasoningConfig
   /** Whether the 2-pass self-review LLM call is enabled in bot.py */
   selfReview: boolean
   /** Number of sub-agents for multi-agent RAG in bot.py */
@@ -337,10 +371,11 @@ interface SettingsState {
   setRagInstruction: (v: string) => void
   setSensitiveKeywords: (v: string) => void
   setConfluenceConfigForVault: (vaultId: string, c: Partial<ConfluenceConfig>) => void
-  setSlackBotConfig: (c: Partial<{ botToken: string; appToken: string; model: string }>) => void
+  setSlackBotConfig: (c: Partial<{ botToken: string; appToken: string; model: string; sendImages: boolean }>) => void
   setJiraConfigForVault: (vaultId: string, c: Partial<JiraConfig>) => void
   setSearchConfig: (c: Partial<SearchConfig>) => void
   resetSearchConfig: () => void
+  setReasoningConfig: (c: Partial<ReasoningConfig>) => void
   setSelfReview: (v: boolean) => void
   setNAgents: (v: number) => void
   /** Edit Agent autonomous refinement configuration */
@@ -349,6 +384,9 @@ interface SettingsState {
   /** Jira dispatch team roster */
   jiraTeamMembers: JiraTeamMember[]
   setJiraTeamMembers: (members: JiraTeamMember[]) => void
+  /** Cron job configs (persisted) */
+  cronConfigs: Record<string, CronJobConfig>
+  setCronConfig: (jobId: string, patch: Partial<CronJobConfig>) => void
 }
 
 /** Resolve API key for a provider: settings store first, then env var fallback */
@@ -376,6 +414,9 @@ function migratePersonaModels(
   return migrated
 }
 
+// ── Electron IPC file storage (with localStorage fallback, 500ms debounce)
+const electronStorage = createJSONStorage(() => electronStorageAdapter)
+
 // ── Store ──────────────────────────────────────────────────────────────────────
 
 export const useSettingsStore = create<SettingsState>()(
@@ -396,7 +437,7 @@ export const useSettingsStore = create<SettingsState>()(
       folderColors: {},
       responseInstructions: DEFAULT_RESPONSE_INSTRUCTIONS,
       personaDocumentIds: {},
-      reportModelId: DEFAULT_MODEL_ID,
+      reportModelId: DEFAULT_PERSONA_MODELS.chief_director,
       bookmarkedDocIds: [],
       multiAgentRAG: true,
       webSearch: true,
@@ -405,12 +446,17 @@ export const useSettingsStore = create<SettingsState>()(
       sensitiveKeywords: '',
       jiraConfigs: {},
       confluenceConfigs: {},
-      slackBotConfig: { botToken: '', appToken: '', model: DEFAULT_PERSONA_MODELS.chief_director },
+      slackBotConfig: { botToken: '', appToken: '', model: DEFAULT_PERSONA_MODELS.chief_director, sendImages: true },
       searchConfig: { ...DEFAULT_SEARCH_CONFIG },
+      reasoningConfig: { ...DEFAULT_REASONING_CONFIG },
       selfReview: true,
       nAgents: 6,
       editAgentConfig: { ...DEFAULT_EDIT_AGENT_CONFIG },
       jiraTeamMembers: [],
+      cronConfigs: {
+        'daily-run': { id: 'daily-run', enabled: true, cronExpression: '0 4 * * *', intervalMinutes: 0, schedulable: true },
+        'health-check': { id: 'health-check', enabled: true, cronExpression: '*/5 * * * *', intervalMinutes: 5, schedulable: true },
+      },
 
       setPersonaModel: (persona, modelId) =>
         set((state) => ({
@@ -536,10 +582,14 @@ export const useSettingsStore = create<SettingsState>()(
       setSlackBotConfig: (c) => set(s => ({ slackBotConfig: { ...s.slackBotConfig, ...c } })),
       setSearchConfig: (c) => set(s => ({ searchConfig: { ...s.searchConfig, ...c } })),
       resetSearchConfig: () => set({ searchConfig: { ...DEFAULT_SEARCH_CONFIG } }),
+      setReasoningConfig: (c) => set(s => ({ reasoningConfig: { ...s.reasoningConfig, ...c } })),
       setSelfReview: (selfReview) => set({ selfReview }),
       setNAgents: (nAgents) => set({ nAgents }),
       setEditAgentConfig: (c) => set(s => ({ editAgentConfig: { ...s.editAgentConfig, ...c } })),
       setJiraTeamMembers: (jiraTeamMembers) => set({ jiraTeamMembers }),
+      setCronConfig: (jobId, patch) => set(s => ({
+        cronConfigs: { ...s.cronConfigs, [jobId]: { ...s.cronConfigs[jobId], ...patch } },
+      })),
       setJiraConfigForVault: (vaultId, c) =>
         set(s => ({
           jiraConfigs: {
@@ -550,6 +600,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'strata-sync-settings',
+      storage: electronStorage,
       partialize: (state) => ({
         personaModels: state.personaModels,
         apiKeys: state.apiKeys,
@@ -577,10 +628,12 @@ export const useSettingsStore = create<SettingsState>()(
         slackBotConfig: state.slackBotConfig,
         jiraConfigs: state.jiraConfigs,
         searchConfig: state.searchConfig,
+        reasoningConfig: state.reasoningConfig,
         selfReview: state.selfReview,
         nAgents: state.nAgents,
         editAgentConfig: state.editAgentConfig,
         jiraTeamMembers: state.jiraTeamMembers,
+        cronConfigs: state.cronConfigs,
       }),
       // Migrate persisted data: replace old/removed model IDs with defaults
       merge: (persisted, current) => {
@@ -589,17 +642,21 @@ export const useSettingsStore = create<SettingsState>()(
           jiraConfig?: JiraConfig
         }
         // Migrate old single config → per-vault Records (one-time backward compat)
-        const confluenceConfigs: Record<string, ConfluenceConfig> =
+        const rawConfluenceConfigs: Record<string, ConfluenceConfig> =
           stored.confluenceConfigs
           ?? (stored.confluenceConfig
             ? { [MIGRATED_CONFIG_KEY]: { ...DEFAULT_CONFLUENCE_CONFIG, ...stored.confluenceConfig } }
             : {})
+        // Fill in defaults for missing new fields (authType, bypassSSL, etc.)
+        const confluenceConfigs: Record<string, ConfluenceConfig> = Object.fromEntries(
+          Object.entries(rawConfluenceConfigs).map(([k, v]) => [k, { ...DEFAULT_CONFLUENCE_CONFIG, ...v }])
+        )
         const jiraConfigsRaw: Record<string, JiraConfig> =
           stored.jiraConfigs
           ?? (stored.jiraConfig
             ? { [MIGRATED_CONFIG_KEY]: { ...DEFAULT_JIRA_CONFIG, ...stored.jiraConfig } }
             : {})
-        // 신규 필드(targetFolder, autoSync 등) 누락 시 기본값으로 채움
+        // Fill in defaults for missing new fields (targetFolder, autoSync, etc.)
         const jiraConfigs: Record<string, JiraConfig> = Object.fromEntries(
           Object.entries(jiraConfigsRaw).map(([k, v]) => [k, { ...DEFAULT_JIRA_CONFIG, ...v }])
         )
@@ -620,6 +677,9 @@ export const useSettingsStore = create<SettingsState>()(
             if ('minTfIdfScore' in sc && !('minBm25Score' in sc)) merged.minBm25Score = sc['minTfIdfScore'] as number
             return merged
           })(),
+          reasoningConfig: stored.reasoningConfig
+            ? { ...DEFAULT_REASONING_CONFIG, ...stored.reasoningConfig }
+            : current.reasoningConfig,
           selfReview: stored.selfReview ?? current.selfReview,
           nAgents: stored.nAgents ?? current.nAgents,
           editAgentConfig: stored.editAgentConfig

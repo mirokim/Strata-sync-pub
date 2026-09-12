@@ -44,6 +44,40 @@ export const PERSONA_TAG_MAP: Record<string, string> = {
   prog_director: 'tech',
 }
 
+// ── Domain → tag affinity map (query-based tag boost) ────────────────────────
+
+/**
+ * Boosts scores by matching domain keywords detected in the query against frontmatter tags.
+ * Key: domain keyword to detect in the query (lowercase)
+ * Value: list of tags related to that domain (lowercase)
+ */
+export const DOMAIN_TAG_MAP: Record<string, string[]> = {
+  '밸런스': ['balance', 'design', '밸런스'],
+  '캐릭터': ['character', '캐릭터', 'persona'],
+  '전투': ['combat', '전투', 'battle'],
+  '레벨': ['level', '레벨', 'map'],
+  '아트': ['art', '아트', 'visual'],
+  'ui': ['ui', 'ux', '인터페이스'],
+  '사운드': ['sound', 'audio', '사운드'],
+  '네트워크': ['network', 'server', '네트워크'],
+  '스토리': ['story', 'narrative', '스토리', '세계관'],
+}
+
+/**
+ * Detects DOMAIN_TAG_MAP keywords in the query text and
+ * returns the set of related tags for all matched domains.
+ */
+export function detectDomainTags(query: string): Set<string> {
+  const q = query.toLowerCase()
+  const matched = new Set<string>()
+  for (const [domain, tags] of Object.entries(DOMAIN_TAG_MAP)) {
+    if (q.includes(domain)) {
+      for (const t of tags) matched.add(t)
+    }
+  }
+  return matched
+}
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface NeighborContext {
@@ -63,10 +97,10 @@ export function tokenizeQuery(text: string): string[] {
   return _tokenize(text)
 }
 
-// ── Generic heading filter (PPTX/PDF slide/page heading noise removal) ──────
+// ── Generic heading filter (removes PPTX/PDF slide/page heading noise) ──────
 const GENERIC_HEADING_RE = /^(슬라이드|페이지|slide|page)\s*\d+$/i
 
-/** Replace generic headings that don't contribute to search scoring with empty string */
+/** Replaces generic headings that do not contribute to search scoring with an empty string */
 function headingForScore(heading: string): string {
   return GENERIC_HEADING_RE.test(heading.trim()) ? '' : heading
 }
@@ -75,12 +109,41 @@ function headingForScore(heading: string): string {
 
 const ARCHIVE_PATH_RE = /(?:^|[\\/])\.?archive[\\/]/i
 
-/** Determine if a document is in archive or outdated/deprecated state */
+/** Determines whether a document is archived or in outdated/deprecated status */
 function isOutdatedDoc(doc: { status?: string; folderPath?: string; absolutePath?: string } | undefined): boolean {
   if (!doc) return false
   if (doc.status === 'outdated' || doc.status === 'deprecated') return true
   const path = (doc.folderPath ?? (doc as any).absolutePath ?? '')
   return ARCHIVE_PATH_RE.test(path)
+}
+
+// ── Status weighting (document lifecycle ≠ Jira workflow) ────────────────────
+
+/**
+ * The frontmatter `status:` field mixes two kinds of values.
+ *  - Document lifecycle: active(71.1%) / outdated(1.7%) / deprecated
+ *  - Jira workflow: 할 일 (to do) / in dev / check issue / 닫힘 (closed) / 해결됨 (resolved)
+ *
+ * `active` covers 71% of the vault, so boosting it effectively acts as a penalty on the
+ * remaining 29% (278 docs without status + 439 with Jira statuses).
+ * Therefore `active` stays neutral (0) and only Jira workflow statuses get a slight weight.
+ * The outdated/deprecated penalty is maintained separately in isOutdatedDoc().
+ */
+const JIRA_OPEN_STATUS = new Set([
+  'in dev', 'in progress', 'in-progress', 'check issue',
+  '할 일', 'to do', 'todo', 'open', 'reopened', '진행중', '진행 중',
+])
+const JIRA_CLOSED_STATUS = new Set([
+  '닫힘', 'closed', 'done', '완료', '해결됨', 'resolved', 'wontfix', "won't do",
+])
+
+/** status string → additive score multiplier (boost/penalty). active/unspecified = 0. */
+function statusBoostFor(status: string | undefined): number {
+  if (!status) return 0
+  const s = status.toLowerCase().trim()
+  if (JIRA_OPEN_STATUS.has(s)) return 0.05    // in-progress issue = most recent information
+  if (JIRA_CLOSED_STATUS.has(s)) return -0.05 // closed issue = relatively old
+  return 0
 }
 
 // ── Recency helpers ──────────────────────────────────────────────────────────
@@ -133,23 +196,24 @@ function buildSectionMap(
   return map
 }
 
-// ── 0. Frontend search (TF-IDF first, keyword fallback) ──────────────────────
+// ── 0. Frontend search (TF-IDF first, keyword fallback) ─────────────────────
 
 /**
  * Searches vault documents.
  *
  * Pipeline:
  *   1. TF-IDF cosine similarity search (when tfidfIndex is built)
- *      — finds semantically close documents, resolving title mismatch issues
- *   2. Falls back to keyword-based search when TF-IDF yields no results
+ *      — finds semantically close documents, solving the title-mismatch problem
+ *   2. Keyword-based fallback search when TF-IDF returns nothing
  *
- * @param query  User query
- * @param topN   Maximum number of results to return
+ * @param query  user query
+ * @param topN   maximum number of results to return
  */
 export function frontendKeywordSearch(
   query: string,
   topN: number = 8,
-  currentSpeaker?: string
+  currentSpeaker?: string,
+  contextTerms?: string[],
 ): SearchResult[] {
   const { loadedDocuments } = useVaultStore.getState()
   if (!loadedDocuments || loadedDocuments.length === 0) return []
@@ -163,14 +227,21 @@ export function frontendKeywordSearch(
   const personaTag = currentSpeaker ? PERSONA_TAG_MAP[currentSpeaker] : undefined
   const TAG_BOOST = 0.1
 
-  // ── TF-IDF priority search ──────────────────────────────────────────────────
+  // Domain tag detection for query-based boost
+  const domainTags = detectDomainTags(query)
+
+  // ── Prepare history context keywords (0.3 weight boost) ────────────────────
+  const ctxTerms = contextTerms?.filter(t => t.length >= 2).slice(0, 6) ?? []
+  const CTX_WEIGHT = 0.3
+
+  // ── TF-IDF search first ───────────────────────────────────────────────────
   if (tfidfIndex.isBuilt) {
     const tfidfHits = tfidfIndex.search(query, topN * 2)  // over-fetch for tag re-sort
     if (tfidfHits.length > 0) {
-      const queryStems = tokenizeQuery(query)  // shared — avoids repeated computation inside map
+      const queryStems = tokenizeQuery(query)  // shared — not recomputed inside the map
       const results = tfidfHits.map(hit => {
         const doc = docMap.get(hit.docId)
-        // Select the section within the document that best matches the query
+        // Pick the section within the document that best matches the query
         let bestSection = doc?.sections.find(s => s.body.trim())
         let bestSectionScore = -1
         if (doc && queryStems.length > 0) {
@@ -186,11 +257,29 @@ export function frontendKeywordSearch(
           }
         }
         const tags = doc?.tags ?? []
+        const tagsLower = tags.map(t => t.toLowerCase())
         const hasPersonaTag = personaTag
-          ? tags.some(t => t.toLowerCase() === personaTag)
+          ? tagsLower.some(t => t === personaTag)
           : false
-        // outdated/deprecated/archive document penalty
+        // Domain tag boost: tags matching the query domain +15~20%
+        let domainBoost = 0
+        if (domainTags.size > 0 && tagsLower.length > 0) {
+          const matchCount = tagsLower.filter(t => domainTags.has(t)).length
+          domainBoost = Math.min(0.20, matchCount * 0.10)
+        }
+        // Status: active(71%) boost removed — only Jira in-progress +5% / closed -5% slight weighting
+        const statusBoost = statusBoostFor(doc?.status)
+        // Penalty for outdated/deprecated/archive documents
         const outdatedPenalty = isOutdatedDoc(doc) ? -0.25 : 0
+        // History context keyword boost
+        let ctxBoost = 0
+        if (ctxTerms.length > 0 && doc) {
+          const raw = (doc.rawContent ?? '').toLowerCase()
+          let ctxHits = 0
+          for (const t of ctxTerms) { if (raw.includes(t)) ctxHits++ }
+          ctxBoost = (ctxHits / ctxTerms.length) * CTX_WEIGHT
+        }
+        const scoreMultiplier = 1 + (hasPersonaTag ? TAG_BOOST : 0) + domainBoost + statusBoost
         return {
           doc_id: hit.docId,
           filename: hit.filename,
@@ -202,7 +291,7 @@ export function frontendKeywordSearch(
               ? bestSection.body.slice(0, 400).trimEnd() + '…'
               : bestSection.body)
             : '',
-          score: Math.max(0, Math.min(1, hit.score * (hasPersonaTag ? (1 + TAG_BOOST) : 1) + outdatedPenalty)),
+          score: Math.max(0, Math.min(1, hit.score * scoreMultiplier + outdatedPenalty + ctxBoost)),
           tags,
         } satisfies SearchResult
       })
@@ -211,7 +300,7 @@ export function frontendKeywordSearch(
     }
   }
 
-  // ── Keyword fallback search (when TF-IDF index not built) ───────────────────
+  // ── Keyword fallback search (when TF-IDF index is not built) ──────────────
   const queryStems = tokenizeQuery(query)
   if (queryStems.length === 0) return []
 
@@ -240,16 +329,35 @@ export function frontendKeywordSearch(
         }
       }
 
-      if (matchedTerms === 0) continue
+      if (matchedTerms === 0 && ctxTerms.length === 0) continue
 
       const coverage = matchedTerms / queryStems.length
       score = Math.min(1, score * 0.6 + coverage * 0.4)
 
+      // History context keyword boost (fallback path)
+      if (ctxTerms.length > 0) {
+        let ctxHits = 0
+        for (const t of ctxTerms) {
+          if (headingLower.includes(t) || bodyLower.includes(t)) ctxHits++
+        }
+        if (matchedTerms === 0 && ctxHits === 0) continue
+        score += (ctxHits / ctxTerms.length) * CTX_WEIGHT
+      }
+
       const tags = doc.tags ?? []
+      const tagsLower = tags.map(t => t.toLowerCase())
       const hasPersonaTag = personaTag
-        ? tags.some(t => t.toLowerCase() === personaTag)
+        ? tagsLower.some(t => t === personaTag)
         : false
-      const boostedScore = Math.min(1, score * (hasPersonaTag ? (1 + TAG_BOOST) : 1))
+      // Domain tag boost
+      let kwDomainBoost = 0
+      if (domainTags.size > 0 && tagsLower.length > 0) {
+        const matchCount = tagsLower.filter(t => domainTags.has(t)).length
+        kwDomainBoost = Math.min(0.20, matchCount * 0.10)
+      }
+      // Status: active boost removed — only Jira in-progress/closed slight weighting
+      const kwStatusBoost = statusBoostFor(doc.status)
+      const boostedScore = Math.min(1, score * (1 + (hasPersonaTag ? TAG_BOOST : 0) + kwDomainBoost + kwStatusBoost))
 
       scored.push({
         score: boostedScore,
@@ -276,75 +384,114 @@ export function frontendKeywordSearch(
 // ── Direct string search (simple grep-style fallback) ────────────────────────
 
 /**
- * Directly searches all vault documents by query words (string search).
+ * Direct string search over all vault documents using the query words.
  *
- * Simple fallback to supplement documents not found by TF-IDF/BFS.
- * Filename match weight 2x, body match weight 1x.
+ * A simple fallback that supplements documents TF-IDF/BFS failed to find.
+ * Filename matches are weighted 2x, body matches 1x.
  */
+/**
+ * Token containment check — only numeric tokens respect boundaries.
+ *
+ * Filename matching was a pure substring match, so token "160" from query "SGEATF-160"
+ * matched "SGEATF-12160" and an unrelated Jira ticket got a perfect filename score.
+ * Korean/English word boundaries are ambiguous, so the existing substring matching is kept for them.
+ */
+function containsTerm(haystack: string, term: string): boolean {
+  if (!/^\d+$/.test(term)) return haystack.includes(term)
+  for (let from = 0; ; ) {
+    const i = haystack.indexOf(term, from)
+    if (i < 0) return false
+    const before = i > 0 ? haystack[i - 1] : ''
+    const after = haystack[i + term.length] ?? ''
+    if (!/\d/.test(before) && !/\d/.test(after)) return true
+    from = i + 1
+  }
+}
+
 export function directVaultSearch(
   query: string,
   topN: number = 5,
+  contextTerms?: string[],
 ): SearchResult[] {
   const { loadedDocuments } = useVaultStore.getState()
   if (!loadedDocuments?.length) return []
 
-  // Remove particles/punctuation via tokenizer (includes Korean particle stripping)
+  // Strip particles/punctuation via the tokenizer (includes Korean particle stripping, "이사장님의" → "이사장님")
   const tokenized = expandTerms(_tokenize(query))
-  // Supplement 2+ digit numbers: ensure matching with date-format filename components like "[2026.01.28]"
+  // Supplement with 2+ digit numbers: so components of date-style filenames like "[2026.01.28]" match reliably
   const numericTerms = query.match(/\d{2,}/g) ?? []
   const terms = [...new Set([...tokenized, ...numericTerms])]
   if (terms.length === 0) return []
+
+  // History context keywords (de-duplicated, only those not already in terms)
+  const ctxTerms = contextTerms
+    ? contextTerms.filter(t => !terms.includes(t)).slice(0, 6)
+    : []
+  const CTX_WEIGHT = 0.3
 
   const scored: { doc: LoadedDocument; score: number; bestSection: DocSection | null }[] = []
   const now = Date.now()
 
   for (const doc of loadedDocuments) {
     const filename = doc.filename.toLowerCase()
-    const raw = (doc.rawContent ?? '').toLowerCase()
+    // 7-9: Look up lowercase rawContent/section text from the mtime-keyed cache
+    // (recomputed automatically when mtime changes after an edit — prevents the stale-body bug)
+    const lower = getLowerEntry(doc)
+    const raw = lower.raw
 
-    // Per-query-word match count (pure coverage without weighting)
+    // Match count per query word (pure coverage, no weighting)
     let filenameHits = 0
     let bodyHits = 0
     for (const term of terms) {
-      if (filename.includes(term)) filenameHits++
-      if (raw.includes(term)) bodyHits++
+      if (containsTerm(filename, term)) filenameHits++
+      if (containsTerm(raw, term)) bodyHits++
     }
-    if (filenameHits === 0 && bodyHits === 0) continue
 
-    // Coverage-based score: filename 60%, body 40% — query word coverage ratio
+    // History context keyword matching (low weight)
+    let ctxFilenameHits = 0
+    let ctxBodyHits = 0
+    for (const term of ctxTerms) {
+      if (containsTerm(filename, term)) ctxFilenameHits++
+      if (containsTerm(raw, term)) ctxBodyHits++
+    }
+
+    if (filenameHits === 0 && bodyHits === 0 && ctxFilenameHits === 0 && ctxBodyHits === 0) continue
+
+    // Coverage-based score: filename 60%, body 40% — ratio of query words covered
     const n = terms.length
     let score = (filenameHits / n) * 0.6 + (bodyHits / n) * 0.4
 
-    // Filename match boost: scale up to 0.5-1.0 range to compete with BM25 scores (0.9+)
+    // History context keyword addition (0.3 weight)
+    if (ctxTerms.length > 0) {
+      const ctxScore = (ctxFilenameHits / ctxTerms.length) * 0.6 + (ctxBodyHits / ctxTerms.length) * 0.4
+      score += ctxScore * CTX_WEIGHT
+    }
+
+    // Filename match boost: scale up to the 0.3~1.0 range (a single match alone does not pin)
     if (filenameHits > 0) {
-      score = 0.5 + score * 0.5  // 0-1 → 0.5-1.0
+      score = 0.3 + score * 0.7  // 0-1 → 0.3-1.0
     }
 
-    // Recency boost: bonus for recent docs — ~10% within 6 months, nearly 0 after 1 year
-    const docTime = getContentDate(doc)
-    if (docTime > 0) {
-      const daysOld = (now - docTime) / 86_400_000
-      score *= 1 + 0.1 * Math.exp(-daysOld / 180)
-    }
-
-    // Select section with most overlap with query words
+    // Pick the section overlapping the most query words
+    // 7-9: section lowercase text also comes from the cache — removes the concat+toLowerCase that took 26ms of a measured 91ms
     let bestSection: DocSection | null = null
     let bestSectionScore = -1
-    for (const section of doc.sections) {
-      if (!section.body.trim()) continue
-      const text = `${headingForScore(section.heading)} ${section.body}`.toLowerCase()
+    const sectionTexts = lower.sectionTexts
+    for (let si = 0; si < doc.sections.length; si++) {
+      const text = sectionTexts[si]
+      if (!text) continue  // sections with empty body are cached as ''
       let sScore = 0
       for (const t of terms) { if (text.includes(t)) sScore++ }
       if (sScore > bestSectionScore) {
         bestSectionScore = sScore
-        bestSection = section
+        bestSection = doc.sections[si]
       }
     }
 
     scored.push({ doc, score, bestSection })
   }
 
-  // Sort by coverage score (removed filename absolute priority)
+  // Sort by coverage score (absolute filename priority removed)
   scored.sort((a, b) => b.score - a.score)
 
   return scored.slice(0, topN).map(({ doc, score, bestSection }) => ({
@@ -356,7 +503,7 @@ export function directVaultSearch(
     content: bestSection
       ? (bestSection.body.length > 500 ? bestSection.body.slice(0, 500).trimEnd() + '…' : bestSection.body)
       : '',
-    score,  // already in 0-1 range (coverage ratio)
+    score,  // already in the 0-1 range (coverage ratio)
     tags: doc.tags ?? [],
   } satisfies SearchResult))
 }
@@ -370,24 +517,158 @@ let _cachedMetrics: ReturnType<typeof getGraphMetrics> | null = null
 let _cachedLinksKey: string = ''
 let _cachedDocsKey: string = ''
 
-/** Array content-based fingerprint — length + first/middle/last ID samples */
-function arrayKey<T extends { id?: string; source?: unknown; target?: unknown }>(arr: T[]): string {
-  const n = arr.length
+/**
+ * 7-9: Lowercase conversion cache — removes the cost of toLowerCase() over the whole vault on every search.
+ *
+ * docId → { key, raw, sectionTexts }
+ *  - key: `${doc.id}:${doc.mtime}` — recomputed automatically when mtime changes (= document saved)
+ *  - raw: rawContent.toLowerCase()
+ *  - sectionTexts: lowercase `heading body` text, index-aligned with doc.sections
+ *
+ * A size cap (LOWER_CACHE_MAX_CHARS) prevents unbounded growth.
+ * Past the cap the policy is "stop inserting" — FIFO eviction during a sequential scan
+ * would thrash the cache by turning it over on every pass.
+ */
+interface LowerEntry {
+  key: string
+  raw: string
+  sectionTexts: string[]
+  chars: number
+}
+const _lowerCache = new Map<string, LowerEntry>()
+/**
+ * Cap on total characters in the lowercase cache (≈48MB in UTF-16).
+ * A real vault (2,635 docs) fits entirely: rawContent 11.5M + section text 10.8M = 22.4M chars.
+ * For larger vaults, only new insertions stop once the cap is reached (no eviction) — FIFO
+ * eviction during a sequential scan would thrash the cache by turning it over on every call.
+ */
+const LOWER_CACHE_MAX_CHARS = 24_000_000
+let _lowerCacheChars = 0
+
+function lowerCacheKey(doc: LoadedDocument): string {
+  return `${doc.id}:${doc.mtime ?? 0}:${doc.rawContent?.length ?? 0}`
+}
+
+/** Returns the document's lowercase cache entry (recomputed if mtime changed) */
+function getLowerEntry(doc: LoadedDocument): LowerEntry {
+  const key = lowerCacheKey(doc)
+  const hit = _lowerCache.get(doc.id)
+  if (hit && hit.key === key) return hit
+
+  const raw = (doc.rawContent ?? '').toLowerCase()
+  const sectionTexts: string[] = []
+  let chars = raw.length
+  for (const s of doc.sections) {
+    const t = s.body.trim()
+      ? `${headingForScore(s.heading)} ${s.body}`.toLowerCase()
+      : ''
+    sectionTexts.push(t)
+    chars += t.length
+  }
+  const entry: LowerEntry = { key, raw, sectionTexts, chars }
+
+  if (hit) {
+    // Replace the stale entry for the same document — mtime-based removal
+    _lowerCacheChars -= hit.chars
+    _lowerCache.delete(doc.id)
+  }
+  if (_lowerCacheChars + chars <= LOWER_CACHE_MAX_CHARS) {
+    _lowerCache.set(doc.id, entry)
+    _lowerCacheChars += chars
+  }
+  return entry
+}
+
+/** Clear the entire lowercase cache */
+function clearLowerCache(): void {
+  _lowerCache.clear()
+  _lowerCacheChars = 0
+}
+
+/**
+ * Link array fingerprint — length + evenly spaced `source→target` samples.
+ *
+ * GraphLink has no `id` field (see `src/types/index.ts`), so the old arrayKey() always
+ * returned `"N:::::::"` and **only the link count** served as the fingerprint.
+ * A graph with the same count but different content was never invalidated.
+ */
+function linksFingerprint(links: GraphLink[]): string {
+  const n = links.length
   if (n === 0) return '0'
-  const mid = arr[Math.floor(n / 2)] as { id?: string }
-  const first = arr[0] as { id?: string }
-  const last = arr[n - 1] as { id?: string }
-  return `${n}:${first.id ?? ''}:${mid.id ?? ''}:${last.id ?? ''}`
+  const step = Math.max(1, Math.floor(n / 16))
+  const parts: string[] = []
+  for (let i = 0; i < n; i += step) {
+    const l = links[i]
+    const s = typeof l.source === 'string' ? l.source : l.source?.id ?? ''
+    const t = typeof l.target === 'string' ? l.target : l.target?.id ?? ''
+    parts.push(`${s}>${t}`)
+  }
+  const last = links[n - 1]
+  const ls = typeof last.source === 'string' ? last.source : last.source?.id ?? ''
+  const lt = typeof last.target === 'string' ? last.target : last.target?.id ?? ''
+  return `${n}:${parts.join('|')}|${ls}>${lt}`
+}
+
+/**
+ * Document array fingerprint — condenses id, mtime and body length of every document into a 32-bit rolling hash.
+ *
+ * Why a full pass instead of sampling: if the edited document is not at a sample position,
+ * the fingerprint stays the same and `_cachedDocMap` **keeps returning the pre-edit document object**,
+ * so the entire RAG context passed to the LLM becomes the pre-edit body.
+ * The full pass costs under 1ms for 2,635 documents.
+ */
+function docsFingerprint(docs: LoadedDocument[]): string {
+  const n = docs.length
+  if (n === 0) return '0'
+  let h = 0x811c9dc5
+  let sum = 0
+  for (let i = 0; i < n; i++) {
+    const d = docs[i]
+    const id = d.id
+    for (let c = 0; c < id.length; c++) {
+      h = Math.imul(h ^ id.charCodeAt(c), 0x01000193) >>> 0
+    }
+    const m = d.mtime ?? 0
+    const lo = m % 0x100000000
+    const hi = Math.floor(m / 0x100000000)
+    const len = d.rawContent?.length ?? 0
+    h = Math.imul(h ^ lo, 0x01000193) >>> 0
+    h = Math.imul(h ^ hi, 0x01000193) >>> 0
+    h = Math.imul(h ^ len, 0x01000193) >>> 0
+    sum = (sum + len + (m % 1_000_003)) % 0x7fffffff
+  }
+  return `${n}:${h.toString(36)}:${sum.toString(36)}`
+}
+
+/**
+ * Forcibly invalidates graphRAG's internal caches (adjacency/sectionMap/docMap/metrics/lowercase).
+ * Call right after a vault switch or document update.
+ */
+export function invalidateGraphRAGCache(): void {
+  _cachedAdjacency = null
+  _cachedSectionMap = null
+  _cachedDocMap = null
+  _cachedMetrics = null
+  _cachedLinksKey = ''
+  _cachedDocsKey = ''
+  clearLowerCache()
 }
 
 function getCachedMaps(links: GraphLink[], docs: LoadedDocument[]) {
-  const linksKey = arrayKey(links as { id?: string }[])
-  const docsKey = arrayKey(docs)
-  if (linksKey !== _cachedLinksKey || docsKey !== _cachedDocsKey) {
+  const linksKey = linksFingerprint(links)
+  const docsKey = docsFingerprint(docs)
+  if (linksKey !== _cachedLinksKey || docsKey !== _cachedDocsKey || !_cachedDocMap) {
     _cachedAdjacency = buildAdjacencyMap(links)
     _cachedSectionMap = buildSectionMap(docs)
     _cachedDocMap = new Map(docs.map(d => [d.id, d]))
     _cachedMetrics = null  // invalidate metrics — recomputed on next call
+    // Reclaim lowercase cache for documents gone after a vault switch etc. (individual entries self-invalidate via the mtime key)
+    for (const [docId, entry] of _lowerCache) {
+      if (!_cachedDocMap.has(docId)) {
+        _lowerCacheChars -= entry.chars
+        _lowerCache.delete(docId)
+      }
+    }
     _cachedLinksKey = linksKey
     _cachedDocsKey = docsKey
   }
@@ -499,16 +780,26 @@ export function rerankResults(
   topN: number = 3,
   currentSpeaker?: string
 ): SearchResult[] {
-  if (results.length <= topN) return results
+  // The purpose is "ordering", not "truncating the count".
+  // Returning early on `results.length <= topN` would skip all speaker/persona/domain/type/status
+  // boosts and the outdated penalty whenever there are rerankSeeds (default 5) or fewer candidates.
+  if (results.length <= 1) return results
 
   // Tokenize query with Korean particle stripping
   const queryStems = new Set(tokenizeQuery(query))
 
   if (queryStems.size === 0) return results.slice(0, topN)
 
+  // 7-11: Reuse the docMap cache from getCachedMaps() to avoid rebuilding the Map on every call
+  const { links } = useGraphStore.getState()
   const { loadedDocuments: _docs } = useVaultStore.getState()
-  const _docMap = _docs ? new Map(_docs.map(d => [d.id, d])) : new Map<string, LoadedDocument>()
+  const _docMap = _docs?.length && links?.length
+    ? getCachedMaps(links, _docs).docMap
+    : _docs ? new Map(_docs.map(d => [d.id, d])) : new Map<string, LoadedDocument>()
   const { rerankVectorWeight, rerankKeywordWeight } = useSettingsStore.getState().searchConfig
+
+  // Domain tag detection: detect domain keywords in the query → set of related tags
+  const domainTags = detectDomainTags(query)
 
   const scored = results.map(r => {
     const contentLower = (r.content + ' ' + (r.heading ?? '')).toLowerCase()
@@ -525,15 +816,32 @@ export function rerankResults(
         ? 0.1
         : 0
 
-    // Tag affinity boost
+    // Persona tag affinity boost
     const pTag = currentSpeaker ? PERSONA_TAG_MAP[currentSpeaker] : undefined
-    const tagBoost = pTag && r.tags?.some(t => t.toLowerCase() === pTag) ? 0.15 : 0
+    const personaTagBoost = pTag && r.tags?.some(t => t.toLowerCase() === pTag) ? 0.15 : 0
+
+    // Domain tag boost: +15~20% when document tags match the query domain
+    const docTags = r.tags?.map(t => t.toLowerCase()) ?? []
+    const doc = _docMap.get(r.doc_id)
+    let domainTagBoost = 0
+    if (domainTags.size > 0 && docTags.length > 0) {
+      const matchCount = docTags.filter(t => domainTags.has(t)).length
+      // +10% per matching tag, max +20%
+      domainTagBoost = Math.min(0.20, matchCount * 0.10)
+    }
+
+    // Document type boost: slight addition when a type field is present (spec/guide preferred)
+    const docType = doc?.type?.toLowerCase() ?? ''
+    const typeBoost = (docType === 'spec' || docType === 'guide' || docType === 'reference') ? 0.05 : 0
+
+    // Status: active (71% of vault) boost removed — Jira in-progress +5% / closed -5%
+    const statusBoost = statusBoostFor(doc?.status)
 
     // Outdated/deprecated/archive penalty (recency boost is already handled in fetchRAGContext Stage 1)
-    const outdatedPenalty = isOutdatedDoc(_docMap.get(r.doc_id)) ? -0.3 : 0
+    const outdatedPenalty = isOutdatedDoc(doc) ? -0.3 : 0
 
     const baseScore = rerankVectorWeight * r.score + rerankKeywordWeight * keywordScore
-    const finalScore = baseScore * (1 + speakerBoost + tagBoost) + outdatedPenalty
+    const finalScore = baseScore * (1 + speakerBoost + personaTagBoost + domainTagBoost + typeBoost + statusBoost) + outdatedPenalty
 
     return { result: r, finalScore }
   })
@@ -546,10 +854,39 @@ export function rerankResults(
 // ── 3.5 Version deduplication ────────────────────────────────────────────────
 
 const VERSION_RE = /[_\s]v(\d+(?:\.\d+)?)(?:\.md)?$/i
+// Korean ordinal version: _2차, _3차
+const KO_VERSION_RE = /[_\s](\d+)차(?:\.md)?$/i
+// Final/revised markers: _최종, _final, _revised, _개정
+const FINAL_RE = /[_\s](최종|final|revised|개정)(?:\.md)?$/i
+
+/** Extracts the base name by stripping every version suffix (English, Korean, final markers). */
+function stripVersionSuffix(filename: string): string {
+  return filename
+    .replace(VERSION_RE, '')
+    .replace(KO_VERSION_RE, '')
+    .replace(FINAL_RE, '')
+    .replace(/\.md$/i, '')
+    .toLowerCase()
+    .trim()
+}
+
+/** Extracts the version number from a filename (English v<number> or Korean N차). */
+function extractVersionNumber(filename: string): number {
+  const enMatch = filename.match(VERSION_RE)
+  if (enMatch) return parseFloat(enMatch[1])
+  const koMatch = filename.match(KO_VERSION_RE)
+  if (koMatch) return parseFloat(koMatch[1])
+  return 0
+}
+
+/** Checks whether the filename contains a final/revised marker. */
+function isFinalVersion(filename: string): boolean {
+  return FINAL_RE.test(filename)
+}
 
 /**
- * Parses filename version suffixes (_v2, _v3, etc.) to remove older versions of the same document.
- * Keeps the document with the highest version number; on ties, keeps the one with the most recent frontmatter date.
+ * Parses filename version suffixes (_v2, _v3, _2차, _최종, etc.) and removes older versions of the same document.
+ * Final/revised-marked documents take top priority, then the highest version number; ties keep the one with the newest frontmatter date.
  */
 export function deduplicateVersions(
   results: SearchResult[],
@@ -557,7 +894,7 @@ export function deduplicateVersions(
 ): SearchResult[] {
   const groups = new Map<string, SearchResult[]>()
   for (const r of results) {
-    const base = r.filename.replace(VERSION_RE, '').replace(/\.md$/i, '').toLowerCase().trim()
+    const base = stripVersionSuffix(r.filename)
     if (!groups.has(base)) groups.set(base, [])
     groups.get(base)!.push(r)
   }
@@ -565,16 +902,19 @@ export function deduplicateVersions(
   const deduped: SearchResult[] = []
   for (const [, group] of groups) {
     if (group.length <= 1) { deduped.push(group[0]); continue }
-    // Higher version number first → then most recent date
+    // Final marker first → highest version number → newest date
     group.sort((a, b) => {
-      const va = parseFloat(a.filename.match(VERSION_RE)?.[1] ?? '0')
-      const vb = parseFloat(b.filename.match(VERSION_RE)?.[1] ?? '0')
+      const fa = isFinalVersion(a.filename) ? 1 : 0
+      const fb = isFinalVersion(b.filename) ? 1 : 0
+      if (fa !== fb) return fb - fa
+      const va = extractVersionNumber(a.filename)
+      const vb = extractVersionNumber(b.filename)
       if (va !== vb) return vb - va
       const da = docMap.get(a.doc_id)?.date ?? ''
       const db = docMap.get(b.doc_id)?.date ?? ''
       return db.localeCompare(da)
     })
-    deduped.push(group[0])  // keep only latest version
+    deduped.push(group[0])  // keep only the latest version
   }
   return deduped
 }
@@ -582,15 +922,20 @@ export function deduplicateVersions(
 // ── 3a. Deep graph traversal (BFS) ───────────────────────────────────────────
 
 /**
- * Returns document body text with frontmatter YAML stripped.
+ * Returns the document body text with the frontmatter YAML removed.
  *
  * Priority:
- *   1. Section combination (result of gray-matter already stripping frontmatter)
+ *   1. Combined sections (output from which gray-matter has already stripped the frontmatter)
  *   2. Manually strip frontmatter from rawContent (when all sections are empty)
  *
- * Reason for not using rawContent directly: rawContent includes YAML frontmatter,
- * causing AI to misread "---\nspeaker: ...\ntags: ..." etc. as actual content.
+ * Why rawContent is not used as-is: rawContent includes the YAML frontmatter, so the
+ * AI misreads "---\nspeaker: ...\ntags: ..." etc. as actual content.
  */
+/** Convert raw wikilinks to display text: [[target|display]] → display, [[target]] → target */
+function cleanWikiLinks(text: string): string {
+  return text.replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2').replace(/\[\[([^\]]+)\]\]/g, '$1')
+}
+
 export function getStrippedBody(doc: LoadedDocument): string {
   // Single pass — accumulate directly without filter+map intermediate arrays
   const parts: string[] = []
@@ -600,47 +945,47 @@ export function getStrippedBody(doc: LoadedDocument): string {
     parts.push(h + s.body)
   }
   const sectionText = parts.join('\n\n').trim()
-  if (sectionText) return sectionText
+  if (sectionText) return cleanWikiLinks(sectionText)
 
-  // When all sections are empty — manually remove frontmatter from rawContent
-  // indexOf-based to prevent ReDoS (replaces regex [\s\S]*?)
+  // All sections empty — manually strip frontmatter from rawContent
+  // indexOf-based to prevent ReDoS (replaces the regex [\s\S]*?)
   const raw = doc.rawContent ?? ''
   if (raw.startsWith('---')) {
     const closeIdx = raw.indexOf('\n---', 3)
-    if (closeIdx >= 0) return raw.slice(closeIdx + 4).trim()
+    if (closeIdx >= 0) return cleanWikiLinks(raw.slice(closeIdx + 4).trim())
   }
-  return raw.trim()
+  return cleanWikiLinks(raw.trim())
 }
 
 /**
  * B. Passage-level content selection.
  *
- * When queryTerms are provided, selects the section with the most query token matches.
- * When queryTerms are absent, returns the full getStrippedBody() from the beginning.
+ * When queryTerms is provided, selects the section matching the most query tokens.
+ * Without queryTerms, returns the full getStrippedBody() from the beginning.
  *
- * Frontmatter YAML is excluded in all cases.
+ * The frontmatter YAML is excluded in every case.
  */
 function getDocContent(
   doc: LoadedDocument,
   budget: number,
   queryTerms?: string[]
 ): string {
-  // No queryTerms → beginning of frontmatter-stripped body
+  // No queryTerms → leading part of the body with frontmatter removed
   if (!queryTerms || queryTerms.length === 0) {
     const body = getStrippedBody(doc)
     return body.length > budget ? body.slice(0, budget).trimEnd() + '…' : body
   }
 
-  // Passage-level: select the section that matches most query tokens
-  // Intro section body contains the H1 title (e.g., "# Heat System"), so when filename
-  // overlaps with query, short intros score higher than longer H2 sections.
-  // To prevent this, strip the leading markdown heading from intro section body before scoring.
+  // Passage-level: select the section matching the most query tokens
+  // The intro section body includes the H1 title (e.g. "# 방열 시스템"), so when the filename overlaps
+  // the query, a short intro can outscore a long H2 section.
+  // To prevent this, strip the leading markdown heading from the intro section body before scoring.
   let bestSection: DocSection | null = null
   let bestScore = -1
 
   for (const section of doc.sections) {
     if (!section.body.trim()) continue
-    // Strip leading H1 title from intro section body before scoring (prevents filename inflation)
+    // Score after stripping the leading H1 title from the intro section body (prevents filename inflation)
     const bodyForScore = section.heading === '(intro)'
       ? section.body.replace(/^#[^\n]*\n?/, '').trim()
       : section.body
@@ -655,7 +1000,7 @@ function getDocContent(
     }
   }
 
-  // 어떤 섹션에도 매칭 없거나, 선택된 섹션이 너무 짧으면 전체 본문 사용
+  // Use the full body if no section matched or the selected section is too short
   const fullBody = getStrippedBody(doc)
   if (!bestSection || bestScore <= 0) {
     return fullBody.length > budget ? fullBody.slice(0, budget).trimEnd() + '…' : fullBody
@@ -664,8 +1009,8 @@ function getDocContent(
   const h = bestSection.heading && bestSection.heading !== '(intro)' ? `### ${bestSection.heading}\n` : ''
   const passageText = h + bestSection.body
 
-  // 선택된 패시지가 너무 짧고 전체 본문이 훨씬 더 많은 내용을 가지고 있으면 전체 본문 사용
-  // (예: 짧은 intro 섹션이 선택됐을 때 실제 내용 섹션들을 날리는 것 방지)
+  // Use the full body if the selected passage is too short and the full body has far more content
+  // (e.g. prevents discarding the real content sections when a short intro section was selected)
   if (passageText.length < 200 && fullBody.length > passageText.length * 3) {
     return fullBody.length > budget ? fullBody.slice(0, budget).trimEnd() + '…' : fullBody
   }
@@ -713,9 +1058,9 @@ function bfsFromDocIds(
 
 /**
  * Total context budget (chars).
- * 16000 chars ≈ ~4800 tokens — plenty of room within Claude's 200k context.
- * 조정 가이드: 응답 품질보다 커버리지가 중요하면 늘리고,
- * 비용/속도가 우선이면 줄이세요.
+ * 16000 chars ≈ ~4800 tokens — plenty of headroom against Claude's 200k context.
+ * Tuning guide: increase if coverage matters more than response quality,
+ * decrease if cost/speed is the priority.
  */
 const DEEP_CONTEXT_BUDGET = 16_000
 
@@ -723,15 +1068,17 @@ const DEEP_CONTEXT_BUDGET = 16_000
 const HOP_CHAR_BUDGET = [1_500, 900, 500, 250] as const
 
 /**
- * Personalized PageRank 기반 그래프 탐색으로 관련 문서 컨텍스트 수집.
+ * Collects related document context via Personalized PageRank graph traversal.
  *
- * TF-IDF 시드에서 출발해 strength 가중 PPR을 실행 → 점수 높은 순 maxDocs개 선택.
- * BFS와 달리 hop 수 제한 없이 강하게 연결된 허브 문서를 자동으로 캡처합니다.
+ * Uses the search results as **score-weighted seeds** to run strength-weighted PPR, then
+ * fuses normalized search score 0.6 + normalized PPR 0.4 for the final ranking and selects maxDocs.
+ * (Sorting by PPR alone let `_index.md` and year hubs push the seeds out.)
+ * Unlike BFS, it automatically captures strongly connected hub documents with no hop limit.
  *
- * 사용 시나리오: "이 주제와 관련된 인사이트", "프로젝트 피드백 주세요" 등
- * 여러 문서에 걸쳐 정보를 수집해야 하는 쿼리.
+ * Use cases: queries that need information gathered across many documents,
+ * e.g. "insights related to this topic", "give me feedback on the project".
  *
- * @param maxHops    미사용 (API 호환성 유지 — PPR은 hop 개념 없음)
+ * @param maxHops    unused (kept for API compatibility — PPR has no notion of hops)
  */
 export async function buildDeepGraphContext(
   results: SearchResult[],
@@ -743,16 +1090,16 @@ export async function buildDeepGraphContext(
   const { links } = useGraphStore.getState()
   const { loadedDocuments } = useVaultStore.getState()
   if (!loadedDocuments?.length) {
-    logger.warn('[RAG] loadedDocuments is empty — vault not loaded')
+    logger.warn('[RAG] No loadedDocuments — vault is not loaded')
     return ''
   }
 
   const { adjacency, docMap, getMetrics } = getCachedMaps(links, loadedDocuments)
 
-  // WikiLink 없는 볼트 — 그래프 탐색 불가, TF-IDF 결과를 직접 포맷
+  // Vault without WikiLinks — graph traversal impossible, format TF-IDF results directly
   if (!links.length) {
     if (results.length === 0) return ''
-    const parts: string[] = ['## Related documents (direct search)\n']
+    const parts: string[] = ['## Related Documents (Direct Search)\n']
     let charCount = 20
     for (const r of results.slice(0, maxDocs)) {
       const doc = docMap.get(r.doc_id)
@@ -760,7 +1107,7 @@ export async function buildDeepGraphContext(
       const name = doc.filename.replace(/\.md$/i, '')
       const content = getDocContent(doc, 1200, queryTerms)
       if (!content) continue
-      const entry = `[doc] ${name}\n${content}\n\n`
+      const entry = `[Document] ${name}\n${content}\n\n`
       if (charCount + entry.length > DEEP_CONTEXT_BUDGET) break
       parts.push(entry)
       charCount += entry.length
@@ -768,87 +1115,115 @@ export async function buildDeepGraphContext(
     return parts.length <= 1 ? '' : parts.join('') + '\n'
   }
 
-  // 시작 노드: 검색 결과 상위 문서들 (중복 제거) — 중간 배열 없이 Set 직접 구축
-  const _startSet = new Set<string>()
-  for (const r of results) { if (r.doc_id) _startSet.add(r.doc_id) }
-  const startDocIds = [..._startSet]
+  // Start nodes: top search-result documents — **preserve the search score as seed weight**.
+  // (The old code put only doc_id into a Set and discarded the score, and the worker used uniform 1/N seeds,
+  //  so the top vector-search document, the 20th supplementary directHit and `_index.md` (lowered to 0.15) all became equal.)
+  const _seedScores = new Map<string, number>()
+  for (const r of results) {
+    if (!r.doc_id) continue
+    const prev = _seedScores.get(r.doc_id) ?? 0
+    if (r.score > prev) _seedScores.set(r.doc_id, r.score)
+  }
 
-  // 키워드 매칭이 빈약하면 허브 노드를 자동 보완 시드로 추가
-  if (startDocIds.length < 2) {
+  // If keyword matching is sparse, automatically add hub nodes as supplementary seeds (low weight)
+  if (_seedScores.size < 2) {
     const hubIds = getHubDocIds(adjacency, 5)
     for (const id of hubIds) {
-      if (!startDocIds.includes(id)) startDocIds.push(id)
-      if (startDocIds.length >= 6) break
+      if (!_seedScores.has(id)) _seedScores.set(id, 0.05)
+      if (_seedScores.size >= 6) break
     }
   }
 
-  if (startDocIds.length === 0) return ''
+  if (_seedScores.size === 0) return ''
 
-  // PPR 실행 — Web Worker에서 비동기 계산 (메인 스레드 블로킹 없음)
-  const pprScores = await runPPRInWorker(startDocIds, links)
+  const seedSet = new Set(_seedScores.keys())
+  // Apply a floor (0.01) so weight-0 seeds do not vanish entirely from the personalization vector
+  const seeds = [..._seedScores].map(([id, w]) => ({ id, weight: Math.max(0.01, w) }))
 
-  // PPR 점수 기준 상위 maxDocs 선택 (점수 0 제외)
-  // status: outdated/deprecated 문서는 점수 70% 감쇠 (최신성 버그 §18.1 대응)
-  const seedSet = new Set(startDocIds)
-  // filter×2 + map → 단일 루프: docMap 조회 1회, 중간 배열 3개 제거
+  // Run PPR — computed asynchronously in a Web Worker (no main-thread blocking)
+  const pprScores = await runPPRInWorker(seeds, links)
+
+  // ── Final ranking = search score ⊕ PPR fusion ─────────────────────────────
+  // Sorting by PPR alone lets nodes with many in-edges (like `_index.md` and year hubs)
+  // push the seeds out and take the top-N. Fuse at 0.6:0.4 after normalization.
+  // status: outdated/deprecated documents get a 70% score decay (addresses recency bug §18.1)
+  let maxSearch = 0
+  for (const s of _seedScores.values()) if (s > maxSearch) maxSearch = s
+  let maxPPR = 0
+  for (const s of pprScores.values()) if (s > maxPPR) maxPPR = s
+
+  const SEARCH_W = 0.6
+  const PPR_W = 0.4
+
   const _pprEntries: [string, number][] = []
   for (const [id, score] of pprScores) {
-    if (score <= 0) continue
+    const searchScore = _seedScores.get(id) ?? 0
+    if (score <= 0 && searchScore <= 0) continue
     const doc = docMap.get(id)
-    // graph_weight: skip → BFS 탐색에서 완전 제외 (링크 전용 허브, 500+ outbound)
-    if (doc?.graphWeight === 'skip') continue
-    const decay = isOutdatedDoc(doc) ? 0.3 : 1.0
-    // graph_weight: low → 링크 가중치 0.3 감쇠 (100-499 outbound links)
-    const weightDecay = doc?.graphWeight === 'low' ? 0.15 : 1.0  // strengthened low decay (0.3→0.15)
+    // phantom/gallery nodes have no body and are skipped in the render loop below anyway.
+    // Filtering here avoids wasting maxDocs slots.
+    if (!doc) continue
+    // graph_weight: skip → fully excluded from BFS traversal (link-only hubs, 500+ outbound)
+    // Seed documents are exempt from the filter — the user explicitly searched for them
+    if (!seedSet.has(id) && doc.graphWeight === 'skip') continue
+    const decay = (!seedSet.has(id) && isOutdatedDoc(doc)) ? 0.3 : 1.0
+    // graph_weight: low → link weight decayed to 0.3 (100-499 outbound links)
+    const weightDecay = doc.graphWeight === 'low' ? 0.15 : 1.0  // stronger low decay (0.3→0.15)
     // Speaker affinity boost: doc.speaker matches current persona → +10%
-    const speakerBoost = (currentSpeaker && currentSpeaker !== 'unknown' && doc?.speaker === currentSpeaker) ? 1.1 : 1.0
-    _pprEntries.push([id, score * decay * weightDecay * speakerBoost])
+    const speakerBoost = (currentSpeaker && currentSpeaker !== 'unknown' && doc.speaker === currentSpeaker) ? 1.1 : 1.0
+
+    const normSearch = maxSearch > 0 ? searchScore / maxSearch : 0
+    const normPPR = maxPPR > 0 ? score / maxPPR : 0
+    const fused = SEARCH_W * normSearch + PPR_W * normPPR
+    if (fused <= 0) continue
+    _pprEntries.push([id, fused * decay * weightDecay * speakerBoost])
   }
   _pprEntries.sort((a, b) => b[1] - a[1])
   const sorted = _pprEntries.slice(0, maxDocs)
 
   if (sorted.length === 0) return ''
 
-  // visited Map for buildStructureHeader compatibility (seed=0, rest=1)
+  // visited Map for buildStructureHeader compatibility (seed=0, others=1)
   const visited = new Map<string, number>(
     sorted.map(([id]) => [id, seedSet.has(id) ? 0 : 1])
   )
 
-  // Yield to UI before PageRank + cluster computation
+  // Yield to the UI before PageRank + cluster computation
   await new Promise<void>(r => setTimeout(r, 0))
 
   // Structure header (PageRank + cluster overview)
   const structureHeader = await buildStructureHeader(visited, adjacency, links, loadedDocuments, docMap, getMetrics)
 
-  // PPR rank-based labels and character budget
-  // Top 3: core (1500 chars), ranks 4-8: related (900 chars), rank 9+: peripheral (500 chars)
-  const parts: string[] = [structureHeader, '## Related documents (PPR traversal)\n']
+  // Labels and char budgets by PPR rank
+  // Top 3: Core (1500 chars), 4-8: Related (900 chars), 9+: Peripheral (500 chars)
+  const parts: string[] = [structureHeader, '## Related Documents (PPR Traversal)\n']
   let charCount = structureHeader.length + 20
   let docHits = 0
 
-  sorted.forEach(([docId, pprScore], rank) => {
+  sorted.forEach(([docId, fusedScore], rank) => {
     if (charCount >= DEEP_CONTEXT_BUDGET) return
 
     const doc = docMap.get(docId)
     if (!doc) return  // phantom node — skip
 
-    // adaptive budget: allocate more budget to large docs (10K+ chars) (up to 2x)
+    // Adaptive budget: allocate more budget to large documents (10K+ chars), up to 2x
     const docLen = doc.rawContent?.length ?? 0
     const baseBudget = rank < 3 ? 1_500 : rank < 8 ? 900 : 500
     const budget = docLen > 10_000
       ? Math.min(baseBudget * 2, Math.max(baseBudget, Math.floor(docLen * 0.03)))
       : baseBudget
-    const label = seedSet.has(docId) ? 'core' : rank < 3 ? 'core' : rank < 8 ? 'related' : 'peripheral'
+    const label = seedSet.has(docId) ? 'Core' : rank < 3 ? 'Core' : rank < 8 ? 'Related' : 'Peripheral'
     const name = doc.filename.replace(/\.md$/i, '')
     const speaker = doc.speaker && doc.speaker !== 'unknown' ? ` (${doc.speaker})` : ''
     const dateLabel = getDocDateLabel(doc)
     const sourceLabel = doc.source ? ` [source: ${doc.source}]` : ''
     const typeLabel = doc.type ? ` [${doc.type}]` : ''
-    const scorePct = Math.round(pprScore * 1000) / 10
+    // Show the fused score (search 0.6 + PPR 0.4) on a 0-100 scale
+    const scorePct = Math.round(fusedScore * 1000) / 10
     const outdatedLabel = (doc.status === 'outdated' || doc.status === 'deprecated')
       ? ` ⚠️outdated${doc.supersededBy ? `→${doc.supersededBy}` : ''}`
       : ''
-    const header = `[${label}|PPR ${scorePct}]${outdatedLabel}${typeLabel} ${name}${speaker}${dateLabel ? ` [${dateLabel}]` : ''}${sourceLabel}`
+    const header = `[${label}|Score ${scorePct}]${outdatedLabel}${typeLabel} ${name}${speaker}${dateLabel ? ` [${dateLabel}]` : ''}${sourceLabel}`
 
     const content = getDocContent(doc, budget, queryTerms)
     const entry = `${header}\n${content}\n\n`
@@ -861,17 +1236,17 @@ export async function buildDeepGraphContext(
 
   logger.debug(`[RAG] PPR complete: candidates=${sorted.length}, content included=${docHits}, total ${charCount} chars`)
 
-  // Fall back to direct TF-IDF result formatting if no actual document content
+  // Fall back to directly formatted TF-IDF results if no document content was included at all
   if (docHits === 0) {
     if (results.length === 0) return ''
-    const fallback: string[] = ['## 관련 문서 (직접 검색)\n']
+    const fallback: string[] = ['## Related Documents (Direct Search)\n']
     let fallbackChars = 20
     for (const r of results.slice(0, maxDocs)) {
       const doc = docMap.get(r.doc_id)
       if (!doc) continue
       const content = getDocContent(doc, 1200, queryTerms)
       if (!content) continue
-      const entry = `[direct] ${doc.filename.replace(/\.md$/i, '')}\n${content}\n\n`
+      const entry = `[Direct] ${doc.filename.replace(/\.md$/i, '')}\n${content}\n\n`
       if (fallbackChars + entry.length > DEEP_CONTEXT_BUDGET) break
       fallback.push(entry)
       fallbackChars += entry.length
@@ -883,14 +1258,14 @@ export async function buildDeepGraphContext(
 }
 
 /**
- * Collects related context by BFS traversal of the graph starting from a specific document ID.
+ * Collects related context by BFS-traversing the graph from a specific document ID.
  *
- * Same as buildDeepGraphContext but completely bypasses keyword search.
- * Use when the user directly selects a node in the graph.
+ * Same as buildDeepGraphContext but bypasses keyword search entirely.
+ * Use this when the user selects a node directly in the graph.
  *
- * @param startDocId  Starting document ID (graphStore.selectedNodeId)
- * @param maxHops     Maximum hops to traverse (default 3)
- * @param maxDocs     Maximum documents to collect (default 20)
+ * @param startDocId  starting document ID (graphStore.selectedNodeId)
+ * @param maxHops     maximum hops to traverse (default 3)
+ * @param maxDocs     maximum documents to collect (default 20)
  */
 export async function buildDeepGraphContextFromDocId(
   startDocId: string,
@@ -914,8 +1289,8 @@ export async function buildDeepGraphContextFromDocId(
   const sorted = [...visited.entries()].sort((a, b) =>
     a[1] !== b[1] ? a[1] - b[1] : (recMap2.get(b[0]) ?? 0) - (recMap2.get(a[0]) ?? 0)
   )
-  const hopLabel = ['selected', '1-hop', '2-hop', '3-hop']
-  const parts: string[] = [structureHeader, '## Selected node related documents (graph traversal)\n']
+  const hopLabel = ['Selected', '1-hop', '2-hop', '3-hop']
+  const parts: string[] = [structureHeader, '## Selected Node Related Documents (Graph Traversal)\n']
   let charCount = structureHeader.length + 25
 
   for (const [docId, hop] of sorted) {
@@ -941,16 +1316,16 @@ export async function buildDeepGraphContextFromDocId(
   return parts.join('') + '\n'
 }
 
-// ── 3a-helper. Structure header generation ──────────────────────────────────
+// ── 3a-helper. Structure header generation ───────────────────────────────────
 
 /**
- * Generates structural info of traversed documents as an AI context header.
+ * Generates an AI context header from the structural information of the explored documents.
  *
  * Includes:
  *  - Top PageRank hub documents
- *  - C. Per-cluster TF-IDF topic keyword labels
+ *  - C. TF-IDF topic keyword labels per cluster
  *  - D. Bridge documents connecting multiple clusters
- *  - A. Hidden semantic connection pairs without WikiLinks
+ *  - A. Hidden semantically connected document pairs without WikiLinks
  */
 async function buildStructureHeader(
   visited: Map<string, number>,
@@ -963,14 +1338,14 @@ async function buildStructureHeader(
   const metrics = getMetrics()  // cached — no recomputation if adjacency/links unchanged
   const { pageRank, clusters, clusterCount } = metrics
 
-  // Top 5 PageRank (limited to traversed documents)
+  // Top 5 by PageRank (explored documents only)
   const topDocs = [...visited.keys()]
     .map(id => ({ id, rank: pageRank.get(id) ?? 0 }))
     .sort((a, b) => b.rank - a.rank)
     .slice(0, 5)
     .map(({ id }) => docMap.get(id)?.filename.replace(/\.md$/i, '') ?? id)
 
-  // C. Per-cluster document groups + TF-IDF topic keyword labels (expensive on cache miss — yield to UI)
+  // C. Document groups per cluster + TF-IDF topic keyword labels (costly on cache miss — yield to UI)
   await new Promise<void>(r => setTimeout(r, 0))
   const clusterTopics = getClusterTopics(clusters, loadedDocuments, 3)
   const clusterGroups = new Map<number, string[]>()
@@ -991,7 +1366,7 @@ async function buildStructureHeader(
     })
     .join('\n')
 
-  // D. Bridge node detection (limited to traversed docs, top 3)
+  // D. Bridge node detection (explored documents only, top 3)
   const visitedAdj = new Map<string, string[]>()
   for (const [docId] of visited) {
     visitedAdj.set(docId, adjacency.get(docId) ?? [])
@@ -1003,7 +1378,7 @@ async function buildStructureHeader(
       return `${name}(${b.clusterCount} clusters connected)`
     })
 
-  // A. Implicit link discovery (semantic similarity pairs without WikiLinks, top 4) — expensive on cache miss, yield to UI
+  // A. Implicit link discovery (semantically similar pairs without WikiLinks, top 4) — costly on cache miss, yield to UI
   await new Promise<void>(r => setTimeout(r, 0))
   const implicitLinks = tfidfIndex.findImplicitLinks(adjacency, 4, 0.25)
     .map(l => {
@@ -1014,7 +1389,7 @@ async function buildStructureHeader(
     })
 
   const lines: string[] = [
-    `## Project structure overview`,
+    `## Project Structure Overview`,
     `Total clusters: ${clusterCount} | Explored documents: ${visited.size}`,
     `Key hub documents (top PageRank): ${topDocs.join(', ')}`,
   ]
@@ -1079,8 +1454,8 @@ export function getGlobalContextDocIds(
 // ── 3b. Hub-seeded global graph context ──────────────────────────────────────
 
 /**
- * Returns top N hub document IDs by degree (connectivity).
- * Hub nodes are connected to many documents, making them suitable as full traversal starting points.
+ * Returns the top N hub document IDs by degree (connectivity).
+ * Hub nodes connect to many documents, making them good starting points for global traversal.
  */
 function getHubDocIds(adjacency: Map<string, string[]>, topN: number = 10): string[] {
   return [...adjacency.entries()]
@@ -1091,13 +1466,13 @@ function getHubDocIds(adjacency: Map<string, string[]>, topN: number = 10): stri
 }
 
 /**
- * Collects context by BFS traversal of the full graph starting from hub nodes.
+ * Collects context by BFS-traversing the whole graph starting from hub nodes.
  *
- * Used for broad queries like "full project insight", "overall feedback" etc.
- * or when the AI analysis button is pressed without node selection.
+ * Used for broad queries like "overall project insights" or "general feedback",
+ * or when the AI analysis button is pressed without a node selected.
  *
- * @param maxDocs   Maximum documents to collect (default 35)
- * @param maxHops   BFS 최대 홉 수 (기본 4)
+ * @param maxDocs   maximum documents to collect (default 35)
+ * @param maxHops   maximum BFS hops (default 4)
  */
 export async function buildGlobalGraphContext(
   maxDocs: number = 35,
@@ -1124,7 +1499,7 @@ export async function buildGlobalGraphContext(
   const sorted = [...visited.entries()].sort((a, b) =>
     a[1] !== b[1] ? a[1] - b[1] : (recMap3.get(b[0]) ?? 0) - (recMap3.get(a[0]) ?? 0)
   )
-  const parts: string[] = [structureHeader, '## 전체 프로젝트 관련 문서 (허브 기반 탐색)\n']
+  const parts: string[] = [structureHeader, '## Overall Project Related Documents (Hub-Based Traversal)\n']
   let charCount = structureHeader.length + 28
 
   for (const [docId, hop] of sorted) {
@@ -1136,7 +1511,7 @@ export async function buildGlobalGraphContext(
     const name = doc.filename.replace(/\.md$/i, '')
     const speaker = doc.speaker && doc.speaker !== 'unknown' ? ` (${doc.speaker})` : ''
     const dateLabel = getDocDateLabel(doc)
-    const header = `[탐색] ${name}${speaker}${dateLabel ? ` [${dateLabel}]` : ''}`
+    const header = `[Explored] ${name}${speaker}${dateLabel ? ` [${dateLabel}]` : ''}`
     const content = getDocContent(doc, budget)
     const entry = `${header}\n${content}\n\n`
     if (charCount + entry.length > GLOBAL_BUDGET) break
@@ -1155,12 +1530,12 @@ export async function buildGlobalGraphContext(
  * token-efficient context string for LLM injection.
  *
  * Format:
- *   ## 관련 문서
- *   [문서] filename > heading (speaker)
+ *   ## Related Documents
+ *   [Document] filename > heading (speaker)
  *   content...
  *
- *   ### 연결 문서
- *   [연결] filename > heading
+ *   ### Connected Documents
+ *   [Connected] filename > heading
  *   neighbor content...
  */
 /**
@@ -1176,12 +1551,12 @@ export function formatCompressedContext(
 ): string {
   if (results.length === 0) return ''
 
-  const parts: string[] = ['## 관련 문서\n']
+  const parts: string[] = ['## Related Documents\n']
   let charCount = 10 // header length
 
   for (const r of results) {
     const header = [
-      `[문서]`,
+      `[Document]`,
       r.filename,
       r.heading ? `> ${r.heading}` : null,
       r.speaker && r.speaker !== 'unknown' ? `(${r.speaker})` : null,
@@ -1203,11 +1578,11 @@ export function formatCompressedContext(
   }
 
   if (neighbors.length > 0 && charCount < CONTEXT_BUDGET - 100) {
-    parts.push('### 연결 문서\n')
+    parts.push('### Connected Documents\n')
     charCount += 12
 
     for (const n of neighbors) {
-      const nHeader = `[연결] ${n.filename} > ${n.heading}`
+      const nHeader = `[Connected] ${n.filename} > ${n.heading}`
       const maxContent = Math.min(200, CONTEXT_BUDGET - charCount - nHeader.length - 10)
       if (maxContent <= 0) break
       const content = n.content.length > maxContent

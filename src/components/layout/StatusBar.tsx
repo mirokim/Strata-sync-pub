@@ -38,7 +38,7 @@ export default function StatusBar() {
           marginRight: 12,
         }}>
           <Zap size={10} />
-          Edit Agent Running
+          Edit Agent running
         </span>
       )}
 
@@ -83,6 +83,7 @@ export default function StatusBar() {
           <button
             onClick={resetSession}
             title="Reset session tokens"
+            aria-label="Reset session tokens"
             style={{
               display: 'flex', alignItems: 'center',
               padding: '1px 4px', borderRadius: 3, border: 'none',

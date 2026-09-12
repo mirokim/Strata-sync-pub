@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useGraphStore } from '@/stores/graphStore'
 import { SPEAKER_CONFIG } from '@/lib/speakerConfig'
+import StatsChart from './StatsChart'
 import type { SpeakerId } from '@/types'
 
 // ── Small horizontal bar ────────────────────────────────────────────────────
@@ -237,6 +238,12 @@ export default function StatsTab() {
           </div>
         </div>
       )}
+
+      {/* Trend chart */}
+      <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 16 }}>
+        <SectionTitle>Trends</SectionTitle>
+        <StatsChart />
+      </div>
 
     </div>
   )

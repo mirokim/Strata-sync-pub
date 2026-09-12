@@ -9,12 +9,12 @@ import { generateChatReport, downloadMarkdown } from '@/lib/chatReport'
 import { streamAIReport } from '@/services/reportClient'
 
 /**
- * ReportViewer — Editor view that previews chat conversation as a markdown report.
- * Rendered when editingDocId = 'report:latest'.
- * Download only — cannot save to vault.
+ * ReportViewer — Editor view that previews the chat conversation as a markdown report.
+ * Rendered when editingDocId is of the form 'report:latest'.
+ * Download only — not saved to the vault.
  *
- * When reportModelId is set: AI streaming report generation
- * When reportModelId is empty: uses generateChatReport() static format
+ * When reportModelId is set: AI-streamed report generation
+ * When reportModelId is empty: static format via generateChatReport()
  */
 export default function ReportViewer() {
   const { closeEditor } = useUIStore()
@@ -62,7 +62,7 @@ export default function ReportViewer() {
           className="text-xs font-mono"
           style={{ color: 'var(--color-text-secondary)' }}
         >
-          📄 Conversation Report{reportModelId ? ' (AI)' : ''}
+          📄 Chat Report{reportModelId ? ' (AI)' : ''}
         </span>
 
         <div className="flex items-center gap-1">
@@ -106,12 +106,12 @@ export default function ReportViewer() {
         <div
           className="shrink-0 px-4 py-2 text-xs"
           style={{
-            background: 'rgba(239,68,68,0.08)',
-            borderBottom: '1px solid rgba(239,68,68,0.25)',
-            color: '#f87171',
+            background: 'var(--color-error-bg)',
+            borderBottom: '1px solid var(--color-error-border)',
+            color: 'var(--color-error)',
           }}
         >
-          AI generation failed — falling back to static format: {error}
+          AI generation failed — falling back to the default format: {error}
         </div>
       )}
 
@@ -122,7 +122,7 @@ export default function ReportViewer() {
       >
         {!markdown && isStreaming ? (
           <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-            Generating report…
+            Generating the report…
           </div>
         ) : (
           <ReactMarkdown
@@ -167,7 +167,7 @@ export default function ReportViewer() {
                 </strong>
               ),
               code: ({ children }) => (
-                <code style={{ fontFamily: 'monospace', fontSize: 11, background: 'var(--color-bg-surface)', padding: '1px 4px', borderRadius: 3 }}>
+                <code style={{ fontFamily: 'var(--ea-font-mono)', fontSize: 11, background: 'var(--color-bg-surface)', padding: '1px 4px', borderRadius: 3 }}>
                   {children}
                 </code>
               ),

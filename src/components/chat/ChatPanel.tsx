@@ -59,7 +59,7 @@ export default function ChatPanel() {
             {debateMode && (
               <div
                 className="text-xs mb-2"
-                style={{ color: 'var(--color-text-muted)', fontFamily: 'monospace' }}
+                style={{ color: 'var(--color-text-muted)', fontFamily: 'var(--ea-font-mono)' }}
               >
                 ⚔️ AI Debate
               </div>

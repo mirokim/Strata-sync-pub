@@ -20,7 +20,7 @@ try:
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     import docx.opc.constants as opc_const
 except ImportError:
-    print("ERROR: python-docx 미설치. pip install python-docx --break-system-packages")
+    print("ERROR: python-docx not installed. pip install python-docx --break-system-packages")
     sys.exit(1)
 
 
@@ -56,7 +56,7 @@ def heading_level(para) -> int:
             return int(style_name.split(' ')[1])
         except (ValueError, IndexError):
             return 0
-    # 굵은 텍스트만 있는 짧은 단락을 헤딩으로 간주 (§4.5 보완)
+    # Treat short paragraphs consisting only of bold text as headings (§4.5 supplement)
     return 0
 
 
@@ -64,7 +64,7 @@ def para_to_md(para) -> str:
     """Paragraph → Markdown text."""
     style_name = para.style.name if para.style else ''
 
-    # 헤딩 처리
+    # Heading handling
     lvl = heading_level(para)
     text = para.text.strip()
     if not text:
@@ -73,7 +73,7 @@ def para_to_md(para) -> str:
     if lvl > 0:
         return f"{'#' * min(lvl, 6)} {text}"
 
-    # 리스트 (List Paragraph 스타일)
+    # Lists (List Paragraph style)
     if 'List' in style_name:
         # Estimate indentation level
         num_pr = para._p.find(qn('w:numPr'))
@@ -173,7 +173,7 @@ def docx_to_md(docx_path: Path, active_dir: Path, attachments_dir: Path) -> dict
         tag = block.tag.split('}')[-1] if '}' in block.tag else block.tag
 
         if tag == 'p':
-            # python-docx Paragraph 객체로 래핑
+            # Wrap in a python-docx Paragraph object
             from docx.text.paragraph import Paragraph
             para = Paragraph(block, doc)
             md_line = para_to_md(para)
@@ -187,7 +187,7 @@ def docx_to_md(docx_path: Path, active_dir: Path, attachments_dir: Path) -> dict
             table = Table(block, doc)
             body_parts.append('\n' + table_to_md(table) + '\n')
 
-    # 헤딩 없는 문서 → ## 개요 주입 (§4.5 주의사항)
+    # Document without headings → inject ## 개요 (overview) (§4.5 note)
     if not has_heading and body_parts:
         body_parts.insert(0, '## 개요')
 
@@ -226,10 +226,10 @@ origin: docx
 
 
 def main():
-    parser = argparse.ArgumentParser(description='DOCX → Obsidian MD 변환 (§4.5)')
-    parser.add_argument('input', nargs='+', help='DOCX 파일 또는 폴더')
-    parser.add_argument('--active', default='refined_vault/active', help='MD 출력 폴더')
-    parser.add_argument('--attachments', default='refined_vault/attachments', help='이미지 출력 폴더')
+    parser = argparse.ArgumentParser(description='DOCX → Obsidian MD conversion (§4.5)')
+    parser.add_argument('input', nargs='+', help='DOCX file(s) or folder')
+    parser.add_argument('--active', default='refined_vault/active', help='MD output folder')
+    parser.add_argument('--attachments', default='refined_vault/attachments', help='Image output folder')
     args = parser.parse_args()
 
     active_dir = Path(args.active)
@@ -245,18 +245,18 @@ def main():
         elif p.suffix.lower() == '.docx':
             docx_files.append(p)
 
-    print(f"DOCX {len(docx_files)}개 변환 starting...")
+    print(f"Converting {len(docx_files)} DOCX files, starting...")
     ok, errors = 0, 0
     for docx_path in docx_files:
         r = docx_to_md(docx_path, active_dir, attachments_dir)
         if r['status'] == 'ok':
             ok += 1
-            print(f"  ✓ {docx_path.name} ({r.get('images', 0)} 이미지)")
+            print(f"  ✓ {docx_path.name} ({r.get('images', 0)} images)")
         else:
             errors += 1
             print(f"  ✗ {docx_path.name} — {r.get('msg', '')}")
 
-    print(f"\nComplete: 성공 {ok}개, 오류 {errors}개")
+    print(f"\nComplete: {ok} succeeded, {errors} errors")
 
 
 if __name__ == '__main__':

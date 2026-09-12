@@ -3,19 +3,19 @@
 pdf_to_md.py — §4.2 PDF → Obsidian Markdown conversion
 
 PDF auto-routes to three cases:
-  텍스트PDF  — pdfplumber로 텍스트+표 추출, pymupdf로 이미지 추출
-  스캔PDF    — 페이지 전체를 PNG 이미지로 변환 (OCR 생략 가능)
-  혼합PDF    — 텍스트 추출 + 페이지 이미지 병행 (아트/기획 슬라이드 등)
+  Text PDF    — text + tables extracted with pdfplumber, images with pymupdf
+  Scanned PDF — each full page converted to a PNG image (OCR can be skipped)
+  Hybrid PDF  — text extraction + page images in parallel (art/design slides, etc.)
 
 Image filename rule: {stem}_p{page_number}_{index}.png
 
 Usage:
   python pdf_to_md.py <src_dir_or_file> <active_dir> <attachments_dir>
 
-  # 단일 파일
+  # Single file
   python pdf_to_md.py /path/file.pdf active/ attachments/
 
-  # 폴더 재귀 (하위 _files 폴더 포함)
+  # Folder recursion (including _files subfolders)
   python pdf_to_md.py /path/downloaded_pages active/ attachments/
 """
 
@@ -47,20 +47,20 @@ NOISE_PATTERNS = [
     re.compile(r'View\s+history', re.I),
     re.compile(r'All\s+rights\s+reserved', re.I),
     re.compile(r'CC\s+BY', re.I),
-    re.compile(r'https?://\S+\s+\d+/\d+'),   # URL + 페이지번호
-    re.compile(r'^\s*\d+\s*/\s*\d+\s*$'),      # 단독 페이지번호
+    re.compile(r'https?://\S+\s+\d+/\d+'),   # URL + page number
+    re.compile(r'^\s*\d+\s*/\s*\d+\s*$'),      # Standalone page number
 ]
 
-# 페이지당 텍스트가 이 수치 이상이면 "텍스트 PDF"
-TEXT_PDF_THRESHOLD = 150   # 글자/페이지
-HYBRID_THRESHOLD   = 30    # 글자/페이지 (이 미만이면 순수 스캔)
+# A page with at least this much text counts as a "text PDF"
+TEXT_PDF_THRESHOLD = 150   # chars/page
+HYBRID_THRESHOLD   = 30    # chars/page (below this = pure scan)
 
-# 이미지 DPI (페이지 → PNG 변환 시)
+# Image DPI (for page → PNG conversion)
 PAGE_IMAGE_DPI = 150
 
 
 def detect_pdf_type(pdf_path: Path) -> str:
-    """PDF 종류 판별: 'text' | 'hybrid' | 'scan'"""
+    """Determine the PDF kind: 'text' | 'hybrid' | 'scan'"""
     try:
         with pdfplumber.open(pdf_path) as pdf:
             if not pdf.pages:
@@ -95,7 +95,7 @@ def clean_text(text: str) -> str:
 
 
 def extract_page_image(page, stem: str, page_num: int, img_idx: int, attachments_dir: Path) -> str:
-    """pymupdf 페이지를 PNG로 변환 후 attachments/ 저장. 파일명 반환."""
+    """Convert a pymupdf page to PNG and save into attachments/. Returns the filename."""
     fname = f"{stem}_p{page_num}_{img_idx}.png"
     out_path = attachments_dir / fname
     if out_path.exists():
@@ -110,7 +110,7 @@ def extract_page_image(page, stem: str, page_num: int, img_idx: int, attachments
 
 
 def extract_embedded_images(fitz_page, stem: str, page_num: int, attachments_dir: Path) -> list:
-    """페이지 내 임베딩된 이미지 추출. 파일명 목록 반환."""
+    """Extract images embedded in the page. Returns a list of filenames."""
     fnames = []
     try:
         image_list = fitz_page.get_images(full=True)
@@ -125,7 +125,7 @@ def extract_embedded_images(fitz_page, stem: str, page_num: int, attachments_dir
                 base_image = fitz_page.parent.extract_image(xref)
                 img_bytes = base_image.get('image', b'')
                 ext = base_image.get('ext', 'png')
-                if img_bytes and len(img_bytes) > 2000:  # 너무 작은 이미지(아이콘) 제외
+                if img_bytes and len(img_bytes) > 2000:  # Exclude very small images (icons)
                     fname_ext = f"{stem}_p{page_num}_{img_idx}.{ext}"
                     out_path_ext = attachments_dir / fname_ext
                     out_path_ext.write_bytes(img_bytes)
@@ -145,7 +145,7 @@ def pdf_to_md(pdf_path: Path, active_dir: Path, attachments_dir: Path) -> bool:
     out_md = active_dir / f"{safe_stem}.md"
 
     if out_md.exists():
-        return False  # 이미 변환됨
+        return False  # Already converted
 
     pdf_type = detect_pdf_type(pdf_path)
     sections = []
@@ -161,11 +161,11 @@ def pdf_to_md(pdf_path: Path, active_dir: Path, attachments_dir: Path) -> bool:
                 fz_page = doc[page_num - 1]
                 section_lines = [f"## 페이지 {page_num}"]
 
-                # 텍스트 추출
+                # Text extraction
                 raw_text = pl_page.extract_text() or ''
                 text = clean_text(raw_text)
 
-                # 표 추출
+                # Table extraction
                 tables_md = []
                 try:
                     for tbl in pl_page.extract_tables():
@@ -181,13 +181,13 @@ def pdf_to_md(pdf_path: Path, active_dir: Path, attachments_dir: Path) -> bool:
                 except Exception:
                     pass
 
-                # 이미지 처리
+                # Image handling
                 if pdf_type == 'text':
-                    # 텍스트 PDF: 임베딩 이미지만 추출
+                    # Text PDF: extract embedded images only
                     imgs = extract_embedded_images(fz_page, safe_stem, page_num, attachments_dir)
                     image_files.extend(imgs)
                 elif pdf_type == 'hybrid':
-                    # 혼합: 텍스트가 빈 페이지는 페이지 전체 이미지로 대체
+                    # Hybrid: pages with no text are replaced by a full-page image
                     if len(text.strip()) < 50:
                         fname = extract_page_image(fz_page, safe_stem, page_num, 1, attachments_dir)
                         if fname:
@@ -199,7 +199,7 @@ def pdf_to_md(pdf_path: Path, active_dir: Path, attachments_dir: Path) -> bool:
                         imgs = extract_embedded_images(fz_page, safe_stem, page_num, attachments_dir)
                         image_files.extend(imgs)
                 else:  # scan
-                    # 스캔: 페이지 전체 이미지
+                    # Scan: full-page image
                     fname = extract_page_image(fz_page, safe_stem, page_num, 1, attachments_dir)
                     if fname:
                         image_files.append(fname)
@@ -207,7 +207,7 @@ def pdf_to_md(pdf_path: Path, active_dir: Path, attachments_dir: Path) -> bool:
                     else:
                         imgs = []
 
-                # 섹션 구성
+                # Build the section
                 if text:
                     section_lines.append(text)
                 for tbl in tables_md:
@@ -290,14 +290,14 @@ def process_directory(src_dir: Path, active_dir: Path, attachments_dir: Path) ->
         if ok:
             success += 1
             if success % 20 == 0:
-                print(f"  ... {success}개 Complete")
+                print(f"  ... {success} Complete")
         else:
             fail += 1
     return success, fail, skip
 
 
 def main():
-    parser = argparse.ArgumentParser(description='§4.2 PDF → Markdown 변환')
+    parser = argparse.ArgumentParser(description='§4.2 PDF → Markdown conversion')
     parser.add_argument('src', help='PDF file or directory path')
     parser.add_argument('active_dir', help='active/ folder path')
     parser.add_argument('attachments_dir', help='attachments/ folder path')
@@ -312,16 +312,16 @@ def main():
 
     if src.is_file():
         ok = pdf_to_md(src, active_dir, attachments_dir)
-        print('✅ 변환 Complete' if ok else '⚠️ Skipped')
+        print('✅ Conversion Complete' if ok else '⚠️ Skipped')
     elif src.is_dir():
         print(f"PDF Starting conversion: {src}")
         total = len(list(src.rglob('*.pdf')))
-        print(f"총 {total}개 PDF 발견")
+        print(f"{total} PDFs found")
         success, fail, skip = process_directory(src, active_dir, attachments_dir)
-        print(f"\n=== §4.2 PDF 변환 Complete ===")
-        print(f"  Success: {success}개")
-        print(f"  Fail: {fail}개")
-        print(f"  스킵: {skip}개 (이미 존재)")
+        print(f"\n=== §4.2 PDF conversion Complete ===")
+        print(f"  Success: {success}")
+        print(f"  Fail: {fail}")
+        print(f"  Skipped: {skip} (already exist)")
     else:
         print(f"Error: {src} not found.")
         sys.exit(1)

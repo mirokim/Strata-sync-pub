@@ -123,8 +123,8 @@ function MessageBubble({ message }: Props) {
           <div
             style={{
               borderRadius: 6,
-              border: '1px solid rgba(168,85,247,0.25)',
-              background: 'rgba(168,85,247,0.05)',
+              border: '1px solid var(--color-thinking-border)',
+              background: 'var(--color-thinking-bg)',
               fontSize: 11,
               overflow: 'hidden',
             }}
@@ -135,7 +135,7 @@ function MessageBubble({ message }: Props) {
                 width: '100%', textAlign: 'left', padding: '5px 10px',
                 display: 'flex', alignItems: 'center', gap: 6,
                 background: 'none', border: 'none', cursor: 'pointer',
-                color: 'rgba(168,85,247,0.85)', fontWeight: 500,
+                color: 'var(--color-thinking)', fontWeight: 500,
               }}
             >
               <span style={{ fontSize: 12 }}>💭</span>
@@ -145,7 +145,7 @@ function MessageBubble({ message }: Props) {
               </span>
             </button>
             {thinkingOpen && (
-              <div style={{ padding: '0 10px 8px', color: 'rgba(168,85,247,0.8)', whiteSpace: 'pre-wrap', lineHeight: 1.6, maxHeight: 320, overflowY: 'auto' }}>
+              <div style={{ padding: '0 10px 8px', color: 'var(--color-thinking)', whiteSpace: 'pre-wrap', lineHeight: 1.6, maxHeight: 320, overflowY: 'auto' }}>
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {message.thinking}
                 </ReactMarkdown>
@@ -159,8 +159,8 @@ function MessageBubble({ message }: Props) {
           <div
             style={{
               borderRadius: 6,
-              border: '1px solid rgba(59,130,246,0.25)',
-              background: 'rgba(59,130,246,0.05)',
+              border: '1px solid var(--color-info-border)',
+              background: 'var(--color-info-bg)',
               fontSize: 11,
               overflow: 'hidden',
             }}
@@ -171,7 +171,7 @@ function MessageBubble({ message }: Props) {
                 width: '100%', textAlign: 'left', padding: '5px 10px',
                 display: 'flex', alignItems: 'center', gap: 6,
                 background: 'none', border: 'none', cursor: 'pointer',
-                color: 'rgba(59,130,246,0.85)', fontWeight: 500,
+                color: 'var(--color-info)', fontWeight: 500,
               }}
             >
               <span style={{ fontSize: 12 }}>🔧</span>
@@ -187,12 +187,12 @@ function MessageBubble({ message }: Props) {
                     key={i}
                     style={{
                       borderRadius: 4,
-                      border: '1px solid rgba(59,130,246,0.2)',
-                      background: 'rgba(59,130,246,0.06)',
+                      border: '1px solid var(--color-info-border)',
+                      background: 'var(--color-info-bg)',
                       padding: '4px 8px',
                     }}
                   >
-                    <div style={{ color: 'rgba(59,130,246,0.9)', fontWeight: 600, fontFamily: 'monospace', marginBottom: 2 }}>
+                    <div style={{ color: 'var(--color-info)', fontWeight: 600, fontFamily: 'var(--ea-font-mono)', marginBottom: 2 }}>
                       {tc.name}
                     </div>
                     <div style={{ color: 'var(--color-text-muted)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 120, overflowY: 'auto' }}>

@@ -288,7 +288,7 @@ export default function ConfluenceImporter() {
               border: '1px solid var(--color-border)',
             }}
           >
-            📌 <code style={{ color: 'var(--color-accent)' }}>{'ID_제목.html'}</code>
+            📌 <code style={{ color: 'var(--color-accent)' }}>{'ID_Title.html'}</code>
             {' '}+{' '}
             <code style={{ color: 'var(--color-accent)' }}>{'ID_files/'}</code>
             {' '}structure is automatically recognized.

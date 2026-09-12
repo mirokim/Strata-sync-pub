@@ -116,3 +116,44 @@ def test_prepare_chunks_all_ids_unique():
     chunks = prepare_chunks(docs)
     ids = [c["id"] for c in chunks]
     assert len(ids) == len(set(ids)), "Chunk IDs must be unique"
+
+
+def test_prepare_chunks_ids_unique_without_section_id():
+    """Multiple sections of the same document without section_id must still get unique IDs.
+
+    Falling back to doc_id restarts idx from 0 for each section, so IDs collide
+    and upsert silently overwrites earlier sections.
+    """
+    docs = [
+        {
+            "doc_id": "same_doc",
+            "filename": "same.md",
+            "section_id": None,
+            "heading": f"섹션 {i}",
+            "speaker": "chief_director",
+            "content": f"섹션 {i} 내용: " + "테스트 " * 200,
+            "tags": [],
+        }
+        for i in range(4)
+    ]
+    chunks = prepare_chunks(docs)
+    ids = [c["id"] for c in chunks]
+    assert len(chunks) > 4  # each section is split into multiple sub-chunks
+    assert len(ids) == len(set(ids)), "IDs collide for sections without section_id"
+
+
+def test_prepare_chunks_ids_are_stable_across_runs():
+    """The same input must always produce the same ID set (re-indexing is idempotent)."""
+    docs = [
+        {
+            "doc_id": "d1", "filename": "a.md", "section_id": None,
+            "heading": "", "speaker": "s", "content": "내용 " * 50, "tags": [],
+        },
+        {
+            "doc_id": "d1", "filename": "a.md", "section_id": None,
+            "heading": "", "speaker": "s", "content": "다른 내용 " * 50, "tags": [],
+        },
+    ]
+    first = [c["id"] for c in prepare_chunks(docs)]
+    second = [c["id"] for c in prepare_chunks(docs)]
+    assert first == second

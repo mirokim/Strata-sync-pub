@@ -1,12 +1,15 @@
 /**
  * tfidfCache.ts — IndexedDB persistence for the TF-IDF index.
  *
- * When reopening a vault, if files have not changed, the cache is restored
- * without recomputation.
+ * When the vault is reopened and no files have changed, the cache is restored without recomputation.
  *
  * Cache key : vaultPath (string)
- * Invalidation : cache miss when the id + mtime fingerprint of the docs list changes
- * Schema version : cache miss when SerializedTfIdf.schemaVersion differs
+ * Invalidation : miss when the id + mtime fingerprint of the docs list differs
+ * Schema version : miss when SerializedTfIdf.schemaVersion differs
+ *
+ * The cache also stores the precomputed `implicitLinks`. If the fingerprint matches, the
+ * documents and WikiLinks are the same too, so the O(N²) implicit link search need not be repeated on every run.
+ * (measured: 64s → 0s)
  */
 
 import type { SerializedTfIdf } from './graphAnalysis'
@@ -18,10 +21,13 @@ const DB_NAME = 'strata-sync-tfidf-cache'
 const STORE = 'index'
 const DB_VERSION = 1
 
-// ── IndexedDB helpers ──────────────────────────────────────────────────────
+// ── IndexedDB singleton ────────────────────────────────────────────────────
+
+let _dbPromise: Promise<IDBDatabase> | null = null
 
 function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  if (_dbPromise) return _dbPromise
+  _dbPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION)
     req.onupgradeneeded = () => {
       if (!req.result.objectStoreNames.contains(STORE)) {
@@ -29,8 +35,9 @@ function openDB(): Promise<IDBDatabase> {
       }
     }
     req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
+    req.onerror = () => { _dbPromise = null; reject(req.error) }
   })
+  return _dbPromise
 }
 
 async function idbGet(db: IDBDatabase, key: string): Promise<unknown> {
@@ -54,18 +61,21 @@ async function idbPut(db: IDBDatabase, key: string, value: unknown): Promise<voi
 // ── Fingerprint ────────────────────────────────────────────────────────────
 
 /**
- * Generates a cache-validity fingerprint from the vault document list.
- * If files are added, removed, or modified, the fingerprint changes and triggers a cache miss.
+ * Builds a fingerprint from the vault document list for cache validation.
+ * Adding/removing/modifying a file changes the fingerprint and causes a cache miss.
  */
 export function buildFingerprint(docs: LoadedDocument[]): string {
-  return docs.map(d => `${d.id}:${d.mtime ?? 0}`).join('|')
+  return [...docs]
+    .sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+    .map(d => `${encodeURIComponent(d.id)}:${d.mtime ?? 0}`)
+    .join('|')
 }
 
 // ── Public API ────────────────────────────────────────────────────────────
 
 /**
  * Reads the TF-IDF cache from IndexedDB.
- * Returns null on cache miss (not found / fingerprint mismatch / schema version mismatch).
+ * Returns null on cache miss (absent / fingerprint mismatch / schema version mismatch).
  */
 export async function loadTfIdfCache(
   vaultPath: string,
@@ -74,21 +84,22 @@ export async function loadTfIdfCache(
   try {
     const db = await openDB()
     const raw = await idbGet(db, vaultPath)
-    db.close()
     if (!raw || typeof raw !== 'object') return null
     const cached = raw as SerializedTfIdf
     if (cached.schemaVersion !== TFIDF_SCHEMA_VERSION) return null
+    if (typeof cached.fingerprint !== 'string') return null
+    if (!Array.isArray(cached.docs) || !cached.idf || typeof cached.idf !== 'object') return null
     if (cached.fingerprint !== fingerprint) return null
     return cached
   } catch (err) {
-    logger.warn('[tfidfCache] Cache read failed:', err)
+    logger.warn('[tfidfCache] Failed to read cache:', err)
     return null
   }
 }
 
 /**
- * Deletes the TF-IDF cache for a specific vault from IndexedDB.
- * Called after the Edit Agent modifies files -> triggers index rebuild on next search.
+ * Deletes a specific vault's TF-IDF cache from IndexedDB.
+ * Called after the Edit Agent modifies files → index is rebuilt on the next search.
  */
 export async function invalidateTfIdfCache(vaultPath: string): Promise<void> {
   try {
@@ -99,16 +110,15 @@ export async function invalidateTfIdfCache(vaultPath: string): Promise<void> {
       req.onsuccess = () => resolve()
       req.onerror = () => reject(req.error)
     })
-    db.close()
     logger.debug('[tfidfCache] Cache invalidated')
   } catch (err) {
-    logger.warn('[tfidfCache] Cache invalidation failed:', err)
+    logger.warn('[tfidfCache] Failed to invalidate cache:', err)
   }
 }
 
 /**
  * Saves the TF-IDF index to IndexedDB.
- * Failures do not affect app behavior (warning log only).
+ * Failure does not affect app behavior (only a warning is logged).
  */
 export async function saveTfIdfCache(
   vaultPath: string,
@@ -117,9 +127,8 @@ export async function saveTfIdfCache(
   try {
     const db = await openDB()
     await idbPut(db, vaultPath, data)
-    db.close()
-    logger.debug(`[tfidfCache] Cache saved (${data.docs.length} documents)`)
+    logger.debug(`[tfidfCache] Cache saved (${data.docs.length} docs, ${data.implicitLinks?.length ?? 0} implicit links)`)
   } catch (err) {
-    logger.warn('[tfidfCache] Cache save failed:', err)
+    logger.warn('[tfidfCache] Failed to save cache:', err)
   }
 }

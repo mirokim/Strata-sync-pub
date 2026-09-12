@@ -1,111 +1,150 @@
 /**
- * vectorEmbedCache.ts — IndexedDB persistence for vector embeddings.
+ * vectorEmbedCache.ts — File-based vector embedding cache (v5: incremental cache)
  *
- * Permanently stores OpenAI text-embedding-3-small vectors for vault documents.
- * Treats it as a cache miss when the vault fingerprint changes.
+ * Up to v4 the whole-fingerprint match approach meant editing a single document triggered a full rebuild.
+ * From v5, per-document mtimes are stored individually so only changed documents are re-embedded.
+ *
+ * The vault loader ignores dot files, so the cache is not exposed in the vault document list.
  */
 
-const DB_NAME = 'strata-sync-vector-embed'
-const STORE = 'embeddings'
-const DB_VERSION = 1
-
-interface VectorCacheRecord {
-  fingerprint: string
-  entries: Array<{ docId: string; embedding: number[] }>
+/** Individual embedding entry — vector per sectionId + mtime of the owning document */
+interface CacheEntry {
+  embedding: number[]
+  docId: string
+  mtime: number
 }
 
-// ── IndexedDB singleton ────────────────────────────────────────────────────
+/** Embedding provider — recorded in the cache because dimension and vector space differ per provider. */
+export type EmbedProvider = 'gemini' | 'local'
 
-let _dbPromise: Promise<IDBDatabase> | null = null
+interface VectorCacheV6 {
+  version: 6
+  /** chunker version — bump this when parseSections logic changes → automatic invalidation */
+  chunkerVersion: number
+  /**
+   * Embedding provider and dimension. If absent, the cache is treated as an old version and invalidated.
+   *
+   * Without this, switching providers leaves mtimes unchanged so the cache restores with a 100% hit rate,
+   * only the query vector has a different dimension, and every similarity becomes 0 — vector search dies silently.
+   */
+  provider?: EmbedProvider
+  dim?: number
+  /** sectionId → { embedding, docId, mtime } */
+  entries: Record<string, CacheEntry>
+}
 
-function openDB(): Promise<IDBDatabase> {
-  if (_dbPromise) return _dbPromise
-  _dbPromise = new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION)
-    req.onupgradeneeded = () => {
-      if (!req.result.objectStoreNames.contains(STORE)) {
-        req.result.createObjectStore(STORE)
+import { CHUNKER_VERSION } from './markdownParser'
+import { logger } from '@/lib/logger'
+
+function cachePath(vaultPath: string): string {
+  return `${vaultPath}/.vector_cache_v6.json`
+}
+
+function oldCachePath(vaultPath: string): string {
+  return `${vaultPath}/.vector_cache_v5.json`
+}
+
+/**
+ * Loads the cache and returns only the entries still valid against the current document list.
+ * @returns { cached: map of valid embeddings, staleDocIds: document IDs that need re-embedding }
+ */
+export async function loadVectorEmbedCacheIncremental(
+  vaultPath: string,
+  docMtimes: Map<string, number>,  // docId → mtime
+  provider?: EmbedProvider,        // currently active provider — full rebuild on mismatch
+): Promise<{
+  cached: Map<string, Float32Array>
+  staleDocIds: Set<string>
+}> {
+  const result = { cached: new Map<string, Float32Array>(), staleDocIds: new Set(docMtimes.keys()) }
+  if (!vaultPath) return result
+
+  try {
+    const raw = await window.vaultAPI?.readFile(cachePath(vaultPath))
+    if (!raw) return result
+    const record = JSON.parse(raw) as VectorCacheV6
+    // Full rebuild on chunker version mismatch (section ID scheme differs)
+    if (record.version !== 6 || !record.entries) return result
+    if (record.chunkerVersion !== CHUNKER_VERSION) return result
+    // Full rebuild on provider mismatch (different vector space and dimension)
+    if (provider && record.provider !== provider) {
+      logger.debug(`[vector] Embedding provider changed (${record.provider ?? 'unrecorded'} → ${provider}) — full rebuild`)
+      return result
+    }
+
+    // Validate against the docId → current mtime mapping
+    const freshDocIds = new Set<string>()
+
+    for (const [sectionId, entry] of Object.entries(record.entries)) {
+      const currentMtime = docMtimes.get(entry.docId)
+      // Cache entry is valid if the document exists and the mtime matches
+      if (currentMtime !== undefined && currentMtime === entry.mtime) {
+        result.cached.set(sectionId, new Float32Array(entry.embedding))
+        freshDocIds.add(entry.docId)
       }
     }
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => { _dbPromise = null; reject(req.error) }
-  })
-  return _dbPromise
-}
 
-async function idbGet(db: IDBDatabase, key: string): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readonly')
-    const req = tx.objectStore(STORE).get(key)
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
-  })
-}
-
-async function idbPut(db: IDBDatabase, key: string, value: unknown): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite')
-    const req = tx.objectStore(STORE).put(value, key)
-    req.onsuccess = () => resolve()
-    req.onerror = () => reject(req.error)
-  })
-}
-
-// ── Public API ────────────────────────────────────────────────────────────
-
-/**
- * Reads vector embedding cache from IndexedDB.
- * Returns null on fingerprint mismatch or cache miss.
- */
-export async function loadVectorEmbedCache(
-  vaultPath: string,
-  fingerprint: string,
-): Promise<Map<string, number[]> | null> {
-  try {
-    const db = await openDB()
-    const raw = await idbGet(db, vaultPath)
-    if (!raw || typeof raw !== 'object') return null
-    const record = raw as VectorCacheRecord
-    if (record.fingerprint !== fingerprint) return null
-    if (!Array.isArray(record.entries)) return null
-    return new Map(record.entries.map(e => [e.docId, e.embedding]))
+    // staleDocIds = all documents - documents validly restored from cache
+    result.staleDocIds = new Set(
+      [...docMtimes.keys()].filter(id => !freshDocIds.has(id)),
+    )
   } catch {
-    return null
+    // Cache parse failure → full rebuild
   }
+
+  return result
 }
 
 /**
- * Saves vector embedding cache to IndexedDB.
+ * Incremental save: merges new embeddings into the existing cache and saves.
+ * Entries for deleted documents (not in docMtimes) are cleaned up.
  */
-export async function saveVectorEmbedCache(
+export async function saveVectorEmbedCacheIncremental(
   vaultPath: string,
-  fingerprint: string,
-  embeddings: Map<string, number[]>,
+  embeddings: Map<string, Float32Array>,
+  sectionDocMap: Map<string, string>,  // sectionId → docId
+  docMtimes: Map<string, number>,      // docId → mtime
+  provider?: EmbedProvider,            // provider that produced this cache
 ): Promise<void> {
+  if (!vaultPath) return
   try {
-    const db = await openDB()
-    const record: VectorCacheRecord = {
-      fingerprint,
-      entries: [...embeddings.entries()].map(([docId, embedding]) => ({ docId, embedding })),
+    const entries: Record<string, CacheEntry> = {}
+    for (const [sectionId, vec] of embeddings) {
+      const docId = sectionDocMap.get(sectionId)
+      if (!docId) continue
+      const mtime = docMtimes.get(docId)
+      if (mtime === undefined) continue  // skip deleted documents
+      entries[sectionId] = {
+        embedding: Array.from(vec),
+        docId,
+        mtime,
+      }
     }
-    await idbPut(db, vaultPath, record)
+    const dim = embeddings.values().next().value?.length
+    const record: VectorCacheV6 = {
+      version: 6,
+      chunkerVersion: CHUNKER_VERSION,
+      provider,
+      dim,
+      entries,
+    }
+    await window.vaultAPI?.saveFile(cachePath(vaultPath), JSON.stringify(record))
   } catch {
-    // Cache save failure is silent — does not affect app behavior
+    // Cache save failure is silent
   }
 }
 
-/**
- * Deletes the vector cache for a specific vault.
- */
+/** Delete the cache file (only used for a full reset) */
 export async function invalidateVectorEmbedCache(vaultPath: string): Promise<void> {
+  if (!vaultPath) return
   try {
-    const db = await openDB()
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readwrite')
-      const req = tx.objectStore(STORE).delete(vaultPath)
-      req.onsuccess = () => resolve()
-      req.onerror = () => reject(req.error)
-    })
+    await window.vaultAPI?.deleteFile(cachePath(vaultPath))
+  } catch {
+    // silent
+  }
+  // Also clean up the legacy v4 cache
+  try {
+    await window.vaultAPI?.deleteFile(oldCachePath(vaultPath))
   } catch {
     // silent
   }

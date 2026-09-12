@@ -196,7 +196,7 @@ text = pytesseract.image_to_string(img, lang='kor+eng+chi_sim')
 
 **4.2.2 앱 내 PDF 변환 방식 (pdfjs-dist) — 제한 사항 숙지 필수**
 
-Sandbox Map 앱의 "파일 불러오기" 기능은 Python 스크립트와 **다른 엔진**으로 PDF를 처리한다.
+Strata Sync 앱의 "파일 불러오기" 기능은 Python 스크립트와 **다른 엔진**으로 PDF를 처리한다.
 
   ------------------------------ -----------------------------------------------------------------------
   **항목**                       **내용**
@@ -247,7 +247,7 @@ Sandbox Map 앱의 "파일 불러오기" 기능은 Python 스크립트와 **다�
 
 **4.3.1 앱 내 PPTX/DOCX 변환 방식 (JSZip + XML) — 제한 사항 숙지 필수**
 
-Sandbox Map 앱의 "파일 불러오기" 기능은 Python 스크립트와 **다른 엔진**으로 PPTX/DOCX를 처리한다.
+Strata Sync 앱의 "파일 불러오기" 기능은 Python 스크립트와 **다른 엔진**으로 PPTX/DOCX를 처리한다.
 
 PPTX:
 

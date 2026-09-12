@@ -24,9 +24,9 @@ export function truncate(text: string, max = 40): string {
 }
 
 /** Extract [[slug]] references from a markdown string.
- *  Excludes ![[embed]] image embeds. */
+ *  Image embeds of the form ![[embed]] are excluded. */
 export function extractWikiLinks(text: string): string[] {
-  // negative lookbehind: [[...]] immediately preceded by '!' is an image embed — excluded
+  // negative lookbehind: [[...]] immediately preceded by '!' is an image embed, so exclude it
   const matches = text.match(/(?<!!)\[\[(.*?)\]\]/gs) ?? []
   return matches.map(m => m.slice(2, -2).trim())
 }
@@ -38,18 +38,33 @@ export function extractImageRefs(text: string): string[] {
 }
 
 /**
- * Remove lone Unicode surrogates from a string.
- *
- * JavaScript strings are UTF-16. Slicing document content at a byte boundary
- * (e.g. body.slice(0, 1500)) can split a surrogate pair, leaving an orphaned
- * high surrogate (U+D800-DBFF) or low surrogate (U+DC00-DFFF).
- * JSON.stringify then produces invalid JSON and Anthropic's API returns 400.
- *
- * Regex: match valid pair (keep) OR lone surrogate (remove).
+ * Normalize a file path: backslashes → forward slashes.
+ * Optionally strips leading slashes when `stripLeading` is true.
  */
-export function sanitizeUnicode(str: string): string {
-  return str.replace(
-    /[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDFFF]/g,
-    m => m.length === 2 ? m : ''
-  )
+export function normalizePath(p: string, stripLeading = false): string {
+  let result = p.replace(/\\/g, '/')
+  // Normalize Windows drive letter to lowercase (C:/ → c:/)
+  if (/^[A-Z]:\//.test(result)) {
+    result = result[0].toLowerCase() + result.slice(1)
+  }
+  if (stripLeading) result = result.replace(/^\/+/, '')
+  return result
+}
+
+/**
+ * Wrap an async file operation with error handling.
+ * Returns the result on success, or `null` on failure (logging the error).
+ */
+export async function safeFileOp<T>(label: string, fn: () => Promise<T>): Promise<T | null> {
+  try {
+    return await fn()
+  } catch (e) {
+    console.error(`[FileOp] ${label} failed:`, e)
+    // Dynamic import to avoid circular dependency
+    try {
+      const { showToast } = await import('@/stores/toastStore')
+      showToast(`${label} failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
+    } catch { /* ignore toast failure */ }
+    return null
+  }
 }

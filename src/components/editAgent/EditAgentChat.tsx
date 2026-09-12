@@ -18,6 +18,8 @@ const TOOL_LABEL: Record<string, string> = {
   create_folder:   'mkdir',
   move_file:       'mv',
   pdf_import:      'pdf',
+  confluence_import: 'confluence',
+  jira_import:     'jira',
 }
 
 // Accent color per tool — sourced from CSS variables (defined in index.css)
@@ -28,6 +30,8 @@ const TOOL_COLOR: Record<string, string> = {
   write_file:        'var(--ea-tool-write)',
   delete_file:       'var(--ea-tool-delete)',
   pdf_import:        'var(--ea-tool-pdf)',
+  confluence_import: 'var(--ea-tool-confluence)',
+  jira_import:       'var(--ea-tool-jira)',
 }
 const toolColor = (name: string) => TOOL_COLOR[name] ?? 'var(--ea-tool-default)'
 
@@ -76,7 +80,7 @@ export default function EditAgentChat() {
       background: 'var(--color-bg-secondary)',
     }}>
 
-      {/* Message list */}
+      {/* ── Message list ─────────────────────────────────────────────────── */}
       <div ref={scrollRef} style={{
         flex: 1, overflowY: 'auto',
         padding: '10px 12px',
@@ -97,12 +101,12 @@ export default function EditAgentChat() {
           const prevRole = i > 0 ? arr[i - 1].role : null
           const isGrouped = prevRole === msg.role
 
-          // Tool call card
+          // ── Tool call card ──────────────────────────────────────────────
           if (msg.role === 'tool') {
             const collapsed = msg.collapsed !== false
             const isGroup = msg.toolGroup && msg.toolGroup.length > 1
 
-            // Header label: grouped -> "tool1 . tool2 . tool3", single -> label
+            // Header label: grouped → "tool1 · tool2 · tool3", single → label
             const headerLabel = isGroup
               ? msg.toolGroup!.map(t => TOOL_LABEL[t.name] ?? t.name).join(' · ')
               : (TOOL_LABEL[msg.toolName ?? ''] ?? (msg.toolName ?? 'tool'))
@@ -143,7 +147,7 @@ export default function EditAgentChat() {
                       marginLeft: 'auto', fontFamily: MONO, fontSize: 9,
                       color: 'var(--color-text-muted)',
                     }}>
-                      x{msg.toolGroup!.length}
+                      ×{msg.toolGroup!.length}
                     </span>
                   )}
                 </button>
@@ -204,7 +208,7 @@ export default function EditAgentChat() {
             )
           }
 
-          // User bubble
+          // ── User bubble ─────────────────────────────────────────────────
           if (msg.role === 'user') {
             return (
               <div key={msg.id} className="flex justify-end mb-3">
@@ -223,7 +227,7 @@ export default function EditAgentChat() {
             )
           }
 
-          // System notice
+          // ── System notice ───────────────────────────────────────────────
           if (msg.role === 'system') {
             return (
               <div key={msg.id} style={{
@@ -244,7 +248,7 @@ export default function EditAgentChat() {
             )
           }
 
-          // Agent bubble
+          // ── Agent bubble ────────────────────────────────────────────────
           return (
             <div key={msg.id} className="flex mb-3">
               <div
@@ -258,7 +262,7 @@ export default function EditAgentChat() {
               >
                 {msg.content
                   ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-                  : (msg.id === streamingId ? null : '...')
+                  : (msg.id === streamingId ? null : '…')
                 }
                 {msg.id === streamingId && (
                   <span style={{
@@ -275,45 +279,60 @@ export default function EditAgentChat() {
         })}
       </div>
 
-      {/* Input */}
-      <div style={{
-        padding: '12px', flexShrink: 0,
-        borderTop: '1px solid var(--color-border)',
-        display: 'flex', alignItems: 'stretch', gap: 8,
-      }}>
-        <textarea
-          ref={textareaRef}
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Type a message..."
-          rows={1}
-          style={{
-            flex: 1, resize: 'none', overflow: 'hidden',
-            background: 'var(--color-bg-secondary)',
-            color: 'var(--color-text-primary)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 3, outline: 'none',
-            padding: '8px 12px',
-            fontSize: 14, lineHeight: 1.5, fontFamily: 'inherit',
-            minHeight: 64,
-          }}
-        />
-        <button
-          onClick={handleSend}
-          disabled={!canSend}
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: 8, borderRadius: 3, flexShrink: 0,
-            border: '1px solid var(--color-border)',
-            background: canSend ? 'var(--color-accent)' : 'var(--color-bg-secondary)',
-            color: canSend ? '#fff' : 'var(--color-text-muted)',
-            cursor: canSend ? 'pointer' : 'not-allowed',
-            transition: 'background 0.12s, color 0.12s',
-          }}
-        >
-          <Send size={14} />
-        </button>
+      {/* ── Input area (pill + input, single border) ─────────────────────── */}
+      <div className="shrink-0" style={{ borderTop: '1px solid var(--color-border)' }}>
+        <div className="px-4 pt-2 flex justify-center">
+          <button
+            onClick={async () => {
+              const text = 'Refresh the latest Confluence and Jira data'
+              setSending(true)
+              try { await sendEditAgentChatMessage(text) }
+              finally { setSending(false) }
+            }}
+            disabled={sending}
+            className="text-xs px-2.5 py-1 rounded-full transition-colors hover:opacity-80"
+            style={{
+              background: 'var(--color-bg-secondary)',
+              color: 'var(--color-text-secondary)',
+              border: '1px solid var(--color-border)',
+              cursor: sending ? 'not-allowed' : 'pointer',
+            }}
+          >
+            Refresh the latest Confluence and Jira data
+          </button>
+        </div>
+        <div className="flex items-stretch gap-2 px-4 py-3">
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Type a message..."
+            rows={1}
+            className="flex-1 resize-none rounded-lg px-3 py-2 text-sm"
+            style={{
+              overflow: 'hidden',
+              background: 'var(--color-bg-secondary)',
+              color: 'var(--color-text-primary)',
+              border: '1px solid var(--color-border)',
+              outline: 'none',
+              lineHeight: 1.5,
+            }}
+          />
+          <button
+            onClick={handleSend}
+            disabled={!canSend}
+            className="shrink-0 p-2 rounded-lg transition-colors"
+            style={{
+              border: '1px solid var(--color-border)',
+              background: canSend ? 'var(--color-accent)' : 'var(--color-bg-secondary)',
+              color: canSend ? '#fff' : 'var(--color-text-muted)',
+              cursor: canSend ? 'pointer' : 'not-allowed',
+            }}
+          >
+            <Send size={14} />
+          </button>
+        </div>
       </div>
 
       <style>{`

@@ -18,7 +18,7 @@ import { tfidfIndex } from '@/lib/graphAnalysis'
 import { updateDocInWorker } from '@/lib/bm25WorkerClient'
 import { buildAdjacencyMap } from '@/lib/graphRAG'
 import { parseMarkdownFile } from '@/lib/markdownParser'
-import { buildFingerprint, saveTfIdfCache } from '@/lib/tfidfCache'
+import { invalidateTfIdfCache } from '@/lib/tfidfCache'
 import { buildGraph } from '@/lib/graphBuilder'
 
 export default function VaultSelector() {
@@ -64,8 +64,12 @@ export default function VaultSelector() {
           if (content != null) {
             const relativePath = changedFile.replace(/\\/g, '/')
             const file = { relativePath, absolutePath, content, mtime: Date.now() }
-            const updatedDoc = parseMarkdownFile(file)
+            const parsedDoc = parseMarkdownFile(file)
             const { loadedDocuments, setLoadedDocuments, setWatchDiff } = useVaultStore.getState()
+            // parseMarkdownFile does not go through pushWithUniqueId, so it reverts a
+            // collision-resolved id (`_2`) to the raw id. Keep the existing id when a document at the same path exists.
+            const existing = loadedDocuments?.find(d => d.absolutePath === absolutePath)
+            const updatedDoc = existing ? { ...parsedDoc, id: existing.id } : parsedDoc
 
             // Diff calculation — compare with previous rawContent
             const prevDoc = loadedDocuments?.find(d => d.id === updatedDoc.id)
@@ -110,7 +114,10 @@ export default function VaultSelector() {
               )
               tfidfIndex.restore(serialized)
               tfidfIndex.setImplicitLinks(implicitLinks, adj)
-              saveTfIdfCache(currentVaultPath, serialized).catch(() => {})
+              // Saving with a Date.now() fingerprint never matches loadTfIdfCache's
+              // buildFingerprint(id:mtime), overwriting a valid cache and forcing a full rebuild on
+              // every startup. Only invalidate, and let the next vault load rewrite it with the correct fingerprint.
+              invalidateTfIdfCache(currentVaultPath).catch(() => {})
             }
             return  // Incremental update complete — full reload not needed
           }
@@ -221,7 +228,7 @@ export default function VaultSelector() {
 
       {!isElectron && (
         <p className="text-xs mb-3 px-2 py-1.5 rounded" style={{
-          color: '#f59e0b',
+          color: 'var(--color-warning)',
           background: 'rgba(245,158,11,0.08)',
           border: '1px solid rgba(245,158,11,0.2)',
         }}>
@@ -356,7 +363,7 @@ export default function VaultSelector() {
       {error && (
         <p
           className="text-xs flex items-center gap-1 mt-2"
-          style={{ color: '#ef4444' }}
+          style={{ color: 'var(--color-error)' }}
           data-testid="vault-error"
         >
           <AlertCircle size={10} />

@@ -177,7 +177,7 @@ export default function DocViewer() {
                   >
                     <div className="flex items-center gap-2 mb-3">
                       {higherPriority.length > 0 && (
-                        <AlertTriangle size={12} style={{ color: '#f59e0b' }} />
+                        <AlertTriangle size={12} style={{ color: 'var(--color-warning)' }} />
                       )}
                       <span
                         className="text-xs font-semibold tracking-wide"
@@ -188,7 +188,7 @@ export default function DocViewer() {
                       {higherPriority.length > 0 && (
                         <span
                           className="text-xs px-1.5 py-0.5 rounded"
-                          style={{ background: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}
+                          style={{ background: 'rgba(245,158,11,0.15)', color: 'var(--color-warning)' }}
                         >
                           {higherPriority.length} higher-priority doc{higherPriority.length !== 1 ? 's' : ''}
                         </span>
@@ -223,7 +223,7 @@ export default function DocViewer() {
                               {d.filename}
                             </span>
                             {isHigher && (
-                              <span className="shrink-0 flex items-center gap-0.5" style={{ color: '#f59e0b' }}>
+                              <span className="shrink-0 flex items-center gap-0.5" style={{ color: 'var(--color-warning)' }}>
                                 <ArrowUp size={10} />
                                 <span>Higher</span>
                               </span>

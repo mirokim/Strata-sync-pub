@@ -4,9 +4,9 @@ xlsx_to_md.py — §4.4 XLSX → Obsidian Markdown conversion
 
 - 1 sheet = 1 ## {sheet_name} section
 - Cell data → Markdown table (merged cells: use first cell value)
-- 빈 시트·숨겨진 시트 Skipped
-- 열이 너무 많으면(20열+) 첫 20열만 추출 + 경고
-- 행이 1000개 이상인 시트는 허브 노트(요약 + 행 수 기록)로 처리
+- Empty and hidden sheets are skipped
+- Sheets with too many columns (20+) extract only the first 20 columns + warning
+- Sheets with 1000+ rows are handled as hub notes (summary + row count)
 
 Usage:
   python xlsx_to_md.py <src_dir_or_file> <active_dir> <attachments_dir>
@@ -29,9 +29,9 @@ except ImportError:
     sys.exit(1)
 
 
-MAX_COLS = 20      # 이 열 수 초과 시 잘라냄
-MAX_ROWS = 1000    # 이 행 수 초과 시 허브 요약 처리
-MAX_CELL_LEN = 200 # 셀 내용 최대 길이
+MAX_COLS = 20      # Truncate beyond this many columns
+MAX_ROWS = 1000    # Hub summary handling beyond this many rows
+MAX_CELL_LEN = 200 # Max cell content length
 
 
 def cell_str(val) -> str:
@@ -57,9 +57,9 @@ def sheet_to_md_table(ws) -> tuple[str, int]:
     total_rows = len(all_rows)
     n_cols = min(max(len(r) for r in all_rows), MAX_COLS)
 
-    # 1000행 초과: 허브 요약만
+    # Over 1000 rows: hub summary only
     if total_rows > MAX_ROWS:
-        # 헤더 + 처음 5행 + 마지막 3행 샘플만
+        # Header + first 5 rows + last 3 rows as a sample only
         header = all_rows[0][:n_cols]
         sample_rows = all_rows[1:6] + all_rows[-3:]
         note = f"\n> ⚠️ 총 {total_rows}행 (1,000행 초과). 아래는 샘플 {len(sample_rows)}행.\n"
@@ -72,12 +72,12 @@ def sheet_to_md_table(ws) -> tuple[str, int]:
     if note:
         lines.append(note)
 
-    # 헤더
+    # Header
     h_cells = [cell_str(c) or f'Col{i+1}' for i, c in enumerate(header)]
     lines.append('| ' + ' | '.join(h_cells) + ' |')
     lines.append('| ' + ' | '.join(['---'] * len(h_cells)) + ' |')
 
-    # 데이터 행
+    # Data rows
     for row in sample_rows:
         cells = [cell_str(row[i] if i < len(row) else None) for i in range(n_cols)]
         if any(cells):
@@ -96,7 +96,7 @@ def xlsx_to_md(xlsx_path: Path, active_dir: Path, attachments_dir: Path) -> bool
     out_md = active_dir / f"{safe_stem}.md"
 
     if out_md.exists():
-        return False  # 이미 변환됨
+        return False  # Already converted
 
     try:
         wb = openpyxl.load_workbook(str(xlsx_path), read_only=True, data_only=True)
@@ -122,7 +122,7 @@ def xlsx_to_md(xlsx_path: Path, active_dir: Path, attachments_dir: Path) -> bool
     wb.close()
 
     if not sections:
-        return False  # 내용 없음
+        return False  # No content
 
     # frontmatter
     try:
@@ -197,7 +197,7 @@ def process_directory(src_dir: Path, active_dir: Path, attachments_dir: Path) ->
 
 
 def main():
-    parser = argparse.ArgumentParser(description='§4.4 XLSX → Markdown 변환')
+    parser = argparse.ArgumentParser(description='§4.4 XLSX → Markdown conversion')
     parser.add_argument('src', help='XLSX file or directory path')
     parser.add_argument('active_dir', help='active/ folder path')
     parser.add_argument('attachments_dir', help='attachments/ folder path')
@@ -210,15 +210,15 @@ def main():
 
     if src.is_file():
         ok = xlsx_to_md(src, active_dir, attachments_dir)
-        print('✅ 변환 Complete' if ok else '⚠️ Skipped')
+        print('✅ Conversion Complete' if ok else '⚠️ Skipped')
     elif src.is_dir():
         total = len(list(src.rglob('*.xlsx')))
-        print(f"XLSX Starting conversion: 총 {total}개 발견")
+        print(f"XLSX Starting conversion: {total} files found")
         success, fail, skip = process_directory(src, active_dir, attachments_dir)
-        print(f"\n=== §4.4 XLSX 변환 Complete ===")
-        print(f"  Success: {success}개")
-        print(f"  Fail: {fail}개")
-        print(f"  스킵: {skip}개 (중복 파일명 포함)")
+        print(f"\n=== §4.4 XLSX conversion Complete ===")
+        print(f"  Success: {success}")
+        print(f"  Fail: {fail}")
+        print(f"  Skipped: {skip} (including duplicate filenames)")
     else:
         print(f"Error: {src} not found")
         sys.exit(1)

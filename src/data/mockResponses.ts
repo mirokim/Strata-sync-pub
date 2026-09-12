@@ -1,4 +1,4 @@
-import type { DirectorId } from '@/types'
+import type { DirectorId, SpeakerId } from '@/types'
 
 /**
  * Mock AI responses per director persona.
@@ -66,8 +66,10 @@ export const MOCK_RESPONSES: Record<DirectorId, string[]> = {
  * Select a mock response pseudo-randomly based on message content.
  * Returns consistent responses for the same input.
  */
-export function selectMockResponse(personaId: DirectorId, message: string): string {
-  const responses = MOCK_RESPONSES[personaId] ?? []
+export function selectMockResponse(personaId: SpeakerId, message: string): string {
+  // 'unknown' is not a DirectorId — fall back to chief_director responses
+  const directorId: DirectorId = personaId === 'unknown' ? 'chief_director' : personaId
+  const responses = MOCK_RESPONSES[directorId] ?? []
   // Simple hash from message text
   let hash = 0
   for (let i = 0; i < message.length; i++) {

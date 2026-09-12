@@ -2,11 +2,10 @@
  * pprWorkerClient.ts — PPR Web Worker client
  *
  * Delegates PPR (Personalized PageRank) computation to a worker thread.
- * The worker is lazily created on first call and reused for the app's lifetime.
+ * The worker is created lazily on first call and reused for the app's lifetime.
  */
 
 import type { GraphLink } from '@/types'
-import { DEFAULT_LINK_STRENGTH } from '@/lib/constants'
 
 type WorkerResult =
   | { type: 'done';  requestId: string; scores: [string, number][] }
@@ -52,25 +51,38 @@ function callWorker<T>(msg: object, extract: (r: DoneMsg) => T): Promise<T> {
   })
 }
 
+/** PPR seed — id plus a weight based on the search score */
+export interface PPRSeed {
+  id: string
+  /** Relative weight (>0), e.g. the search score. The personalization vector is built in this proportion. */
+  weight: number
+}
+
 /**
- * Takes GraphLink[] (source/target may be string | GraphNode) and runs
- * PPR computation in the worker, returning the result Map.
+ * Takes GraphLink[] (source/target is string | GraphNode),
+ * runs the PPR computation in the worker, and returns the result Map.
+ *
+ * @param seeds       Score-weighted seeds. Do not use uniform seeds — they discard the search ranking.
+ * @param alpha       Restart probability. 0.15 is too low: 85% of the mass flows out into the
+ *                    graph every iteration, and nodes with many in-edges (like `_index.md`
+ *                    or year hubs) end up scoring higher than the seeds. Default 0.4.
+ * @param iterations  Number of power iterations
  */
 export function runPPRInWorker(
-  seedIds: string[],
+  seeds: PPRSeed[],
   links: GraphLink[],
-  alpha = 0.15,
-  iterations = 15,
+  alpha = 0.4,
+  iterations = 20,
 ): Promise<Map<string, number>> {
-  // GraphLink source/target can be string | GraphNode — normalize to string before sending to worker
+  // GraphLink source/target is string | GraphNode — normalize to string before sending to the worker
   const normalizedLinks = links.map(l => ({
     source: typeof l.source === 'string' ? l.source : (l.source as { id: string }).id,
     target: typeof l.target === 'string' ? l.target : (l.target as { id: string }).id,
-    strength: l.strength ?? DEFAULT_LINK_STRENGTH,
+    strength: l.strength ?? 0.5,
   }))
 
   return callWorker(
-    { type: 'ppr', seedIds, links: normalizedLinks, alpha, iterations },
+    { type: 'ppr', seeds, links: normalizedLinks, alpha, iterations },
     (r) => new Map(r.scores),
   )
 }

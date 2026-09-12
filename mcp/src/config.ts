@@ -90,6 +90,21 @@ const DEFAULTS: McpConfig = {
   teamMembers: [],
 }
 
+function deepMerge(target: any, source: any): any {
+  const result = { ...target }
+  for (const key of Object.keys(source)) {
+    if (
+      source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])
+      && target[key] && typeof target[key] === 'object' && !Array.isArray(target[key])
+    ) {
+      result[key] = deepMerge(target[key], source[key])
+    } else {
+      result[key] = source[key]
+    }
+  }
+  return result
+}
+
 let _config: McpConfig | null = null
 let _configPath: string = ''
 
@@ -111,9 +126,10 @@ export function loadConfig(): McpConfig {
   }
   try {
     const raw = readFileSync(path, 'utf-8')
-    _config = { ...DEFAULTS, ...JSON.parse(raw) }
+    _config = deepMerge(DEFAULTS, JSON.parse(raw))
     return _config!
-  } catch {
+  } catch (err) {
+    console.error('[config] Failed to parse mcp-config.json, using defaults:', err)
     _config = { ...DEFAULTS }
     return _config
   }
@@ -124,8 +140,13 @@ export function getConfig(): McpConfig {
   return _config
 }
 
+/**
+ * Update config — always use deepMerge.
+ * With a shallow merge, passing just `{ jira: { jql } }` would wipe baseUrl/apiToken entirely
+ * and flush that to disk, making recovery impossible.
+ */
 export function updateConfig(updates: Partial<McpConfig>): void {
-  _config = { ...getConfig(), ...updates }
+  _config = deepMerge(getConfig(), updates) as McpConfig
   writeFileSync(_configPath || getConfigPath(), JSON.stringify(_config, null, 2), 'utf-8')
 }
 

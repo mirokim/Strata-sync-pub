@@ -1,5 +1,5 @@
 """
-tests/test_rag_simple.py — rag_simple.py unit tests
+tests/test_rag_simple.py — unit tests for rag_simple.py
 
 Run: python -m pytest bot/tests/ -v
 """
@@ -56,28 +56,36 @@ class TestTokenize(unittest.TestCase):
 
 class TestBuildIdf(unittest.TestCase):
     def test_rare_term_higher_idf(self):
-        """Rare terms should have higher IDF than common terms."""
+        """A rare term must have a higher IDF than a common term."""
         docs = [
             _make_doc("게임 프로젝트", "doc1", "게임 개발 로직"),
             _make_doc("게임 디자인", "doc2", "게임 아트 제작"),
-            _make_doc("특수 기능", "doc3", "독특한 메커니즘"),  # '게임' 없음
+            _make_doc("특수 기능", "doc3", "독특한 메커니즘"),  # no '게임'
         ]
         idf = _build_idf(docs)
-        # '게임'은 3개 중 2개 문서에 등장 → IDF = log(3/2) ≈ 0.405
-        # '독특한'은 3개 중 1개 문서에만 등장 → IDF = log(3/1) ≈ 1.099
+        # '게임' appears in 2 of 3 documents → IDF = log(3/2) ≈ 0.405
+        # '독특한' appears in only 1 of 3 documents → IDF = log(3/1) ≈ 1.099
         game_idf = idf.get("게임", 0)
         unique_idf = idf.get("독특한", 0)
         self.assertGreater(unique_idf, game_idf)
 
     def test_universal_term_low_idf(self):
-        """Terms appearing in all documents have IDF = 0 (log(N/N) = 0)."""
+        """A term appearing in every document still gets a small non-zero IDF thanks to smoothing."""
         docs = [
             _make_doc("문서", "doc1", "공통 단어 포함"),
-            _make_doc("문서", "doc2", "공통 단어 포함"),
+            _make_doc("문서", "doc2", "공통 단어 희귀"),
         ]
         idf = _build_idf(docs)
-        # "문서"는 모든 문서(2/2)에 등장 → log(2/2) = 0
-        self.assertAlmostEqual(idf.get("문서", 0), 0.0, places=5)
+        # "문서" appears in all documents (2/2) → log(1 + 0.5/2.5) ≈ 0.182 (>0, not ignored)
+        universal_idf = idf.get("문서", 0)
+        self.assertGreater(universal_idf, 0.0)
+        # Must be lower than a term that appears in only one document
+        self.assertLess(universal_idf, idf.get("희귀", 0))
+
+    def test_single_doc_corpus_has_positive_idf(self):
+        """A single-document corpus also has IDF > 0 (with log(N/df) it would always return 0 results)."""
+        idf = _build_idf([_make_doc("전투", "d1", "전투 로직")])
+        self.assertGreater(idf.get("전투", 0), 0.0)
 
     def test_empty_corpus(self):
         self.assertEqual(_build_idf([]), {})
@@ -93,7 +101,7 @@ class TestScoreDoc(unittest.TestCase):
         self.idf = _build_idf(self.docs)
 
     def test_title_match_scores_higher(self):
-        """Tokens in the title should score higher than those only in the body."""
+        """A token in the title must score higher than one only in the body."""
         title_doc = _make_doc("전투 시스템", "combat_a", "일반적인 내용")
         body_doc  = _make_doc("일반 문서", "other_b", "전투에 관한 내용")
         idf = _build_idf([title_doc, body_doc])
@@ -103,15 +111,16 @@ class TestScoreDoc(unittest.TestCase):
         self.assertGreater(score_title, score_body)
 
     def test_common_word_penalized(self):
-        """Thanks to IDF, universally common words should have no score contribution."""
-        # "공통"이 모든 문서에 등장하면 IDF=0 → 점수 기여 없음
+        """A term common to all documents must contribute less to the score than a rare term."""
+        # Both tokens appear only in the body → same position weight, compare IDF only
         docs = [
-            _make_doc("공통 문서1", "d1", "공통 단어"),
-            _make_doc("공통 문서2", "d2", "공통 단어"),
+            _make_doc("문서1", "d1", "공통 단어 희소값"),
+            _make_doc("문서2", "d2", "공통 단어"),
         ]
         idf = _build_idf(docs)
-        score = _score_doc(docs[0], ["공통"], idf)
-        self.assertEqual(score, 0.0)
+        common_score = _score_doc(docs[0], ["공통"], idf)
+        rare_score = _score_doc(docs[0], ["희소값"], idf)
+        self.assertGreater(rare_score, common_score)
 
     def test_zero_score_for_missing_token(self):
         doc = _make_doc("전투", "d1", "전투 내용")
@@ -153,7 +162,7 @@ class TestApplyHotnessRerank(unittest.TestCase):
         }
         with patch("modules.rag_simple._load_access_store", return_value=store):
             reranked = apply_hotness_rerank(results)
-        # recent_hot can overtake via hotness bonus (alpha blending)
+        # recent_hot may overtake via the hotness bonus (alpha blending)
         self.assertEqual(len(reranked), 2)
 
     def test_empty_input(self):
@@ -162,15 +171,15 @@ class TestApplyHotnessRerank(unittest.TestCase):
 
 class TestVaultCache(unittest.TestCase):
     def test_cache_hit_skips_scan(self):
-        """Should not call scan_vault when re-called within 60 seconds."""
+        """A repeat call within 60 seconds must not call scan_vault."""
         mock_docs = [_make_doc("테스트", "test", "본문")]
         with patch("modules.rag_simple.scan_vault", return_value=mock_docs) as mock_scan:
             _get_cached_docs("/vault")
-            _get_cached_docs("/vault")  # 두 번째는 캐시 히트
-        mock_scan.assert_called_once()  # scan_vault called only once
+            _get_cached_docs("/vault")  # second call is a cache hit
+        mock_scan.assert_called_once()  # scan_vault only once
 
     def test_cache_miss_on_different_path(self):
-        """Different vault paths should result in cache miss."""
+        """A different vault path must be a cache miss."""
         mock_docs = [_make_doc("테스트", "test", "본문")]
         with patch("modules.rag_simple.scan_vault", return_value=mock_docs) as mock_scan:
             _get_cached_docs("/vault_a")
@@ -178,12 +187,12 @@ class TestVaultCache(unittest.TestCase):
         self.assertEqual(mock_scan.call_count, 2)
 
     def test_cache_expires(self):
-        """Should rescan when TTL is exceeded."""
+        """Must rescan once the TTL has expired."""
         import modules.rag_simple as rs
         mock_docs = [_make_doc("테스트", "test", "본문")]
         with patch("modules.rag_simple.scan_vault", return_value=mock_docs) as mock_scan:
             _get_cached_docs("/vault_ttl")
-            # Force cache ts to expire
+            # Force the cache ts to expire
             with rs._VAULT_CACHE_LOCK:
                 rs._vault_cache["ts"] = time.time() - rs._VAULT_CACHE_TTL - 1
             _get_cached_docs("/vault_ttl")

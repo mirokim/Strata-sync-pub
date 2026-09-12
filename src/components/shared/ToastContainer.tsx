@@ -13,7 +13,7 @@ const TYPE_CONFIG: Record<ToastItem['type'], {
   iconColor: string
 }> = {
   success: { icon: <CheckCircle size={14} />, border: 'rgba(34,197,94,0.4)',   iconColor: 'var(--color-success)' },
-  error:   { icon: <XCircle size={14} />,     border: 'rgba(239,68,68,0.4)',    iconColor: 'var(--color-error)' },
+  error:   { icon: <XCircle size={14} />,     border: 'var(--color-error-border)',    iconColor: 'var(--color-error)' },
   warn:    { icon: <AlertTriangle size={14} />,border: 'rgba(245,158,11,0.4)', iconColor: 'var(--color-warning)' },
   info:    { icon: <Info size={14} />,         border: 'rgba(96,165,250,0.4)',  iconColor: 'var(--color-info)' },
 }

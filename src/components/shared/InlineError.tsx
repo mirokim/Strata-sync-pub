@@ -11,7 +11,7 @@ export default function InlineError({ message, className }: Props) {
   return (
     <p
       className={`flex items-center gap-1 text-xs mt-2 ${className ?? ''}`}
-      style={{ color: 'var(--color-error, #f87171)' }}
+      style={{ color: 'var(--color-error)' }}
       role="alert"
     >
       <AlertCircle size={11} aria-hidden />

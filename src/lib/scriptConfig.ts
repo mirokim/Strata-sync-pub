@@ -78,9 +78,30 @@ export const SCRIPTS: ScriptDef[] = [
     category: 'index',
   },
   {
-    name: 'inject_speaker.py',
-    label: 'Inject Speaker',
-    desc: 'Auto-inject speaker field across entire vault (§6.1)',
+    name: 'normalize_frontmatter.py',
+    label: 'Normalize Frontmatter',
+    desc: 'Auto-classify empty tags, inject chief tag and overview heading',
+    buildArgs: (v) => [v],
+    category: 'fix',
+  },
+  {
+    name: 'fix_image_links.py',
+    label: 'Fix Image Links',
+    desc: 'Auto-fix broken image links',
+    buildArgs: (v) => [v],
+    category: 'fix',
+  },
+  {
+    name: 'check_keyword_density.py',
+    label: 'Keyword Density',
+    desc: 'Check files with excessive/insufficient keyword density',
+    buildArgs: (v) => [v, '--vault', v],
+    category: 'check',
+  },
+  {
+    name: 'md_normalize.py',
+    label: 'Normalize MD',
+    desc: 'Auto-generate frontmatter for files without it and fill required fields',
     buildArgs: (v) => [v],
     category: 'fix',
   },
@@ -131,12 +152,12 @@ export const SCRIPTS: ScriptDef[] = [
 
 /**
  * §17.1.4 Post-sync pipeline — runs sequentially after Confluence/Jira auto-sync completion
- * Order matters: audit_and_fix → inject_speaker → gen_index → inject_keywords → gen_year_hubs → enhance_wikilinks
- * gen_index must run before inject_keywords so keyword map is built from the latest _index.md
+ * Order matters: audit_and_fix → normalize_frontmatter → gen_index → inject_keywords → gen_year_hubs → strengthen_links → enhance_wikilinks
+ * gen_index must run before inject_keywords so the keyword map is built from the latest _index.md
  */
 export const POST_SYNC_SCRIPTS: ScriptDef[] = [
   SCRIPTS.find(s => s.name === 'audit_and_fix.py')!,
-  SCRIPTS.find(s => s.name === 'inject_speaker.py')!,
+  SCRIPTS.find(s => s.name === 'normalize_frontmatter.py')!,
   SCRIPTS.find(s => s.name === 'gen_index.py')!,
   SCRIPTS.find(s => s.name === 'inject_keywords.py')!,
   SCRIPTS.find(s => s.name === 'gen_year_hubs.py')!,

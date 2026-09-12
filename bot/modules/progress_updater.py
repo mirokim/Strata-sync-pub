@@ -31,8 +31,8 @@ ELECTRON_STEPS = {
 }
 
 _TIMINGS_PATH = Path(__file__).parent.parent / "step_timings.json"
-_EWMA_ALPHA   = 0.3   # 지수 가중 이동 평균 계수
-_TICK_INTERVAL = 2.5  # 경과시간 live 업데이트 주기 (초)
+_EWMA_ALPHA   = 0.3   # exponentially weighted moving average coefficient
+_TICK_INTERVAL = 2.5  # elapsed-time live update interval (seconds)
 
 
 def _load_timings() -> dict[str, float]:

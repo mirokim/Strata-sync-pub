@@ -1,14 +1,14 @@
 /**
  * VaultManagerTab — Vault file management and data refinement hub (v3.14)
  *
- * Default view: vault selection + status + pipeline execution + script grid
- * Advanced view: quality checklist (§16) + periodic schedule (§17.2)
+ * Basic view: vault selection + status + pipeline run + script grid
+ * Advanced view: quality checklist (§16) + recurring schedule (§17.2)
  */
 
 import { useState, useMemo } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useVaultStore } from '@/stores/vaultStore'
-import { calcBodyCharCount, hasImageOrTable, hasWikiLink, computeStats, type VaultStats } from '@/lib/vaultStats'
+import { computeStats, type VaultStats } from '@/lib/vaultStats'
 import { SCRIPTS, PIPELINE_ORDER, type ScriptDef } from '@/lib/scriptConfig'
 import VaultSelector from '../VaultSelector'
 
@@ -22,53 +22,53 @@ declare const confluenceAPI: {
 }
 
 
-// §16 Quality Checklist
+// §16 Quality checklist
 const QUALITY_CHECKLIST = [
-  { id: 'no-link',      label: 'Files without links ratio',               target: '0%',                      script: 'check_quality.py' },
-  { id: 'ghost-pr',     label: 'Ghost node PageRank top occupancy',       target: 'None',                    script: 'check_quality.py' },
-  { id: 'heading',      label: 'Section heading (##) coverage',           target: '80%+',                    script: 'check_quality.py' },
-  { id: 'frontmatter',  label: 'Missing frontmatter files',               target: 'None',                    script: 'audit_and_fix.py' },
-  { id: 'source-url',   label: 'Missing source URL (external files)',      target: 'None',                   script: 'check_quality.py' },
-  { id: 'img-naming',   label: 'Image filename rule violations',          target: 'None',                    script: 'check_links.py' },
-  { id: 'thin-file',    label: 'Standalone files under 300 chars',        target: 'None',                    script: 'scan_cleanup.py' },
-  { id: 'nested-link',  label: 'Nested wikilink (inject bug)',            target: 'None',                    script: 'audit_and_fix.py' },
-  { id: 'broken-img',   label: 'Broken image links (![[]])',              target: 'None',                    script: 'check_links.py' },
-  { id: 'chief-tag',    label: 'Feedback files missing chief tag',        target: 'None',                    script: 'gen_year_hubs.py' },
-  { id: 'obsidian',     label: '.obsidian/app.json exists',               target: 'Yes',                     script: null },
-  { id: 'current',      label: 'currentSituation.md freshness',           target: 'Within 2 weeks',          script: 'check_outdated.py' },
-  { id: 'index',        label: '_index.md file count match',              target: 'Same as active/ count',   script: 'gen_index.py' },
-  { id: 'orphan',       label: 'Orphan attachment files',                 target: 'None',                    script: 'check_quality.py' },
+  { id: 'no-link',      label: 'Ratio of files without links',   target: '0%',                   script: 'check_quality.py' },
+  { id: 'ghost-pr',     label: 'Ghost nodes in top PageRank',     target: 'None',                  script: 'check_quality.py' },
+  { id: 'heading',      label: 'Ratio of files with section headings (##)', target: '80% or more',              script: 'check_quality.py' },
+  { id: 'frontmatter',  label: 'Files missing frontmatter',       target: 'None',                  script: 'audit_and_fix.py' },
+  { id: 'source-url',   label: 'Missing source URL (externally converted files)', target: 'None',                 script: 'check_quality.py' },
+  { id: 'img-naming',   label: 'Image filename rule violations',  target: 'None',                  script: 'check_links.py' },
+  { id: 'thin-file',    label: 'Standalone files under 300 chars', target: 'None',                  script: 'scan_cleanup.py' },
+  { id: 'nested-link',  label: 'Nested wikilinks (inject bug)',   target: 'None',                  script: 'audit_and_fix.py' },
+  { id: 'broken-img',   label: 'Broken image links (![[]])',      target: 'None',                  script: 'check_links.py' },
+  { id: 'chief-tag',    label: 'Feedback files missing chief tag', target: 'None',                  script: 'gen_year_hubs.py' },
+  { id: 'obsidian',     label: '.obsidian/app.json exists',       target: 'Yes',                  script: null },
+  { id: 'current',      label: 'currentSituation.md is current',  target: 'Within 2 weeks',              script: 'check_outdated.py' },
+  { id: 'index',        label: '_index.md file count matches',    target: 'Same as active/ file count',  script: 'gen_index.py' },
+  { id: 'orphan',       label: 'Orphaned attachments',            target: 'None',                  script: 'check_quality.py' },
 ]
 
-// §17.2 Periodic Refinement Cycle
+// §17.2 Recurring refinement schedule
 const PERIODIC_TASKS = [
   {
     period: 'Weekly',
     tasks: [
       { script: 'gen_index.py',      label: 'Regenerate _index.md' },
-      { script: 'check_outdated.py', label: 'Check currentSituation.md update status' },
+      { script: 'check_outdated.py', label: 'Check whether currentSituation.md is updated' },
     ],
   },
   {
     period: 'Monthly',
     tasks: [
-      { script: 'check_quality.py',    label: 'Inspect files without links' },
-      { script: 'enhance_wikilinks.py', label: 'Strengthen isolated node links' },
-      { script: 'gen_year_hubs.py',    label: 'Update year hubs' },
+      { script: 'check_quality.py',    label: 'Check files without links' },
+      { script: 'enhance_wikilinks.py', label: 'Strengthen links for isolated nodes' },
+      { script: 'gen_year_hubs.py',    label: 'Refresh year hubs' },
     ],
   },
   {
     period: 'Quarterly',
     tasks: [
-      { script: 'scan_cleanup.py',     label: 'Clean up ghost nodes and empty docs' },
-      { script: 'check_outdated.py',   label: 'Review outdated document archives' },
-      { script: 'strengthen_links.py', label: 'PageRank optimization check' },
+      { script: 'scan_cleanup.py',     label: 'Clean up ghost nodes and empty documents' },
+      { script: 'check_outdated.py',   label: 'Review outdated documents for archiving' },
+      { script: 'strengthen_links.py', label: 'Check PageRank optimization' },
     ],
   },
 ]
 
 const CATEGORY_COLOR: Record<ScriptDef['category'], string> = {
-  fix:   '#f59e0b',
+  fix:   'var(--color-warning)',
   link:  '#60a5fa',
   index: '#a78bfa',
   check: 'var(--color-success)',
@@ -121,8 +121,8 @@ export default function VaultManagerTab() {
   const runPipeline = async () => {
     if (!vaultPath || !hasAPI || isBusy) return
     setPipelineRunning(true)
-    setScriptResults({})  // Reset previous results
-    addLog('Full pipeline started (§17.1.4)')
+    setScriptResults({})  // Clear previous run results
+    addLog('Pipeline started (§17.1.4)')
     for (const scriptName of PIPELINE_ORDER) {
       const script = SCRIPTS.find(s => s.name === scriptName)
       if (!script) continue
@@ -142,7 +142,7 @@ export default function VaultManagerTab() {
         setScriptResults(prev => ({ ...prev, [script.name]: 'error' }))
       }
     }
-    addLog('Pipeline complete')
+    addLog('Pipeline finished')
     setPipelineRunning(false)
   }
 
@@ -167,19 +167,19 @@ export default function VaultManagerTab() {
             display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8,
           }}>
             {[
-              { label: 'Total Docs',        value: stats.total,       alert: false },
-              { label: 'Stubs (<50 chars)', value: stats.stubCount,  alert: stats.stubCount > 0 },
+              { label: 'Total docs',    value: stats.total,       alert: false },
+              { label: 'Stubs (<50 chars)',  value: stats.stubCount,  alert: stats.stubCount > 0 },
               { label: 'Thin (<300 chars)', value: stats.thinCount, alert: stats.thinCount > 10 },
-              { label: 'No Links',          value: stats.noLinkCount, alert: stats.noLinkCount > 0 },
+              { label: 'No links',    value: stats.noLinkCount, alert: stats.noLinkCount > 0 },
             ].map(item => (
               <div key={item.label} style={{
                 padding: '10px 8px', borderRadius: 6, textAlign: 'center',
                 background: 'var(--color-bg-surface)',
-                border: `1px solid ${item.alert ? 'rgba(245,158,11,0.3)' : 'var(--color-border)'}`,
+                border: `1px solid ${item.alert ? 'var(--color-warning-bg)' : 'var(--color-border)'}`,
               }}>
                 <div style={{
                   fontSize: 22, fontWeight: 700, lineHeight: 1,
-                  color: item.alert ? '#f59e0b' : 'var(--color-text-primary)',
+                  color: item.alert ? 'var(--color-warning)' : 'var(--color-text-primary)',
                 }}>
                   {item.value}
                 </div>
@@ -201,14 +201,14 @@ export default function VaultManagerTab() {
                 currentSituation.md
               </div>
               <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
-                Graph RAG BFS entry point — refresh recommended within 2 weeks (§14.1)
+                Graph RAG BFS entry point — refresh within 2 weeks recommended (§14.1)
               </div>
             </div>
             <div style={{
               fontSize: 11, fontWeight: 600, paddingLeft: 12,
               color: stats.hasCurrentSituation ? 'var(--color-success)' : 'var(--color-error)',
             }}>
-              {stats.hasCurrentSituation ? 'Exists' : 'Missing'}
+              {stats.hasCurrentSituation ? 'Present' : 'Missing'}
             </div>
           </div>
         </section>
@@ -225,7 +225,7 @@ export default function VaultManagerTab() {
             fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
             color: 'var(--color-text-muted)',
           }}>
-            Script Execution
+            Run Scripts
           </h3>
           <button
             onClick={runPipeline}
@@ -239,13 +239,13 @@ export default function VaultManagerTab() {
               opacity: pipelineRunning ? 0.7 : 1,
             }}
           >
-            {pipelineRunning ? 'Running...' : 'Run Full Pipeline (§17.1.4)'}
+            {pipelineRunning ? 'Running…' : 'Run Full Pipeline (§17.1.4)'}
           </button>
         </div>
 
         {!hasAPI && (
-          <p style={{ fontSize: 12, color: '#f59e0b', marginBottom: 10 }}>
-            Scripts can only be executed in the Electron environment.
+          <p style={{ fontSize: 12, color: 'var(--color-warning)', marginBottom: 10 }}>
+            Scripts can only be run in Electron.
           </p>
         )}
 
@@ -301,12 +301,12 @@ export default function VaultManagerTab() {
         </div>
       </section>
 
-      {/* Execution log */}
+      {/* Run log */}
       {log.length > 0 && (
         <section>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
             <span style={{ fontSize: 11, color: 'var(--color-text-muted)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-              Execution Log
+              Run Log
             </span>
             <button
               onClick={() => setLog([])}
@@ -323,7 +323,7 @@ export default function VaultManagerTab() {
               <div key={i} style={{
                 fontSize: 12, fontFamily: 'monospace', lineHeight: 1.7,
                 color: line.includes('Error') || line.includes('Failed') ? 'var(--color-error)'
-                  : line.includes('Done') || line.includes('Pipeline') || line.includes('pipeline') ? 'var(--color-success)'
+                  : line.includes('Done') || line.includes('Pipeline') ? 'var(--color-success)'
                   : 'var(--color-text-secondary)',
               }}>
                 {line}
@@ -355,14 +355,14 @@ export default function VaultManagerTab() {
             Advanced
           </span>
           <span style={{ fontSize: 11, color: 'var(--color-text-muted)', marginLeft: 4, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
-            Additional scripts, quality checklist, periodic schedule
+            Other scripts · Quality checklist · Recurring schedule
           </span>
         </button>
 
         {showAdvanced && (
           <div className="flex flex-col gap-5" style={{ marginTop: 16 }}>
 
-            {/* Additional scripts */}
+            {/* Other scripts */}
             <div>
               <div style={{
                 fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)',
@@ -422,7 +422,7 @@ export default function VaultManagerTab() {
 
             <div style={{ borderTop: '1px solid var(--color-border)' }} />
 
-            {/* Quality Checklist §16 */}
+            {/* Quality checklist §16 */}
             <div>
               <div style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8,
@@ -514,13 +514,13 @@ export default function VaultManagerTab() {
 
             <div style={{ borderTop: '1px solid var(--color-border)' }} />
 
-            {/* Periodic refinement cycle §17.2 */}
+            {/* Recurring refinement schedule §17.2 */}
             <div>
               <div style={{
                 fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)',
                 marginBottom: 8, letterSpacing: '0.04em',
               }}>
-                Periodic Refinement Cycle (§17.2)
+                Recurring Refinement Schedule (§17.2)
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {PERIODIC_TASKS.map(pt => (
@@ -571,28 +571,28 @@ export default function VaultManagerTab() {
 
             <div style={{ borderTop: '1px solid var(--color-border)' }} />
 
-            {/* §18 Graph RAG freshness bug response */}
+            {/* §18 Freshness bug response */}
             <div style={{
               padding: '12px 14px', borderRadius: 6,
-              background: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.25)',
+              background: 'var(--color-warning-bg)', border: '1px solid var(--color-warning-bg)',
             }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#f59e0b', marginBottom: 6 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-warning)', marginBottom: 6 }}>
                 §18 Graph RAG Freshness Bug Response
               </div>
               <div style={{ fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.7, marginBottom: 10 }}>
-                If AI responds with outdated information as if it's current, run the following steps in order.
+                If the AI presents outdated information as current, run the following in order.
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {[
                   { step: '1', script: 'check_outdated.py', note: 'Check outdated files and isolated new documents' },
-                  { step: '2', script: 'gen_year_hubs.py',  note: 'Update latest year hub "recently added" section' },
-                  { step: '3', script: 'gen_index.py',      note: 'Specify latest documents at top of _index.md' },
+                  { step: '2', script: 'gen_year_hubs.py',  note: 'Refresh the "Recently added" section of the latest year hub' },
+                  { step: '3', script: 'gen_index.py',      note: 'List the latest documents at the top of _index.md' },
                 ].map(({ step, script: sname, note }) => {
                   const script = SCRIPTS.find(s => s.name === sname)
                   return (
                     <div key={sname} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{
-                        fontSize: 11, fontWeight: 700, color: '#f59e0b',
+                        fontSize: 11, fontWeight: 700, color: 'var(--color-warning)',
                         width: 16, textAlign: 'right', flexShrink: 0,
                       }}>{step}</span>
                       <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', flex: 1 }}>

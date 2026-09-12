@@ -1,13 +1,13 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 // ── electronAPI ────────────────────────────────────────────────────────────────
-// Whitelist of allowed IPC send channels (renderer → main, one-way)
+// Allowed channels the renderer may use for one-way IPC to main (whitelist)
 const _ALLOWED_IPC_SEND = new Set(['rag:mirofish:progress'])
 
 contextBridge.exposeInMainWorld('electronAPI', {
   isElectron: true,
   platform: process.platform,
-  /** Send a one-way IPC message to main process — only whitelisted channels allowed */
+  /** Send one-way IPC to the main process — only allowed channels pass */
   ipcSend: (channel, data) => {
     if (!_ALLOWED_IPC_SEND.has(channel)) {
       console.warn('[preload] ipcSend: blocked channel:', channel)
@@ -45,7 +45,7 @@ contextBridge.exposeInMainWorld('vaultAPI', {
   /** Save a file to the filesystem (used by MD converter and editor) */
   saveFile: (filePath, content) => ipcRenderer.invoke('vault:save-file', filePath, content),
 
-  /** Pre-update currentVaultPath when switching vaults (security check for vault:save-file) */
+  /** Proactively update currentVaultPath on vault switch (for the loadVaultCached → vault:save-file security check) */
   setActivePath: (vaultPath) => ipcRenderer.invoke('vault:set-active-path', vaultPath),
 
   /** Rename a file — newFilename is just the filename (no path) */
@@ -84,6 +84,9 @@ contextBridge.exposeInMainWorld('vaultAPI', {
 
 // ── confluenceAPI ─────────────────────────────────────────────────────────────
 contextBridge.exposeInMainWorld('confluenceAPI', {
+  /** Test Confluence credentials. Returns { ok, displayName } or throws. */
+  testConnection: (config) => ipcRenderer.invoke('confluence:test-connection', config),
+
   /** Fetch all pages from a Confluence space. Returns raw page objects. */
   fetchPages: (config) => ipcRenderer.invoke('confluence:fetch-pages', config),
 
@@ -103,15 +106,145 @@ contextBridge.exposeInMainWorld('confluenceAPI', {
   rollback: (files, dirs) =>
     ipcRenderer.invoke('confluence:rollback', files, dirs),
 
+  /** Get page info (id, title, version, spaceKey) by pageId or URL. */
+  getPageInfo: (config, pageIdOrUrl) =>
+    ipcRenderer.invoke('confluence:get-page-info', config, pageIdOrUrl),
+
+  /** Create a new Confluence page. opts: { title, storageBody, spaceKey?, parentId? } */
+  createPage: (config, opts) =>
+    ipcRenderer.invoke('confluence:create-page', config, opts),
+
+  /** Update an existing Confluence page. opts: { pageId, title, storageBody, currentVersion } */
+  updatePage: (config, opts) =>
+    ipcRenderer.invoke('confluence:update-page', config, opts),
+
   /** Read a file from the app directory (e.g. 'manual/foo.md'). Returns text or null. */
   readAppFile: (relativePath) =>
     ipcRenderer.invoke('tools:read-app-file', relativePath),
 })
 
+// ── jiraAPI ───────────────────────────────────────────────────────────────────
+contextBridge.exposeInMainWorld('jiraAPI', {
+  /** Test Jira credentials. Returns { ok, displayName } or throws. */
+  testConnection: (config) => ipcRenderer.invoke('jira:test-connection', config),
+  fetchIssues: (config) => ipcRenderer.invoke('jira:fetch-issues', config),
+  saveIssues: (vaultPath, targetFolder, issuesWithMd) =>
+    ipcRenderer.invoke('jira:save-issues', vaultPath, targetFolder, issuesWithMd),
+  getMembers: (config) => ipcRenderer.invoke('jira:get-members', config),
+  createIssue: (config, fields) => ipcRenderer.invoke('jira:create-issue', config, fields),
+  rollback: (files, dirs) =>
+    ipcRenderer.invoke('confluence:rollback', files, dirs),
+})
+
+// ── configAPI (GUI → mcp-config.json sync) ───────────────────────────────
+contextBridge.exposeInMainWorld('configAPI', {
+  writeMcp: (patch) => ipcRenderer.invoke('config:write-mcp', patch),
+})
+
+// ── settingsAPI (Zustand persist → file storage) ─────────────────────────────
+contextBridge.exposeInMainWorld('settingsAPI', {
+  read:  (filename) => ipcRenderer.invoke('settings:read', filename),
+  write: (filename, data) => ipcRenderer.invoke('settings:write', filename, data),
+})
+
+// ── cronAPI (Cron Job Scheduler) ─────────────────────────────────────────────
+contextBridge.exposeInMainWorld('cronAPI', {
+  getState: () => ipcRenderer.invoke('cron:get-state'),
+  updateConfig: (jobId, patch) => ipcRenderer.invoke('cron:update-config', jobId, patch),
+  runNow: (jobId) => ipcRenderer.invoke('cron:run-now', jobId),
+  getLogs: () => ipcRenderer.invoke('cron:get-logs'),
+  getRuns: () => ipcRenderer.invoke('cron:get-runs'),
+  listLogFiles: () => ipcRenderer.invoke('cron:list-log-files'),
+  loadLogFile: (date) => ipcRenderer.invoke('cron:load-log-file', date),
+  appendLog: (jobId, level, message, extra) =>
+    ipcRenderer.invoke('cron:append-log', jobId, level, message, extra),
+  onStateUpdate: (callback) => {
+    const listener = (_event, data) => callback(data)
+    ipcRenderer.on('cron:state-update', listener)
+    return () => ipcRenderer.removeListener('cron:state-update', listener)
+  },
+  onLogAppend: (callback) => {
+    const listener = (_event, data) => callback(data)
+    ipcRenderer.on('cron:log-append', listener)
+    return () => ipcRenderer.removeListener('cron:log-append', listener)
+  },
+  /** @deprecated — replaced by onStateUpdate, alias kept for existing hook compatibility */
+  onJobStatus: (callback) => {
+    const listener = (_event, data) => callback(data)
+    ipcRenderer.on('cron:state-update', listener)
+    return () => ipcRenderer.removeListener('cron:state-update', listener)
+  },
+  onExecuteJob: (jobType, callback) => {
+    const channel = `cron:execute-${jobType}`
+    const listener = (_event, data) => callback(data)
+    ipcRenderer.on(channel, listener)
+    return () => ipcRenderer.removeListener(channel, listener)
+  },
+  sendResult: (requestId, result) => {
+    ipcRenderer.send(`cron:result:${requestId}`, result)
+  },
+})
+
+// ── backendAPI (Phase 1-3) ────────────────────────────────────────────────────
+const BACKEND_PORT = parseInt(process.env.BACKEND_PORT || '8765', 10)
+const BACKEND_BASE = `http://127.0.0.1:${BACKEND_PORT}`
+
+async function backendFetch(urlPath, options) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 30000)  // 30s timeout
+  try {
+    const res = await fetch(`${BACKEND_BASE}${urlPath}`, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', ...(options && options.headers) },
+      signal: controller.signal,  // always fixed — guarantees timeout abort even if the caller passes a signal
+    })
+    if (!res.ok) {
+      const text = await res.text().catch(() => String(res.status))
+      throw new Error(`Backend ${res.status}: ${text}`)
+    }
+    return res.json()
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+contextBridge.exposeInMainWorld('backendAPI', {
+  /** Get backend readiness status */
+  getStatus: () => ipcRenderer.invoke('backend:getStatus'),
+
+  /** Index document chunks into ChromaDB */
+  indexDocuments: (chunks) =>
+    backendFetch('/docs/index', {
+      method: 'POST',
+      body: JSON.stringify({ documents: chunks }),
+    }),
+
+  /** Clear the entire vector index */
+  clearIndex: () => backendFetch('/docs/clear', { method: 'DELETE' }),
+
+  /** Semantic search — returns top-k matching chunks */
+  search: (query, topK) =>
+    backendFetch('/docs/search', {
+      method: 'POST',
+      body: JSON.stringify({ query, top_k: topK !== undefined ? topK : 3 }),
+    }),
+
+  /** Get collection stats (chunk count) */
+  getStats: () => backendFetch('/docs/stats'),
+
+  /**
+   * Subscribe to backend:ready IPC event.
+   * Returns a cleanup function.
+   */
+  onReady: (callback) => {
+    const listener = (_event, data) => callback(data)
+    ipcRenderer.on('backend:ready', listener)
+    return () => ipcRenderer.removeListener('backend:ready', listener)
+  },
+})
+
 // ── ragAPI (Slack RAG bridge) ─────────────────────────────────────────────────
 contextBridge.exposeInMainWorld('ragAPI', {
-  /** Get the RAG API authentication token (for authorized HTTP requests). */
-  getToken: () => ipcRenderer.invoke('rag:get-token'),
   /** Listen for search requests from the HTTP server (via main process). */
   onSearch: (callback) => {
     const listener = (_event, data) => callback(data)
@@ -153,7 +286,7 @@ contextBridge.exposeInMainWorld('ragAPI', {
     try {
       ipcRenderer.send('rag:result', { requestId, results })
     } catch (err) {
-      // Structured clone failure (BigInt, circular refs, etc.) — fallback: send empty result
+      // On structured clone failure (BigInt, circular refs, etc.) — fallback: send empty results
       console.error('[preload] sendResult serialization failed:', err)
       ipcRenderer.send('rag:result', { requestId, results: [] })
     }
@@ -166,6 +299,7 @@ contextBridge.exposeInMainWorld('botAPI', {
   stop:      ()       => ipcRenderer.invoke('bot:stop'),
   getStatus: ()       => ipcRenderer.invoke('bot:status'),
   getLogs:   ()       => ipcRenderer.invoke('bot:get-logs'),
+  readLogFile: (date) => ipcRenderer.invoke('bot:read-log-file', date),
   onLog: (callback) => {
     const listener = (_event, line) => callback(line)
     ipcRenderer.on('bot:log', listener)
@@ -180,27 +314,27 @@ contextBridge.exposeInMainWorld('botAPI', {
 
 // ── reportAPI (PDF report export) ─────────────────────────────────────────────
 contextBridge.exposeInMainWorld('reportAPI', {
-  /** Convert HTML string to PDF and export via save dialog */
+  /** Convert an HTML string to PDF and export via the save dialog */
   exportPdf: (html, suggestedName) =>
     ipcRenderer.invoke('report:export-pdf', html, suggestedName),
 })
 
 // ── webSearchAPI (DuckDuckGo via IPC) ─────────────────────────────────────────
 contextBridge.exposeInMainWorld('webSearchAPI', {
-  /** DuckDuckGo HTML search — returns result HTML string */
+  /** DuckDuckGo HTML search — returns the result HTML string */
   search: (query) => ipcRenderer.invoke('web:search', query),
 })
 
-// ── toolsAPI — Run Python scripts from tools/ folder for Edit Agent ───────────
+// ── toolsAPI — run Python scripts in the tools/ folder for the Edit Agent ─────
 contextBridge.exposeInMainWorld('toolsAPI', {
-  /** Run a Python script from tools/ folder. Returns { stdout, stderr, exitCode }. */
+  /** Run a Python script in the tools/ folder. Returns { stdout, stderr, exitCode }. */
   runVaultTool: (scriptName, args) =>
     ipcRenderer.invoke('tools:run-vault-tool', scriptName, args),
 })
 
-// ── gstackAPI — Headless browser automation ──────────────────────────────────
+// ── gstackAPI — gstack headless browser automation ────────────────────────────
 contextBridge.exposeInMainWorld('gstackAPI', {
-  /** Execute a gstack browser command. Returns { success, output, error? }. */
+  /** Run a gstack browser command. Returns { success, output, error? }. */
   execute: (command, args) =>
     ipcRenderer.invoke('gstack:execute', command, args),
 })

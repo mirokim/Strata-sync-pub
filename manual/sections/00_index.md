@@ -18,6 +18,7 @@
 | **Jira Fetch·변환·Triage** | **s10_jira_fetch.md** |
 | **Jira 4축 집계 문서** | **s11_jira_aggregate.md** |
 | **Jira 교차링크·운영·품질** | **s12_jira_crosslink.md** |
+| **외부 게임 레퍼런스 수집·변환·RAG 통합** | **s13_game_reference.md** |
 
 ## 섹션 파일 목록
 
@@ -33,7 +34,7 @@
 | [s06_optimization.md](s06_optimization.md) | §10-11 섹션 헤딩 · BFS · PageRank 최적화 | 105줄 / 4KB |
 | [s07_quality.md](s07_quality.md) | §12-16 이미지·품질 감사·보조 문서·Obsidian·체크리스트 | 274줄 / 14KB |
 | [s08_operations.md](s08_operations.md) | §17 운영 가이드 (신규 문서·정기 정제·스크립트·롤백) | 144줄 / 11KB |
-| [s09_troubleshoot.md](s09_troubleshoot.md) | §18-끝 버그 대응 · AI 컨텍스트 한계 · 매뉴얼 관리 · 변경이력 | 483줄 / 37KB |
+| [s09_troubleshoot.md](s09_troubleshoot.md) | §18-끝 버그 대응(§18.7 토크나이저 버그) · AI 컨텍스트 한계 · 매뉴얼 관리 · 변경이력 | ~510줄 / 39KB |
 
 ### Jira 정제
 
@@ -42,3 +43,9 @@
 | [s10_jira_fetch.md](s10_jira_fetch.md) | Jira ① — REST Fetch · 1:1 변환 · Triage (삭제·skip·low) |
 | [s11_jira_aggregate.md](s11_jira_aggregate.md) | Jira ② — 4축 집계 문서 생성 (Epic·Sprint·Component·Release) |
 | [s12_jira_crosslink.md](s12_jira_crosslink.md) | Jira ③ — 교차 링크 · 운영 · 품질 · Confluence 전 단계 대입 시나리오 |
+
+### 외부 게임 레퍼런스
+
+| 파일 | 내용 |
+|------|------|
+| [s13_game_reference.md](s13_game_reference.md) | 게임 레퍼런스 수집 · Frontmatter 규칙 · 듀얼 트랙 RAG · 벡터 노이즈 제거 · 운영 체크리스트 |

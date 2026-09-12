@@ -53,7 +53,7 @@ export default function RightPanel() {
               onClick={toggleEditAgentPanel}
               style={{
                 position: 'fixed', inset: 0, zIndex: 49,
-                background: 'rgba(0,0,0,0.4)',
+                background: 'rgba(0,0,0,0.4)', /* --shadow-overlay fallback */
                 backdropFilter: 'blur(2px)',
               }}
             />
@@ -63,7 +63,7 @@ export default function RightPanel() {
               top: 36, bottom: 26, right: 0,
               width: Math.min(agentWidth, windowWidth * 0.85),
               zIndex: 50,
-              boxShadow: '-4px 0 24px rgba(0,0,0,0.5)',
+              boxShadow: 'var(--shadow-drawer)',
               overflow: 'hidden',
               display: 'flex', flexDirection: 'column',
             }}>

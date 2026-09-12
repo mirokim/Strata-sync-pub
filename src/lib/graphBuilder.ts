@@ -1,7 +1,7 @@
 /**
  * graphBuilder.ts — Phase 7
  *
- * Generic graph construction from any document type (MockDocument or LoadedDocument).
+ * Generic graph construction from LoadedDocument arrays.
  *
  * Key change from Phase 6: ONE node per DOCUMENT (matching Obsidian's graph).
  * Previously created one node per section, which produced many unwanted "(intro)" nodes.
@@ -14,6 +14,7 @@ import type { GraphNode, GraphLink, LoadedDocument, SpeakerId } from '@/types'
 import { DEFAULT_LINK_STRENGTH } from '@/lib/constants'
 import { slugify, truncate } from '@/lib/utils'
 import { SPEAKER_CONFIG } from '@/lib/speakerConfig'
+import { logger } from '@/lib/logger'
 
 const VALID_SPEAKER_IDS = new Set<string>(Object.keys(SPEAKER_CONFIG))
 function toSpeakerId(raw: string | undefined): SpeakerId {
@@ -66,14 +67,78 @@ export function buildGraphLinks(
     }
   }
 
-  // Lookup: normalised filename (without .md) → doc.id (for Obsidian [[note name]] style)
-  const filenameToDocId = new Map<string, string>()
+  // Lookup: normalised filename (without .md) → candidate document list
+  // The same basename can exist in multiple folders (measured: 18 duplicate basenames / 36 files,
+  // 238 wikilinks pointing at them). Overwriting in a single Map<string,string> would let the
+  // **last document** in scan order monopolize every link and orphan the rest in the graph.
+  const filenameToDocs = new Map<string, AnyDocument[]>()
   for (const doc of documents) {
-    const filename = doc.filename.replace(/\.md$/i, '')
-    filenameToDocId.set(filename.toLowerCase(), doc.id)
+    const filename = doc.filename.replace(/\.md$/i, '').toLowerCase()
+    const bucket = filenameToDocs.get(filename)
+    if (bucket) bucket.push(doc)
+    else filenameToDocs.set(filename, [doc])
   }
 
-  // linkCounts: reference counts per normalized bidirectional pair
+  /** Normalize a folder path into a segment array (handles both Windows/POSIX separators) */
+  const segsOf = (p: string | undefined): string[] =>
+    (p ?? '').toLowerCase().split(/[/\\]+/).filter(Boolean)
+
+  /** Number of leading segments shared by two paths */
+  const commonPrefixLen = (a: string[], b: string[]): number => {
+    const n = Math.min(a.length, b.length)
+    let i = 0
+    while (i < n && a[i] === b[i]) i++
+    return i
+  }
+
+  // Warn only once per document for an ambiguous basename (avoids 238 links × N warnings)
+  const warnedAmbiguous = new Set<string>()
+
+  /**
+   * Picks one of the candidates sharing the same filename.
+   * Priority: (1) same folder as the link source → (2) longest common path prefix
+   *          → (3) shallowest folder depth → (4) lexicographic path order (deterministic)
+   */
+  function resolveFilename(name: string, fromDoc: AnyDocument, linkDirSegs?: string[]): string | undefined {
+    const candidates = filenameToDocs.get(name)
+    if (!candidates || candidates.length === 0) return undefined
+    if (candidates.length === 1) return candidates[0].id
+
+    const fromSegs = segsOf((fromDoc as LoadedDocument).folderPath)
+    let best = candidates[0]
+    let bestScore = -1
+    for (const c of candidates) {
+      const cSegs = segsOf((c as LoadedDocument).folderPath)
+      const same = cSegs.length === fromSegs.length && commonPrefixLen(cSegs, fromSegs) === cSegs.length
+      // [[Folder/Note]] form — top priority when the folder given in the link is a suffix of the candidate path
+      const dirMatch = linkDirSegs?.length
+        ? cSegs.slice(-linkDirSegs.length).join('/') === linkDirSegs.join('/')
+        : false
+      // Explicit folder match (5000) > same folder (1000) > common prefix length > shallower depth
+      const score = (dirMatch ? 5000 : 0) + (same ? 1000 : 0)
+        + commonPrefixLen(cSegs, fromSegs) * 10 - cSegs.length
+      if (score > bestScore || (score === bestScore &&
+        `${(c as LoadedDocument).folderPath}/${c.filename}` < `${(best as LoadedDocument).folderPath}/${best.filename}`)) {
+        bestScore = score
+        best = c
+      }
+    }
+
+    // Not a same-folder match means genuinely ambiguous — warn once per link source
+    if (bestScore < 1000) {
+      const warnKey = `${fromDoc.id}|${name}`
+      if (!warnedAmbiguous.has(warnKey)) {
+        warnedAmbiguous.add(warnKey)
+        const paths = candidates.map(c => `${(c as LoadedDocument).folderPath || '(root)'}/${c.filename}`)
+        logger.warn(
+          `[graphBuilder] Ambiguous wikilink [[${name}]] (from: ${fromDoc.filename}) — ${candidates.length} candidates: ${paths.join(', ')} → picked "${(best as LoadedDocument).folderPath || '(root)'}/${best.filename}"`,
+        )
+      }
+    }
+    return best.id
+  }
+
+  // linkCounts: reference counts before normalization (per bidirectional pair)
   const linkCounts = new Map<string, number>()
   const phantomNodes = new Map<string, GraphNode>() // id → node
 
@@ -98,14 +163,17 @@ export function buildGraphLinks(
         }
 
         // Strategy 3: filename match (Obsidian [[note name]] style)
+        // If the same filename exists in multiple folders, resolve by same folder → path similarity
         if (!targetDocId) {
-          targetDocId = filenameToDocId.get(target.toLowerCase())
+          targetDocId = resolveFilename(target.toLowerCase(), doc)
         }
 
         // Strategy 3b: subpath wiki link [[Folder/Note]] or [[Folder\Note]] → try basename only
         if (!targetDocId && (target.includes('/') || target.includes('\\'))) {
-          const basename = target.split(/[/\\]/).pop()?.trim() ?? ''
-          if (basename) targetDocId = filenameToDocId.get(basename.toLowerCase())
+          const parts = target.split(/[/\\]/).map(p => p.trim()).filter(Boolean)
+          const basename = parts.pop() ?? ''
+          const dirSegs = parts.map(p => p.toLowerCase())
+          if (basename) targetDocId = resolveFilename(basename.toLowerCase(), doc, dirSegs)
         }
 
         // Strategy 4: create phantom node for unresolved wiki links
@@ -132,8 +200,11 @@ export function buildGraphLinks(
     }
   }
 
-  // Normalize strength by max reference count: [0.15, 1.0] range
-  const maxCount = Math.max(1, ...linkCounts.values())
+  // Normalize strength by the max reference count: range [0.15, 1.0]
+  // Uses a loop — Math.max(...spread) throws RangeError past V8's argument limit (~65k),
+  // and the caller's catch swallows it, leaving the graph silently empty (currently 26,622 unique link pairs).
+  let maxCount = 1
+  for (const c of linkCounts.values()) { if (c > maxCount) maxCount = c }
   const links: GraphLink[] = []
   for (const [key, count] of linkCounts) {
     const [srcId, tgtId] = key.split('→')
@@ -148,8 +219,8 @@ export function buildGraphLinks(
 
 /**
  * Create image gallery nodes from ![[image.png]] refs found in LoadedDocument.imageRefs.
- * - One gallery node per document (even if there are multiple images)
- * - Clicking a gallery node shows all images from that document in a gallery view
+ * - One gallery node per document (a single node even when there are multiple images)
+ * - Clicking a gallery node shows all of the document's images as a gallery
  * - ID format: `gallery:{doc.id}` (e.g. "gallery:my-note.md")
  */
 function buildImageNodes(
@@ -164,7 +235,7 @@ function buildImageNodes(
 
     const galleryId = `gallery:${doc.id}`
     const count = refs.length
-    // Label: filename for a single image, "filename + N more" for multiple
+    // Label: filename for a single image, "filename +N" for multiple
     const firstName = (refs[0].split(/[/\\]/).pop() ?? refs[0]).replace(/\.[^.]+$/, '')
     const label = count === 1
       ? truncate(firstName, 36)

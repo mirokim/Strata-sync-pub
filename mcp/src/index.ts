@@ -34,6 +34,14 @@ async function main() {
   }
 }
 
+// ── Crash protection: keep unhandled rejections/exceptions from killing the process ──
+process.on('uncaughtException', (err) => {
+  console.error('[strata-sync] uncaughtException:', err)
+})
+process.on('unhandledRejection', (reason) => {
+  console.error('[strata-sync] unhandledRejection:', reason)
+})
+
 main().catch((e) => {
   console.error('[strata-sync] fatal:', e)
   process.exit(1)

@@ -13,8 +13,8 @@ from docx.oxml.ns import qn
 from docx.oxml  import OxmlElement
 from lxml import etree
 
-SRC  = Path("c:/dev2/Strata_Sync/manual/Graph RAG 데이터 정제 매뉴얼 v3.21.docx")
-DEST = Path("c:/dev2/Strata_Sync/manual/Graph RAG 데이터 정제 매뉴얼 v3.22.docx")
+SRC  = Path("C:/Dev/Strata-sync/manual/Graph RAG 데이터 정제 매뉴얼 v3.21.docx")
+DEST = Path("C:/Dev/Strata-sync/manual/Graph RAG 데이터 정제 매뉴얼 v3.22.docx")
 
 # ── 헬퍼 ────────────────────────────────────────────────────────────────────
 

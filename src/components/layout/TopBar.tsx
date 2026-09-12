@@ -1,4 +1,4 @@
-import { Monitor, Settings, Terminal, PanelLeft, PanelRight, Type, Bot, Pencil } from 'lucide-react'
+import { Monitor, Settings, Terminal, PanelLeft, PanelRight, Type, Bot, Pencil, ScrollText } from 'lucide-react'
 import { useUIStore } from '@/stores/uiStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useBotStore } from '@/stores/botStore'
@@ -19,9 +19,9 @@ function ConnectionBadge() {
     <span
       style={{
         fontSize: 9, fontWeight: 700, letterSpacing: '0.07em',
-        color: isApi ? '#34d399' : '#60a5fa',
-        background: isApi ? 'rgba(52,211,153,0.1)' : 'rgba(96,165,250,0.1)',
-        border: `1px solid ${isApi ? 'rgba(52,211,153,0.25)' : 'rgba(96,165,250,0.25)'}`,
+        color: isApi ? 'var(--color-success)' : 'var(--color-info)',
+        background: isApi ? 'var(--color-success-bg)' : 'var(--color-info-bg)',
+        border: `1px solid ${isApi ? 'var(--color-success-border)' : 'var(--color-info-border)'}`,
         borderRadius: 3, padding: '1px 5px',
         cursor: 'default',
       }}
@@ -48,9 +48,9 @@ const MODEL_SHORT: Record<string, string> = Object.fromEntries(
 
 export default function TopBar() {
   const {
-    graphMode,
+    graphMode, centerTab,
     leftPanelCollapsed, rightPanelCollapsed,
-    setGraphMode,
+    setGraphMode, setCenterTab,
     toggleLeftPanel, toggleRightPanel,
     editAgentPanelVisible, toggleEditAgentPanel,
     toggleSettingsPanel,
@@ -90,8 +90,8 @@ export default function TopBar() {
         </span>
         <span style={{
           fontSize: 9, fontWeight: 600, letterSpacing: '0.04em',
-          color: 'var(--color-accent)', background: 'rgba(82,156,202,0.12)',
-          border: '1px solid rgba(82,156,202,0.3)',
+          color: 'var(--color-accent)', background: 'var(--color-accent-bg)',
+          border: '1px solid var(--color-accent-border-md)',
           borderRadius: 3, padding: '1px 5px',
           lineHeight: 1.4,
         }}>
@@ -184,8 +184,8 @@ export default function TopBar() {
             onClick={() => botRunning ? stopBot() : startBot()}
             className={cn('flex items-center gap-1 px-2 h-7 rounded transition-colors', 'hover:bg-[var(--color-bg-hover)]')}
             style={{
-              border: `1px solid ${botRunning ? 'rgba(96,165,250,0.35)' : 'transparent'}`,
-              background: botRunning ? 'rgba(96,165,250,0.08)' : 'transparent',
+              border: `1px solid ${botRunning ? 'var(--color-info-border)' : 'transparent'}`,
+              background: botRunning ? 'var(--color-info-bg)' : 'transparent',
               color: botRunning ? 'var(--color-accent)' : 'var(--color-text-muted)',
             }}
             title={botRunning ? 'Stop Slack bot' : 'Start Slack bot'}
@@ -197,6 +197,19 @@ export default function TopBar() {
               boxShadow: botRunning ? '0 0 4px var(--color-accent)' : 'none',
             }} />
             <Bot size={12} />
+          </button>
+        )}
+
+        {/* Slack log viewer */}
+        {isElectron && slackConfigured && (
+          <button
+            onClick={() => setCenterTab(centerTab === 'slack-logs' ? 'graph' : 'slack-logs')}
+            className={cn('flex items-center justify-center w-7 h-7 rounded transition-colors', 'hover:bg-[var(--color-bg-hover)]')}
+            style={{ color: centerTab === 'slack-logs' ? 'var(--color-accent)' : 'var(--color-text-muted)' }}
+            title="Slack logs"
+            aria-label="Slack logs"
+          >
+            <ScrollText size={13} />
           </button>
         )}
 

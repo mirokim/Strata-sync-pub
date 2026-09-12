@@ -6,6 +6,7 @@ export async function streamCompletion(
   messages: { role: string; content: string }[],
   onChunk: (text: string) => void,
   onUsage?: (inp: number, out: number) => void,
+  onStop?: (reason: string | null) => void,
 ): Promise<void> {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -28,6 +29,8 @@ export async function streamCompletion(
   const decoder = new TextDecoder()
   let buf = ''
   let inputTokens = 0, outputTokens = 0
+  // The caller must know if output was truncated by max_tokens — truncated output must not overwrite the original
+  let stopReason: string | null = null
 
   while (true) {
     const { done, value } = await reader.read()
@@ -45,8 +48,11 @@ export async function streamCompletion(
         if (evt.type === 'content_block_delta' && evt.delta?.text) onChunk(evt.delta.text)
         if (evt.type === 'message_start' && evt.message?.usage) inputTokens = evt.message.usage.input_tokens ?? 0
         if (evt.type === 'message_delta' && evt.usage) outputTokens = evt.usage.output_tokens ?? 0
+        if (evt.type === 'message_delta' && evt.delta?.stop_reason) stopReason = evt.delta.stop_reason as string
+        if (evt.type === 'message_start' && evt.message?.stop_reason) stopReason = evt.message.stop_reason as string
       } catch {}
     }
   }
   if (onUsage && (inputTokens > 0 || outputTokens > 0)) onUsage(inputTokens, outputTokens)
+  onStop?.(stopReason)
 }

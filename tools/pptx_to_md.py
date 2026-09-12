@@ -22,7 +22,7 @@ try:
     from pptx.enum.shapes import MSO_SHAPE_TYPE
     import pptx.oxml.ns as ns
 except ImportError:
-    print("ERROR: python-pptx 미설치. pip install python-pptx --break-system-packages")
+    print("ERROR: python-pptx not installed. pip install python-pptx --break-system-packages")
     sys.exit(1)
 
 
@@ -54,14 +54,14 @@ def shape_to_text(shape) -> str:
     """Extract text from Shape."""
     parts = []
 
-    # 텍스트프레임
+    # Text frame
     if shape.has_text_frame:
         for para in shape.text_frame.paragraphs:
             line = ''.join(run.text for run in para.runs).strip()
             if line:
                 parts.append(line)
 
-    # 테이블
+    # Table
     if shape.shape_type == MSO_SHAPE_TYPE.TABLE:
         table = shape.table
         rows = []
@@ -87,7 +87,7 @@ def extract_slide_images(slide, stem: str, slide_num: int, attachments_dir: Path
             img_counter += 1
             try:
                 image = shape.image
-                ext = image.ext  # 'png', 'jpg' 등
+                ext = image.ext  # 'png', 'jpg', etc.
                 filename = f"{stem}_p{slide_num}_{img_counter}.{ext}"
                 dst = attachments_dir / filename
                 dst.write_bytes(image.blob)
@@ -187,10 +187,10 @@ origin: pptx
 
 
 def main():
-    parser = argparse.ArgumentParser(description='PPTX → Obsidian MD 변환 (§4.3)')
-    parser.add_argument('input', nargs='+', help='PPTX 파일 또는 폴더')
-    parser.add_argument('--active', default='refined_vault/active', help='MD 출력 폴더')
-    parser.add_argument('--attachments', default='refined_vault/attachments', help='이미지 출력 폴더')
+    parser = argparse.ArgumentParser(description='PPTX → Obsidian MD conversion (§4.3)')
+    parser.add_argument('input', nargs='+', help='PPTX file(s) or folder')
+    parser.add_argument('--active', default='refined_vault/active', help='MD output folder')
+    parser.add_argument('--attachments', default='refined_vault/attachments', help='Image output folder')
     args = parser.parse_args()
 
     active_dir = Path(args.active)
@@ -206,19 +206,19 @@ def main():
         elif p.suffix.lower() == '.pptx':
             pptx_files.append(p)
 
-    print(f"PPTX {len(pptx_files)}개 변환 starting...")
+    print(f"Converting {len(pptx_files)} PPTX files, starting...")
 
     ok, errors = 0, 0
     for pptx_path in pptx_files:
         r = pptx_to_md(pptx_path, active_dir, attachments_dir)
         if r['status'] == 'ok':
             ok += 1
-            print(f"  ✓ {pptx_path.name} ({r.get('slides',0)} 슬라이드, {r.get('images',0)} 이미지)")
+            print(f"  ✓ {pptx_path.name} ({r.get('slides',0)} slides, {r.get('images',0)} images)")
         else:
             errors += 1
             print(f"  ✗ {pptx_path.name} — {r.get('msg','')}")
 
-    print(f"\nComplete: 성공 {ok}개, 오류 {errors}개")
+    print(f"\nComplete: {ok} succeeded, {errors} errors")
 
 
 if __name__ == '__main__':

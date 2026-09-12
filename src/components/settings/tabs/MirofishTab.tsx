@@ -301,10 +301,10 @@ export default function MirofishTab() {
             style={{
               display: 'flex', alignItems: 'center', gap: 5,
               padding: '6px 14px', borderRadius: 2, fontSize: 12, fontWeight: 500,
-              border: isRunning ? '1px solid #ef444450' : 'none',
+              border: isRunning ? '1px solid var(--color-error-border)' : 'none',
               cursor: (!isRunning && !canStart) ? 'not-allowed' : 'pointer',
-              background: isRunning ? '#ef444415' : 'var(--color-accent)',
-              color: isRunning ? '#ef4444' : '#fff',
+              background: isRunning ? 'var(--color-error-bg)' : 'var(--color-accent)',
+              color: isRunning ? 'var(--color-error)' : '#fff',
               opacity: (!isRunning && !canStart) ? 0.4 : 1,
               flexShrink: 0, whiteSpace: 'nowrap',
             }}

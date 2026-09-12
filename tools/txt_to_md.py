@@ -20,14 +20,14 @@ from pathlib import Path
 from datetime import datetime
 
 
-# ── Date patterns 감지 ────────────────────────────────────────────────
+# ── Date pattern detection ───────────────────────────────────────────
 DATE_PATTERNS = [
     (re.compile(r'(\d{4})-(\d{2})-(\d{2})'), '{}-{}-{}'),
     (re.compile(r'(\d{4})(\d{2})(\d{2})'),   '{}-{}-{}'),
     (re.compile(r'(\d{4})\.(\d{2})\.(\d{2})'), '{}-{}-{}'),
 ]
 
-STUB_CHAR_LIMIT = 50  # §3.1.1 스텁 기준
+STUB_CHAR_LIMIT = 50  # §3.1.1 stub threshold
 
 
 def detect_date_from_stem(stem: str) -> str:
@@ -116,7 +116,7 @@ def convert_txt_to_md(txt_path: Path, out_dir: Path,
     if raw.startswith('---'):
         result['skipped'] = True
         if verbose:
-            print(f"  Skipped (frontmatter 있음): {txt_path.name}")
+            print(f"  Skipped (has frontmatter): {txt_path.name}")
         return result
 
     fm      = build_frontmatter(txt_path.stem)
@@ -134,14 +134,14 @@ def convert_txt_to_md(txt_path: Path, out_dir: Path,
         out_path.write_text(content, encoding='utf-8')
 
     if verbose:
-        stub_tag = '  ⚠️ 스텁(50자 미만)' if result['stub'] else ''
-        print(f"  {'[DRY]' if dry_run else '변환'}: {txt_path.name} → {out_path.name}{stub_tag}")
+        stub_tag = '  ⚠️ stub (under 50 chars)' if result['stub'] else ''
+        print(f"  {'[DRY]' if dry_run else 'Converted'}: {txt_path.name} → {out_path.name}{stub_tag}")
 
     return result
 
 
 def main():
-    parser = argparse.ArgumentParser(description='§4.6 TXT → Markdown 변환')
+    parser = argparse.ArgumentParser(description='§4.6 TXT → Markdown conversion')
     parser.add_argument('input',      help='TXT file or folder containing TXT files')
     parser.add_argument('output_dir', help='Output folder (e.g. active/)')
     parser.add_argument('--dry-run',  action='store_true', help='Preview without creating files')
@@ -151,7 +151,7 @@ def main():
     input_path = Path(args.input)
     out_dir    = Path(args.output_dir)
 
-    # 단일 파일 vs 디렉터리
+    # Single file vs. directory
     if input_path.is_file():
         txt_files = [input_path]
     elif input_path.is_dir():
@@ -173,11 +173,11 @@ def main():
     print(f"\n{'='*50}")
     print(f"§4.6 txt_to_md Complete{'  [DRY-RUN]' if args.dry_run else ''}")
     print(f"{'='*50}")
-    print(f"  Target TXTs:  {total}개")
-    print(f"  Skipped:    {skipped}개 (frontmatter 이미 있음)")
-    print(f"  변환 Complete: {converted}개")
+    print(f"  Target TXTs:  {total}")
+    print(f"  Skipped:    {skipped} (frontmatter already present)")
+    print(f"  Converted:  {converted}")
     if stubs:
-        print(f"  ⚠️ 스텁(50자 미만): {stubs}개 → scan_cleanup.py --fix 대상")
+        print(f"  ⚠️ Stubs (under 50 chars): {stubs} → candidates for scan_cleanup.py --fix")
 
 
 if __name__ == '__main__':

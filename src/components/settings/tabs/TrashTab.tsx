@@ -78,7 +78,7 @@ export default function TrashTab() {
       </div>
 
       {error && (
-        <div className="text-[10px] px-3 py-2 rounded" style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}>
+        <div className="text-[10px] px-3 py-2 rounded" style={{ background: 'var(--color-error-bg)', color: 'var(--color-error)', border: '1px solid var(--color-error-border)' }}>
           {error}
         </div>
       )}

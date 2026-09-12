@@ -37,10 +37,26 @@ _CHECKPOINT_DIR = RAG_CHECKPOINTS_DIR
 _CHECKPOINT_TTL_SECS = 86400  # 24-hour TTL (supports resuming long simulations)
 _CHECKPOINT_MAX_MB = 10        # LRU cleanup threshold
 
+# Overall sub-agent wait cap (a total deadline, not per-thread)
+_SUB_AGENT_TIMEOUT = 35.0
+
+# Prevent concurrent save / _clear_stale_checkpoints access (avoids a race where LRU deletion hits a tmp file mid-rename)
+_CHECKPOINT_LOCK = threading.Lock()
+
 
 def _make_checkpoint_key(query: str, stems: list[str]) -> str:
     key = query + "|" + ",".join(sorted(stems))
     return hashlib.md5(key.encode()).hexdigest()[:12]
+
+
+def _doc_key(doc: RagResult) -> str:
+    """Document identifier for checkpoint matching.
+
+    The checkpoint key (_make_checkpoint_key) sorts stems and is order-independent,
+    but matching the payload by positional index attaches cached analyses to the
+    wrong documents when the order changes (e.g. hotness re-ranking). Use the doc id (stem).
+    """
+    return str(doc.get("stem") or doc.get("title") or "")
 
 
 def _load_checkpoint(key: str) -> list[dict]:
@@ -61,43 +77,52 @@ def _save_checkpoint(key: str, analyses: list[dict]) -> None:
     try:
         os.makedirs(_CHECKPOINT_DIR, exist_ok=True)
         path = os.path.join(_CHECKPOINT_DIR, f"{key}.json")
-        # Exclude doc body from save (size savings) — only save idx/score/summary/key_points
+        tmp_path = path + ".tmp"
+        # Exclude doc body from save (size savings) — only save identifier/score/summary/key_points.
+        # Saving by doc_key (document id) keeps restores attached to the right document even if the order changes.
         slim = [
-            {"idx": a["idx"], "score": a["score"],
+            {"doc_key": _doc_key(a.get("doc") or {}), "idx": a["idx"], "score": a["score"],
              "summary": a["summary"], "key_points": a["key_points"]}
             for a in analyses
         ]
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(slim, f, ensure_ascii=False)
+        # write → rename atomic save, sharing the Lock with LRU cleanup
+        with _CHECKPOINT_LOCK:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(slim, f, ensure_ascii=False)
+            os.replace(tmp_path, path)
     except OSError as e:
         logger.error("Checkpoint save failed (key=%s): %s", key, e)
 
 
 def _clear_stale_checkpoints() -> None:
-    """Delete files exceeding TTL + LRU cleanup when directory exceeds size limit."""
+    """Delete files exceeding TTL + LRU cleanup when directory exceeds size limit.
+
+    Guarded by the same Lock as _save_checkpoint — protects the tmp file's mid-rename state.
+    """
     try:
         if not os.path.isdir(_CHECKPOINT_DIR):
             return
-        files = sorted(
-            Path(_CHECKPOINT_DIR).glob("*.json"),
-            key=lambda f: f.stat().st_mtime,
-        )
-        now = time.time()
-        # 1) Delete TTL-expired files
-        surviving = []
-        for f in files:
-            if now - f.stat().st_mtime > _CHECKPOINT_TTL_SECS:
+        with _CHECKPOINT_LOCK:
+            files = sorted(
+                Path(_CHECKPOINT_DIR).glob("*.json"),
+                key=lambda f: f.stat().st_mtime,
+            )
+            now = time.time()
+            # 1) Delete TTL-expired files
+            surviving = []
+            for f in files:
+                if now - f.stat().st_mtime > _CHECKPOINT_TTL_SECS:
+                    f.unlink()
+                else:
+                    surviving.append(f)
+            # 2) LRU delete oldest first when over size limit
+            limit = _CHECKPOINT_MAX_MB * 1024 * 1024
+            total = sum(f.stat().st_size for f in surviving)
+            for f in surviving:
+                if total <= limit:
+                    break
+                total -= f.stat().st_size
                 f.unlink()
-            else:
-                surviving.append(f)
-        # 2) LRU delete oldest first when over size limit
-        limit = _CHECKPOINT_MAX_MB * 1024 * 1024
-        total = sum(f.stat().st_size for f in surviving)
-        for f in surviving:
-            if total <= limit:
-                break
-            total -= f.stat().st_size
-            f.unlink()
     except OSError as e:
         logger.warning("Checkpoint cleanup failed: %s", e)
 
@@ -105,8 +130,7 @@ def _clear_stale_checkpoints() -> None:
 _SUB_AGENT_SYSTEM = "Game development document relevance evaluation expert. Output JSON only."
 
 _MAIN_REVIEW_SYSTEM = (
-    "Game development knowledge analyst. Synthesize document analysis results to construct "
-    "key insights and context needed for the question. "
+    "Game development knowledge analyst. Synthesize document analysis results to construct key insights and context needed for the question. "
     "Actively derive connections, patterns, and important facts across documents."
 )
 
@@ -196,7 +220,7 @@ def run_sub_agents(
     client: ClaudeClient,
     query: str,
     docs: list[RagResult],
-    n_agents: int = 10,
+    n_agents: int = 6,
     log_fn: Callable[[str], None] | None = None,
 ) -> list[SubAgentResult]:
     """
@@ -208,19 +232,21 @@ def run_sub_agents(
     stems = [d.get("stem", "") for d in target]
     ck_key = _make_checkpoint_key(query, stems)
 
-    # Restore checkpoint — load already-analyzed document indices
+    # Restore checkpoint — keyed by document id (positional index is fragile under re-ranking)
     cached = _load_checkpoint(ck_key)
-    cached_by_idx = {c["idx"]: c for c in cached}
-    if cached_by_idx and log_fn:
-        log_fn(f"[Sub-agent] Checkpoint restored: skipping {len(cached_by_idx)}/{len(target)}")
+    cached_by_key = {c["doc_key"]: c for c in cached if c.get("doc_key")}
+    if cached_by_key and log_fn:
+        log_fn(f"[Sub-agent] Checkpoint restored: skipping {len(cached_by_key)}/{len(target)}")
 
     results: list[dict] = []
     lock = threading.Lock()
-    threads = []
+    threads: list[tuple[threading.Thread, int, RagResult]] = []
 
     for i, doc in enumerate(target):
-        if i in cached_by_idx:
-            entry = dict(cached_by_idx[i])
+        hit = cached_by_key.get(_doc_key(doc))
+        if hit:
+            entry = dict(hit)
+            entry["idx"] = i
             entry["doc"] = doc
             with lock:
                 results.append(entry)
@@ -230,24 +256,56 @@ def run_sub_agents(
             args=(client, query, doc, i, results, lock, log_fn),
             daemon=True,
         )
-        threads.append(t)
+        threads.append((t, i, doc))
         t.start()
 
-    for t in threads:
-        t.join(timeout=35)
+    # Giving each thread a fresh 35s multiplies the total wait by the thread count → use one overall deadline
+    deadline = time.time() + _SUB_AGENT_TIMEOUT
+    for t, _i, _doc in threads:
+        t.join(timeout=max(deadline - time.time(), 0.0))
 
-    _save_checkpoint(ck_key, results)
+    # Snapshot under the lock — sorting while a thread that missed the deadline
+    # is still appending late would corrupt the list
+    with lock:
+        collected = list(results)
+
+    # Only keep actually analyzed results in the checkpoint (caching timeout fallbacks
+    # would restore the same low-quality summaries on the next run)
+    _save_checkpoint(ck_key, collected)
     _clear_stale_checkpoints()
 
-    results.sort(key=lambda x: -x["score"])
-    return results
+    # Fill documents with no result due to timeout using a search-score fallback (prevents loss)
+    done_keys = {_doc_key(a.get("doc") or {}) for a in collected}
+    timed_out = 0
+    for t, i, doc in threads:
+        if not t.is_alive():
+            continue
+        if _doc_key(doc) in done_keys:
+            continue
+        timed_out += 1
+        raw_score = doc.get("score", 0)
+        body = doc.get("body", "")
+        collected.append({
+            "idx": i,
+            "doc": doc,
+            "score": min(float(raw_score) * 0.8, 7.0) if raw_score else 0.0,
+            "summary": body[:150] + ("…" if len(body) > 150 else ""),
+            "key_points": [],
+        })
+    if timed_out:
+        logger.warning("[Sub-agent] %d timed out → score-based fallback", timed_out)
+        if log_fn:
+            log_fn(f"[Sub-agent] {timed_out} timed out → using search-score fallback")
+
+    collected.sort(key=lambda x: -x["score"])
+    return collected
 
 
 def build_multi_agent_context(
     client: ClaudeClient,
     query: str,
     docs: list[RagResult],
-    n_agents: int = 10,
+    n_agents: int = 6,
     max_chars: int = 10000,
     log_fn: Callable[[str], None] | None = None,
 ) -> str:

@@ -1,0 +1,68 @@
+{
+  "vaultPath": "C:/path/to/your/vault",
+  "apiKeys": {
+    "anthropic": "YOUR_API_KEY_HERE",
+    "openai": "YOUR_API_KEY_HERE",
+    "gemini": "YOUR_API_KEY_HERE",
+    "grok": "YOUR_API_KEY_HERE"
+  },
+  "personaModels": {
+    "chief_director": "claude-sonnet-4-6",
+    "art_director": "claude-sonnet-4-6",
+    "plan_director": "claude-sonnet-4-6",
+    "level_director": "claude-sonnet-4-6",
+    "prog_director": "claude-sonnet-4-6"
+  },
+  "projectInfo": {
+    "name": "",
+    "engine": "",
+    "genre": "",
+    "platform": "",
+    "description": "",
+    "rawProjectInfo": "",
+    "currentSituation": ""
+  },
+  "editAgent": {
+    "modelId": "claude-sonnet-4-6",
+    "refinementManual": ""
+  },
+  "confluence": {
+    "baseUrl": "https://your-confluence.example.com",
+    "authType": "server_basic",
+    "email": "your-email@example.com",
+    "apiToken": "YOUR_TOKEN_HERE",
+    "spaceKey": "YOUR_SPACE_KEY",
+    "targetFolder": "your-target-folder",
+    "dateFrom": "2026-01-01",
+    "bypassSSL": true
+  },
+  "jira": {
+    "baseUrl": "https://your-jira.example.com/",
+    "email": "your-email@example.com",
+    "apiToken": "YOUR_TOKEN_HERE",
+    "projectKey": "YOUR_PROJECT_KEY",
+    "authType": "server_basic",
+    "bypassSSL": false,
+    "targetFolder": "jira",
+    "boardId": 0,
+    "jql": ""
+  },
+  "slackBot": {
+    "botToken": "YOUR_TOKEN_HERE",
+    "appToken": "YOUR_TOKEN_HERE",
+    "signingSecret": "YOUR_TOKEN_HERE",
+    "model": "claude-sonnet-4-6"
+  },
+  "searchConfig": {
+    "filenameWeight": 10,
+    "bodyWeight": 1,
+    "bm25Candidates": 8,
+    "bfsMaxHops": 3,
+    "bfsMaxDocs": 20,
+    "fullVaultThreshold": 60000
+  },
+  "responseInstructions": "",
+  "ragInstruction": "",
+  "sensitiveKeywords": "",
+  "teamMembers": []
+}

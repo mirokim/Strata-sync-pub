@@ -75,6 +75,8 @@ export default function Graph3D({ width, height }: Props) {
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const renderBudgetRef = useRef(0)
+  const prevNodeCountRef = useRef(0)
+  const prevLinkCountRef = useRef(0)
 
   const draggingNodeIdRef = useRef<string | null>(null)
   const draggingSimNodeRef = useRef<SimNode3D | null>(null)  // cached ref avoids O(n) find per drag frame
@@ -539,8 +541,10 @@ export default function Graph3D({ width, height }: Props) {
         renderBudgetRef.current--
       }
       // Always track previous AI highlight set — must be outside renderBudget guard
-      // so delta comparisons stay accurate even when rendering is paused
-      prevAiHighlightRef.current = aiSet
+      // so delta comparisons stay accurate even when rendering is paused.
+      // Clear old reference first so GC can collect the previous Set immediately.
+      prevAiHighlightRef.current = null as unknown as Set<string>
+      prevAiHighlightRef.current = new Set(aiSet)
     }
     animate()
     setGraphLayoutReady(true)
@@ -627,8 +631,10 @@ export default function Graph3D({ width, height }: Props) {
       octaInstancedRef.current = null
       instancedMeshArrayRef.current = []
     }
+    prevNodeCountRef.current = nodes.length
+    prevLinkCountRef.current = links.length
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, links, setGraphLayoutReady])
+  }, [nodes.length, links.length, setGraphLayoutReady])
 
   // ── Focus node: animate camera to target node position ────────────────────
   useEffect(() => {
@@ -645,6 +651,7 @@ export default function Graph3D({ width, height }: Props) {
     const toTarget = new THREE.Vector3(x, y, z)
     const toPos = toTarget.clone().add(new THREE.Vector3(0, 0, 120))
 
+    let rafId: number | null = null
     let t = 0
     const step = () => {
       t = Math.min(t + 0.05, 1)
@@ -653,10 +660,14 @@ export default function Graph3D({ width, height }: Props) {
       controls.target.lerp(toTarget, ease)
       controls.update()
       renderBudgetRef.current = Math.max(renderBudgetRef.current, 2)
-      if (t < 1) requestAnimationFrame(step)
+      if (t < 1) rafId = requestAnimationFrame(step)
+      else rafId = null
     }
-    requestAnimationFrame(step)
+    rafId = requestAnimationFrame(step)
     setFocusNode(null)
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId)
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusNodeId])
 
@@ -1182,6 +1193,21 @@ export default function Graph3D({ width, height }: Props) {
       }}
       data-testid="graph-3d"
     >
+      <div
+        role="img"
+        aria-label={`Knowledge graph: ${nodes.length} nodes, ${links.length} links`}
+        style={{
+          position: 'absolute',
+          width: 1,
+          height: 1,
+          padding: 0,
+          margin: -1,
+          overflow: 'hidden',
+          clip: 'rect(0,0,0,0)',
+          whiteSpace: 'nowrap',
+          borderWidth: 0,
+        }}
+      />
       {tooltip && <NodeTooltip nodeId={tooltip.nodeId} x={tooltip.x} y={tooltip.y} />}
     </div>
   )

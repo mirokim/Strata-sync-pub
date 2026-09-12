@@ -1,5 +1,27 @@
 import { RotateCcw } from 'lucide-react'
-import { useSettingsStore, DEFAULT_SEARCH_CONFIG, type SearchConfig } from '@/stores/settingsStore'
+import { useSettingsStore, DEFAULT_SEARCH_CONFIG, DEFAULT_REASONING_CONFIG, type SearchConfig, type ReasoningConfig } from '@/stores/settingsStore'
+
+// ── Toggle row ──────────────────────────────────────────────────────────────────
+
+function ToggleRow({ label, desc, checked, onChange }: {
+  label: string; desc: string; checked: boolean; onChange: (v: boolean) => void
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-2"
+      style={{ borderBottom: '1px solid var(--color-border)' }}>
+      <div className="flex-1 min-w-0">
+        <div className="text-[13px]" style={{ color: 'var(--color-text-primary)' }}>{label}</div>
+        <p className="text-[11px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{desc}</p>
+      </div>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={e => onChange(e.target.checked)}
+        style={{ width: 16, height: 16, cursor: 'pointer', flexShrink: 0 }}
+      />
+    </div>
+  )
+}
 
 // Number input row
 
@@ -72,12 +94,40 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 // Component
 
-export default function SearchTab() {
-  const { searchConfig, setSearchConfig, resetSearchConfig } = useSettingsStore()
-  const sc = searchConfig
-  const set = (f: keyof SearchConfig, v: number) => setSearchConfig({ [f]: v })
+// ── NumRow for ReasoningConfig ─────────────────────────────────────────────────
 
-  const isDefault = JSON.stringify(sc) === JSON.stringify(DEFAULT_SEARCH_CONFIG)
+function ReasoningNumRow({ label, desc, value, min, max, step, onChange }: {
+  label: string; desc: string; value: number; min: number; max: number; step: number
+  onChange: (v: number) => void
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-2"
+      style={{ borderBottom: '1px solid var(--color-border)' }}>
+      <div className="flex-1 min-w-0">
+        <div className="text-[13px]" style={{ color: 'var(--color-text-primary)' }}>{label}</div>
+        <p className="text-[11px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{desc}</p>
+      </div>
+      <input
+        type="number" min={min} max={max} step={step} value={value}
+        onChange={e => { const v = parseInt(e.target.value, 10); if (!isNaN(v) && v >= min && v <= max) onChange(v) }}
+        className="w-24 text-right text-[13px] px-2 py-1 rounded"
+        style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)', outline: 'none' }}
+      />
+    </div>
+  )
+}
+
+export default function SearchTab() {
+  const { searchConfig, setSearchConfig, resetSearchConfig, reasoningConfig, setReasoningConfig } = useSettingsStore()
+  const sc = searchConfig
+  const rc = reasoningConfig
+  const set = (f: keyof SearchConfig, v: number) => setSearchConfig({ [f]: v })
+  const toggle = (f: keyof SearchConfig, v: boolean) => setSearchConfig({ [f]: v })
+  const rtoggle = (f: keyof ReasoningConfig, v: boolean) => setReasoningConfig({ [f]: v })
+
+  const isDefault = Object.keys(DEFAULT_SEARCH_CONFIG).every(
+    k => sc[k as keyof SearchConfig] === DEFAULT_SEARCH_CONFIG[k as keyof SearchConfig]
+  )
 
   return (
     <div className="flex flex-col gap-5">
@@ -171,6 +221,53 @@ export default function SearchTab() {
           min={0} max={300000} step={10000}
           value={sc.fullVaultThreshold}
           onChange={set}
+        />
+      </Section>
+
+      {/* AI reasoning settings */}
+      <Section title="AI Reasoning & Insights">
+        <ToggleRow
+          label="Structured Reasoning"
+          desc="Forces an [Observation]→[Connection]→[Analysis]→[Conclusion/Proposal] structure for analysis, design and decision questions. Skipped automatically for simple questions"
+          checked={rc.structuredReasoning ?? DEFAULT_REASONING_CONFIG.structuredReasoning}
+          onChange={v => rtoggle('structuredReasoning', v)}
+        />
+        <ToggleRow
+          label="Extended Thinking"
+          desc="Claude reasons internally before responding — greatly improves answer quality on complex design/analysis questions (Anthropic only, not supported on Haiku, slower responses)"
+          checked={rc.extendedThinking ?? DEFAULT_REASONING_CONFIG.extendedThinking}
+          onChange={v => rtoggle('extendedThinking', v)}
+        />
+        {(rc.extendedThinking ?? DEFAULT_REASONING_CONFIG.extendedThinking) && (
+          <ReasoningNumRow
+            label="Thinking Token Budget"
+            desc="Maximum tokens allocated to Extended Thinking (higher = deeper reasoning, higher cost)"
+            value={rc.thinkingBudget ?? DEFAULT_REASONING_CONFIG.thinkingBudget}
+            min={1000} max={32000} step={1000}
+            onChange={v => setReasoningConfig({ thinkingBudget: v })}
+          />
+        )}
+      </Section>
+
+      {/* AI search quality improvements */}
+      <Section title="Search Quality (AI-assisted)">
+        <ToggleRow
+          label="Metadata Filter"
+          desc="Auto-detects speakers/tags in the query and pre-filters to relevant documents — improves precision for person/topic searches"
+          checked={sc.metadataFilter ?? DEFAULT_SEARCH_CONFIG.metadataFilter}
+          onChange={v => toggle('metadataFilter', v)}
+        />
+        <ToggleRow
+          label="Query Expansion"
+          desc="Enriches vague or short queries with an LLM (Haiku) to improve vector search recall (requires Anthropic API key, adds ~5s)"
+          checked={sc.queryExpansion ?? DEFAULT_SEARCH_CONFIG.queryExpansion}
+          onChange={v => toggle('queryExpansion', v)}
+        />
+        <ToggleRow
+          label="LLM Reranking"
+          desc="Re-evaluates vector search candidates with an LLM (Haiku) so the most relevant documents rank first (requires Anthropic API key, adds ~8s)"
+          checked={sc.llmRerank ?? DEFAULT_SEARCH_CONFIG.llmRerank}
+          onChange={v => toggle('llmRerank', v)}
         />
       </Section>
 

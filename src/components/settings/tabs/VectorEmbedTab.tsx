@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Eye, EyeOff, RefreshCw, CheckCircle2, Loader2, AlertCircle, Trash2 } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settingsStore'
-import { vectorEmbedIndex } from '@/lib/vectorEmbedIndex'
-import { invalidateVectorEmbedCache } from '@/lib/vectorEmbedCache'
+import { vectorEmbedIndex, isEmbeddingReady, resetLocalEmbedProbe } from '@/lib/vectorEmbedIndex'
 import { useVaultStore } from '@/stores/vaultStore'
-import { buildFingerprint } from '@/lib/tfidfCache'
+import { invalidateVectorEmbedCache } from '@/lib/vectorEmbedCache'
 
 export default function VectorEmbedTab() {
   const { apiKeys, setApiKey } = useSettingsStore()
@@ -18,7 +17,7 @@ export default function VectorEmbedTab() {
     lastError: vectorEmbedIndex.lastError,
   })
 
-  // Status polling — 500ms while building, refreshes once after completion
+  // Status polling — every 500ms while building, plus one refresh after completion
   useEffect(() => {
     const tick = () => setStatus({
       isBuilt: vectorEmbedIndex.isBuilt,
@@ -33,21 +32,25 @@ export default function VectorEmbedTab() {
   }, [])
 
   const geminiKey = apiKeys['gemini'] ?? ''
-  const hasKey = Boolean(geminiKey)
+  // A running local embedding server allows building without a Gemini key
+  const [localReady, setLocalReady] = useState(false)
+  useEffect(() => {
+    let alive = true
+    isEmbeddingReady(geminiKey).then(ok => { if (alive) setLocalReady(ok) })
+    return () => { alive = false }
+  }, [geminiKey])
+  const hasKey = Boolean(geminiKey) || localReady
   const docCount = loadedDocuments?.length ?? 0
 
-  async function handleBuild() {
+  function handleBuild() {
     if (!hasKey || status.isBuilding || docCount === 0) return
-    const path = vaultPath ?? ''
-    const fingerprint = buildFingerprint(loadedDocuments ?? [])
-    await invalidateVectorEmbedCache(path)  // Delete cache then rebuild
-    vectorEmbedIndex.reset()
-    vectorEmbedIndex.buildInBackground(loadedDocuments ?? [], geminiKey, path, fingerprint)
-      .catch(() => { /* Errors are handled by the logger */ })
+    vectorEmbedIndex.buildFull(loadedDocuments ?? [], geminiKey, vaultPath ?? '')
+      .catch(() => { /* errors are handled by the logger */ })
   }
 
   async function handleReset() {
     if (status.isBuilding) return
+    resetLocalEmbedProbe()  // Re-check, the server may have been started later
     await invalidateVectorEmbedCache(vaultPath ?? '')
     vectorEmbedIndex.reset()
   }
@@ -58,27 +61,27 @@ export default function VectorEmbedTab() {
     : status.isBuilt
       ? <CheckCircle2 size={14} style={{ color: '#4caf50' }} />
       : hasError
-        ? <AlertCircle size={14} style={{ color: '#ef4444' }} />
+        ? <AlertCircle size={14} style={{ color: 'var(--color-error)' }} />
         : <AlertCircle size={14} style={{ color: 'var(--color-text-muted)' }} />
 
   const statusText = status.isBuilding
-    ? `Building... ${status.progress}%`
+    ? `Building… ${status.progress}%`
     : status.isBuilt
       ? `Ready — ${status.size} documents indexed`
       : hasError
         ? `Build failed`
-        : hasKey ? 'No index — auto-builds on vault load' : 'Gemini API key required'
+        : hasKey ? 'No index — builds automatically on vault load' : 'Gemini API key required'
 
   return (
     <div className="flex flex-col gap-5">
 
       <p className="text-[12px]" style={{ color: 'var(--color-text-muted)' }}>
-        Vectorizes documents using Google Gemini's <strong>gemini-embedding-001</strong> model.
-        Reranks BM25 keyword search results by semantic similarity to improve accuracy for abstract queries.
+        Vectorizes documents with Google Gemini's <strong>gemini-embedding-001</strong> model.
+        Reranks BM25 keyword search results by semantic similarity to improve accuracy on abstract queries.
         <span style={{ color: '#4caf50' }}> Free (within API quota)</span>
       </p>
 
-      {/* ── Status display ── */}
+      {/* ── Status ── */}
       <section>
         <h3 className="text-[13px] font-semibold mb-2" style={{ color: 'var(--color-text-secondary)' }}>
           Index Status
@@ -106,16 +109,16 @@ export default function VectorEmbedTab() {
           )}
         </div>
         {hasError && (
-          <p className="text-[11px] mt-1.5 px-1" style={{ color: '#ef4444' }}>
+          <p className="text-[11px] mt-1.5 px-1" style={{ color: 'var(--color-error)' }}>
             {status.lastError}
           </p>
         )}
         <p className="text-[11px] mt-1.5" style={{ color: 'var(--color-text-muted)' }}>
-          Automatically builds in the background when vault is loaded. If already built, instantly restores from IndexedDB cache.
+          Built incrementally on vault load. Only changed documents are re-embedded; the rest are restored from cache.
         </p>
       </section>
 
-      {/* ── Gemini API Key ── */}
+      {/* ── Gemini API key ── */}
       <section>
         <h3 className="text-[13px] font-semibold mb-2" style={{ color: 'var(--color-text-secondary)' }}>
           Gemini API Key
@@ -145,11 +148,11 @@ export default function VectorEmbedTab() {
           </button>
         </div>
         <p className="text-[11px] mt-1.5" style={{ color: 'var(--color-text-muted)' }}>
-          Issued from Google AI Studio — same as the Gemini key in the AI settings tab.
+          Issued by Google AI Studio — same as the Gemini key in the AI Settings tab.
         </p>
       </section>
 
-      {/* ── Manual Rebuild ── */}
+      {/* ── Manual rebuild ── */}
       <section>
         <h3 className="text-[13px] font-semibold mb-2" style={{ color: 'var(--color-text-secondary)' }}>
           Manual Rebuild
@@ -190,13 +193,13 @@ export default function VectorEmbedTab() {
           </span>
         </div>
         {!hasKey && (
-          <p className="text-[11px] mt-2" style={{ color: '#f59e0b' }}>
-            ⚠ Please enter a Gemini API key first.
+          <p className="text-[11px] mt-2" style={{ color: 'var(--color-warning)' }}>
+            ⚠ Enter the Gemini API key first.
           </p>
         )}
       </section>
 
-      {/* ── How It Works ── */}
+      {/* ── How it works ── */}
       <section>
         <h3 className="text-[13px] font-semibold mb-2" style={{ color: 'var(--color-text-secondary)' }}>
           How It Works
@@ -205,11 +208,11 @@ export default function VectorEmbedTab() {
           className="rounded-lg px-4 py-3 text-[12px] flex flex-col gap-1.5"
           style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)', lineHeight: 1.6 }}
         >
-          <div>① <strong style={{ color: 'var(--color-text-primary)' }}>BM25</strong> — Extract top 50 candidates by query keywords (existing method)</div>
-          <div>② <strong style={{ color: 'var(--color-text-primary)' }}>Query Embedding</strong> — Convert query to 768-dim vector (1 API call)</div>
-          <div>③ <strong style={{ color: 'var(--color-text-primary)' }}>Reranking</strong> — Final ranking: BM25 40% + semantic similarity 60%</div>
+          <div>① <strong style={{ color: 'var(--color-text-primary)' }}>BM25</strong> — pulls the top 50 candidates by query keywords (existing method)</div>
+          <div>② <strong style={{ color: 'var(--color-text-primary)' }}>Query Embedding</strong> — converts the query into a 768-dim vector (1 API call)</div>
+          <div>③ <strong style={{ color: 'var(--color-text-primary)' }}>Reranking</strong> — final ranking from BM25 40% + semantic similarity 60%</div>
           <div className="mt-1" style={{ color: 'var(--color-text-muted)', fontSize: 11 }}>
-            Document embeddings are cached in IndexedDB — only regenerated when the vault changes.
+            Document embeddings are stored in a file cache — only changed documents are regenerated incrementally.
           </div>
         </div>
       </section>

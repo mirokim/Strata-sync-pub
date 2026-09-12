@@ -244,7 +244,7 @@ def handle_message(message: dict, cfg: dict, token: str) -> None:
             send_message(token, chat_id, "Please enter a debate topic. Example: `/debate PvP balance`", reply_to=message_id)
             return
         send_typing(token, chat_id)
-        # 각 페르소나로 순차 응답
+        # Respond sequentially with each persona
         send_message(token, chat_id, f"🎙️ *Debate Start:* {query}\n", reply_to=message_id)
         for tag in ["chief", "art", "spec", "tech"]:
             send_typing(token, chat_id)
@@ -263,7 +263,7 @@ def handle_message(message: dict, cfg: dict, token: str) -> None:
                 cfg.get("vault_path", ""),
                 get_anthropic_key(cfg),
             )
-            send_message(token, chat_id, f"🐟 *MiroFish 결과*\n\n{result[:4000]}", reply_to=message_id)
+            send_message(token, chat_id, f"🐟 *MiroFish result*\n\n{result[:4000]}", reply_to=message_id)
         except Exception as e:
             send_message(token, chat_id, f"MiroFish error: {e}", reply_to=message_id)
         return

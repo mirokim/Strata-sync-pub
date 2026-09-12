@@ -5,11 +5,15 @@ Uses an in-memory (ephemeral) ChromaDB client so tests are fully isolated
 from the production ~/.strata-sync/chroma database and from each other.
 """
 
+import uuid
+
 import pytest
 from httpx import AsyncClient, ASGITransport
 from unittest.mock import patch, MagicMock
 import chromadb
 from chromadb.utils import embedding_functions
+
+from backend.config import settings
 
 
 # ── Ephemeral ChromaDB fixture ─────────────────────────────────────────────────
@@ -25,18 +29,24 @@ def isolated_chroma(monkeypatch):
     """
     from backend.services import chroma_service as cs_module
 
+    # EphemeralClient shares state within the process, so use a unique collection name per test.
+    # clear() deletes settings.collection_name, so the name must be set to match here.
+    monkeypatch.setattr(settings, "collection_name", f"test_vault_{uuid.uuid4().hex[:8]}")
+
     # Fresh service instance per test
     from backend.services.chroma_service import ChromaService
     fresh_service = ChromaService()
 
-    # Patch _ensure_ready to use EphemeralClient + DeterministicEF
+    # Patch _ensure_ready to use EphemeralClient + DeterministicEF.
+    # Same guard as the real implementation — _collection must be recreated if it is None after clear().
     def _mock_ensure_ready(self):
-        if self._client is not None:
+        if self._client is not None and self._collection is not None:
             return
-        self._client = chromadb.EphemeralClient()
+        if self._client is None:
+            self._client = chromadb.EphemeralClient()
         ef = embedding_functions.DefaultEmbeddingFunction()
         self._collection = self._client.get_or_create_collection(
-            name="test_vault_documents",
+            name=settings.collection_name,
             embedding_function=ef,
             metadata={"hnsw:space": "cosine"},
         )

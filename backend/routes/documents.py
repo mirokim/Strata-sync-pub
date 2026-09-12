@@ -36,8 +36,10 @@ async def index_documents(request: IndexRequest) -> IndexResponse:
     """
     try:
         chunks = prepare_chunks(request.documents)
-        chroma_service.add_chunks(chunks)
-        return IndexResponse(indexed=len(chunks))
+        # Return the actually stored (unique ID) count — len(chunks) also counts overwritten chunks
+        # and hides the loss
+        indexed = chroma_service.add_chunks(chunks)
+        return IndexResponse(indexed=indexed)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 

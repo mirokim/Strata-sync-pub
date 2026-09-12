@@ -1,34 +1,50 @@
 /**
  * SlackBotTab — Slack bot process management tab.
- * Uses Electron main process bot:start / bot:stop IPC to
- * spawn/kill the bot process and display logs in real time.
+ * Uses the bot:start / bot:stop IPC of the Electron main process to
+ * spawn/kill bot/bot.py --headless and shows its logs in real time.
  */
 
 import { useState, useEffect, useRef } from 'react'
 import { Play, Square } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useBotStore } from '@/stores/botStore'
-import { fieldInputStyle, fieldLabelStyle } from '../settingsShared'
+import { fieldInputStyle } from '../settingsShared'
+import { MODEL_OPTIONS } from '@/lib/modelConfig'
+import { syncSlackToMcp } from '@/lib/syncMcpConfig'
 
 export default function SlackBotTab() {
   const { slackBotConfig, setSlackBotConfig } = useSettingsStore()
   const { running, setRunning, startBot, stopBot } = useBotStore()
 
-  const [logs, setLogs] = useState<string[]>([])
+  type LogEntry = { id: string; text: string }
+  const [logs, setLogs] = useState<LogEntry[]>([])
+  const addLog = (msg: string) =>
+    setLogs(prev => [...prev.slice(-500), { id: crypto.randomUUID(), text: msg }])
   const logEndRef = useRef<HTMLDivElement>(null)
 
-  // Sync initial state + load buffered logs
+  // Initial state sync + load buffered logs
   useEffect(() => {
     window.botAPI?.getStatus().then(s => setRunning(s.running)).catch(() => {})
-    window.botAPI?.getLogs?.().then((lines: string[]) => { if (lines?.length) setLogs(lines.slice(-500)) }).catch(() => {})
+    window.botAPI?.getLogs?.().then((lines: string[]) => {
+      if (lines?.length) setLogs(lines.slice(-500).map(t => ({ id: crypto.randomUUID(), text: t })))
+    }).catch(() => {})
   }, [setRunning])
 
-  // Subscribe to log + stop events
+  // Subscribe to log + exit events
   useEffect(() => {
-    const offLog     = window.botAPI?.onLog(line => setLogs(prev => [...prev.slice(-500), line]))
+    const offLog     = window.botAPI?.onLog(line => addLog(line))
     const offStopped = window.botAPI?.onStopped(() => setRunning(false))
     return () => { offLog?.(); offStopped?.() }
   }, [setRunning])
+
+  // Auto-sync mcp-config.json (1s debounce)
+  const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!slackBotConfig.botToken && !slackBotConfig.appToken) return
+    if (syncTimer.current) clearTimeout(syncTimer.current)
+    syncTimer.current = setTimeout(() => syncSlackToMcp(slackBotConfig), 1000)
+    return () => { if (syncTimer.current) clearTimeout(syncTimer.current) }
+  }, [slackBotConfig])
 
   // Auto-scroll logs
   useEffect(() => {
@@ -38,15 +54,19 @@ export default function SlackBotTab() {
   const handleStart = async () => {
     const result = await startBot()
     if (result.ok) {
-      setLogs(prev => [...prev, '> Bot started'])
+      addLog('▶ Bot started')
     } else {
-      setLogs(prev => [...prev, `[ERROR] Start failed: ${result.error}`])
+      addLog(`❌ Start failed: ${result.error}`)
     }
   }
 
   const handleStop = async () => {
-    await stopBot()
-    setLogs(prev => [...prev, '> Bot stopped'])
+    const result = await stopBot()
+    if (!result?.ok) {
+      addLog(`■ Bot stop failed: ${'Unknown error'}`)
+    } else {
+      addLog('■ Bot stopped')
+    }
   }
 
   const canStart = slackBotConfig.botToken.trim() && slackBotConfig.appToken.trim()
@@ -75,11 +95,11 @@ export default function SlackBotTab() {
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: running ? 'var(--color-accent)' : 'var(--color-text-primary)', lineHeight: 1.3 }}>
-            {running ? 'Slack Bot Running' : 'Slack Bot'}
+            {running ? 'Slack Bot running' : 'Slack Bot'}
           </div>
           {!canStart && !running && (
             <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
-              Enter tokens first
+              Enter the tokens first
             </div>
           )}
         </div>
@@ -90,10 +110,10 @@ export default function SlackBotTab() {
           style={{
             display: 'flex', alignItems: 'center', gap: 5,
             padding: '6px 14px', borderRadius: 2, fontSize: 12, fontWeight: 500,
-            border: running ? '1px solid #ef444450' : 'none',
+            border: running ? '1px solid var(--color-error-border)' : 'none',
             cursor: (!running && !canStart) ? 'not-allowed' : 'pointer',
-            background: running ? '#ef444415' : 'var(--color-accent)',
-            color: running ? '#ef4444' : '#fff',
+            background: running ? 'var(--color-error-bg)' : 'var(--color-accent)',
+            color: running ? 'var(--color-error)' : '#fff',
             opacity: (!running && !canStart) ? 0.4 : 1,
             flexShrink: 0, whiteSpace: 'nowrap',
           }}
@@ -134,11 +154,26 @@ export default function SlackBotTab() {
           </div>
           <div>
             <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', display: 'block', marginBottom: 5 }}>Response Model</label>
-            <input
-              type="text"
+            <select
               value={slackBotConfig.model}
               onChange={e => setSlackBotConfig({ model: e.target.value })}
-              style={fieldInputStyle}
+              style={{ ...fieldInputStyle, cursor: 'pointer' }}
+            >
+              {MODEL_OPTIONS.filter(m => m.provider === 'anthropic').map(m => (
+                <option key={m.id} value={m.id}>{m.label}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)' }}>Image Upload</div>
+              <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>Auto-attach vault images to Slack</div>
+            </div>
+            <input
+              type="checkbox"
+              checked={slackBotConfig.sendImages ?? true}
+              onChange={e => setSlackBotConfig({ sendImages: e.target.checked })}
+              style={{ width: 16, height: 16, cursor: 'pointer' }}
             />
           </div>
         </div>
@@ -160,7 +195,7 @@ export default function SlackBotTab() {
           )}
         </div>
         <div style={{
-          height: 190, overflowY: 'auto',
+          height: 380, overflowY: 'auto',
           background: 'var(--color-bg-base)',
           border: '1px solid var(--color-border)',
           borderRadius: 2, padding: '8px 10px',
@@ -168,14 +203,14 @@ export default function SlackBotTab() {
           color: 'var(--color-text-secondary)',
         }}>
           {logs.length === 0
-            ? <span style={{ color: 'var(--color-text-muted)' }}>Logs will appear when the bot is started.</span>
-            : logs.map((l, i) => (
-              <div key={i} style={{
+            ? <span style={{ color: 'var(--color-text-muted)' }}>Logs will appear once the bot is started.</span>
+            : logs.map(entry => (
+              <div key={entry.id} style={{
                 lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-                color: (l.startsWith('[ERR]') || l.startsWith('[ERROR]')) ? 'var(--color-error)'
-                  : l.startsWith('>') ? 'var(--color-accent)'
+                color: (entry.text.startsWith('[ERR]') || entry.text.startsWith('❌')) ? 'var(--color-error)'
+                  : entry.text.startsWith('▶') ? 'var(--color-accent)'
                   : undefined,
-              }}>{l}</div>
+              }}>{entry.text}</div>
             ))
           }
           <div ref={logEndRef} />

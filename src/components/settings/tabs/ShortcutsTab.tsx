@@ -56,7 +56,7 @@ function Kbd({ children }: { children: string }) {
       padding: '1px 6px',
       borderRadius: 4,
       fontSize: 10,
-      fontFamily: 'ui-monospace, monospace',
+      fontFamily: 'var(--ea-font-mono)',
       background: 'var(--color-bg-active)',
       border: '1px solid var(--color-border)',
       color: 'var(--color-text-primary)',

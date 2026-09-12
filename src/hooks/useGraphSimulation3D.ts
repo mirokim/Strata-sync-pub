@@ -144,7 +144,8 @@ export function useGraphSimulation3D({ onTick }: Options) {
     return () => {
       cancelled = true
       if (simRef.current) {
-        (simRef.current as any).stop?.()
+        ;(simRef.current as any).on('tick', null)
+        ;(simRef.current as any).stop?.()
         simRef.current = null
       }
     }

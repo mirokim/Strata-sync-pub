@@ -163,6 +163,8 @@ export interface LoadedDocument {
   graphWeight?: 'normal' | 'low' | 'skip'
   /** Multi-vault: vault label this document belongs to (for Slack RAG context source display) */
   vaultLabel?: string
+  /** Raw frontmatter key-value pairs (for fields not mapped to typed properties, e.g. ref_game, ref_collected) */
+  frontmatter?: Record<string, unknown>
 }
 
 // ── Backend / RAG types (Phase 1-3) ──────────────────────────────────────────
@@ -249,7 +251,7 @@ export interface DebateCallbacks {
 
 export type ThemeId = 'dark' | 'oled' | 'white'
 export type GraphMode = '3d' | '2d'
-export type CenterTab = 'graph' | 'document' | 'editor' | 'settings'
+export type CenterTab = 'graph' | 'document' | 'editor' | 'settings' | 'slack-logs'
 export type AppState = 'launch' | 'main'
 export type NodeColorMode = 'document' | 'auto' | 'speaker' | 'folder' | 'tag' | 'topic'
 

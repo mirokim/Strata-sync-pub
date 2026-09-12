@@ -117,7 +117,7 @@ export default function AboutTab() {
             },
             {
               name: 'Korean Morpheme Processing',
-              desc: 'Greedy longest-match suffix stripping (이라는/에서의/으로 etc., 50+ patterns)',
+              desc: 'Greedy longest-match suffix stripping (Korean particles such as 이라는/에서의/으로, 50+ patterns)',
             },
             {
               name: 'd3-force Physics Simulation',

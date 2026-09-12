@@ -50,4 +50,4 @@ out = os.path.join(jira_dir, 'jira_index.md')
 with open(out, 'w', encoding='utf-8') as f:
     f.write(content)
 print('Generated:', out)
-print(f'Links: Epic {len(epics)} + Release {len(releases)} + 첨부문서 {len(att_md)}')
+print(f'Links: Epic {len(epics)} + Release {len(releases)} + attachments {len(att_md)}')

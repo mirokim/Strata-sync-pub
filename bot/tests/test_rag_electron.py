@@ -12,14 +12,14 @@ from io import BytesIO
 from unittest.mock import patch, MagicMock
 from pathlib import Path
 
-# bot/modules 경로 추가
+# Add bot/modules to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import modules.rag_electron as rag
 
 
 def _make_response(data: object, status: int = 200) -> MagicMock:
-    """urllib.request.urlopen 반환값 흉내."""
+    """Mimics the return value of urllib.request.urlopen."""
     body = json.dumps(data).encode("utf-8")
     mock = MagicMock()
     mock.read.return_value = body
@@ -51,7 +51,7 @@ class TestGetElectronSettings(unittest.TestCase):
         payload = {"personaModels": {"chief_director": "model-a"}}
         with patch("urllib.request.urlopen", return_value=_make_response(payload)) as mock_open:
             rag.get_electron_settings()
-            rag.get_electron_settings()  # 두 번째는 캐시 사용
+            rag.get_electron_settings()  # second call uses the cache
         mock_open.assert_called_once()
 
     def test_cache_expires_after_ttl(self):

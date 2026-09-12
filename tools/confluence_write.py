@@ -3,19 +3,19 @@
 confluence_write.py — Confluence page create/update (Markdown → Storage XML)
 
 Usage:
-  # 새 페이지 생성
-  python confluence_write.py create "페이지 제목" content.md
-  python confluence_write.py create "페이지 제목" content.md --space SGEPJA --parent 123456
+  # Create a new page
+  python confluence_write.py create "Page title" content.md
+  python confluence_write.py create "Page title" content.md --space SGEPJA --parent 123456
 
-  # 기존 페이지 수정
-  python confluence_write.py update "새 제목" content.md --page-id 686860837
+  # Update an existing page
+  python confluence_write.py update "New title" content.md --page-id 686860837
 
-  # stdin 에서 읽기
-  echo "# 제목\n내용" | python confluence_write.py create "페이지 제목" -
+  # Read from stdin
+  echo "# Title\nBody" | python confluence_write.py create "Page title" -
 
 Config:
-  mcp-config.json 의 confluence 섹션을 읽습니다.
-  spaceKey, targetFolder(parentId) 기본값으로 사용됩니다.
+  Reads the confluence section of mcp-config.json.
+  spaceKey and targetFolder (parentId) are used as defaults.
 """
 
 import io
@@ -32,7 +32,7 @@ from pathlib import Path
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
-# ── Configuration 로드 ────────────────────────────────────────────────────────────────
+# ── Configuration loading ─────────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / 'mcp-config.json'
 
@@ -82,7 +82,7 @@ def _escape(text: str) -> str:
     return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
 def md_to_storage(md: str) -> str:
-    """Markdown → Confluence Storage Format XML (간략 변환)"""
+    """Markdown → Confluence Storage Format XML (simplified conversion)"""
     lines = md.split('\n')
     out: list[str] = []
     in_code = False
@@ -90,7 +90,7 @@ def md_to_storage(md: str) -> str:
     code_buf: list[str] = []
 
     for line in lines:
-        # 코드블록 시작/끝
+        # Code block start/end
         if line.startswith('```'):
             if not in_code:
                 in_code = True
@@ -111,7 +111,7 @@ def md_to_storage(md: str) -> str:
             code_buf.append(line)
             continue
 
-        # 헤딩
+        # Heading
         m = re.match(r'^(#{1,6})\s+(.*)', line)
         if m:
             level = len(m.group(1))
@@ -119,44 +119,44 @@ def md_to_storage(md: str) -> str:
             out.append(f'<h{level}>{text}</h{level}>')
             continue
 
-        # 순서 없는 목록
+        # Unordered list
         m = re.match(r'^(\s*)[-*]\s+(.*)', line)
         if m:
             text = _escape(m.group(2))
             out.append(f'<ul><li>{text}</li></ul>')
             continue
 
-        # 순서 있는 목록
+        # Ordered list
         m = re.match(r'^(\s*)\d+\.\s+(.*)', line)
         if m:
             text = _escape(m.group(2))
             out.append(f'<ol><li>{text}</li></ol>')
             continue
 
-        # 수평선
+        # Horizontal rule
         if re.match(r'^---+$', line.strip()):
             out.append('<hr />')
             continue
 
-        # 빈 줄
+        # Blank line
         if not line.strip():
             out.append('')
             continue
 
-        # 일반 단락
+        # Regular paragraph
         text = _escape(line)
-        # 인라인 굵게
+        # Inline bold
         text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
         text = re.sub(r'__(.+?)__', r'<strong>\1</strong>', text)
-        # 인라인 기울임
+        # Inline italic
         text = re.sub(r'\*(.+?)\*', r'<em>\1</em>', text)
-        # 인라인 코드
+        # Inline code
         text = re.sub(r'`(.+?)`', r'<code>\1</code>', text)
         out.append(f'<p>{text}</p>')
 
     return '\n'.join(out)
 
-# ── 페이지 조회 ──────────────────────────────────────────────────────────────
+# ── Page lookup ─────────────────────────────────────────────────────────────
 def get_page_info(cfg: dict, page_id: str) -> dict | None:
     result = cf_request(cfg, f'/rest/api/content/{page_id}?expand=version,space')
     if not result:
@@ -168,7 +168,7 @@ def get_page_info(cfg: dict, page_id: str) -> dict | None:
         'spaceKey': result['space']['key'],
     }
 
-# ── 페이지 생성 ──────────────────────────────────────────────────────────────
+# ── Page creation ───────────────────────────────────────────────────────────
 def create_page(cfg: dict, title: str, storage_body: str,
                 space_key: str, parent_id: str | None = None) -> dict | None:
     body: dict = {
@@ -186,7 +186,7 @@ def create_page(cfg: dict, title: str, storage_body: str,
         body['ancestors'] = [{'id': parent_id}]
     return cf_request(cfg, '/rest/api/content', method='POST', body=body)
 
-# ── 페이지 수정 ──────────────────────────────────────────────────────────────
+# ── Page update ─────────────────────────────────────────────────────────────
 def update_page(cfg: dict, page_id: str, title: str,
                 storage_body: str, current_version: int) -> dict | None:
     body = {
@@ -204,26 +204,26 @@ def update_page(cfg: dict, page_id: str, title: str,
 
 # ── Main ────────────────────────────────────────────────────────────────────
 def main():
-    parser = argparse.ArgumentParser(description='Confluence 페이지 생성/수정')
+    parser = argparse.ArgumentParser(description='Confluence page create/update')
     sub = parser.add_subparsers(dest='cmd', required=True)
 
     # create
-    p_create = sub.add_parser('create', help='새 페이지 생성')
-    p_create.add_argument('title', help='페이지 제목')
-    p_create.add_argument('file', help='Markdown 파일 경로 (- 이면 stdin)')
-    p_create.add_argument('--space', default=None, help='스페이스 키 (기본: mcp-config.json 값)')
-    p_create.add_argument('--parent', default=None, help='부모 페이지 ID')
+    p_create = sub.add_parser('create', help='Create a new page')
+    p_create.add_argument('title', help='Page title')
+    p_create.add_argument('file', help='Markdown file path (- for stdin)')
+    p_create.add_argument('--space', default=None, help='Space key (default: value from mcp-config.json)')
+    p_create.add_argument('--parent', default=None, help='Parent page ID')
 
     # update
-    p_update = sub.add_parser('update', help='기존 페이지 수정')
-    p_update.add_argument('title', help='새 제목')
-    p_update.add_argument('file', help='Markdown 파일 경로 (- 이면 stdin)')
-    p_update.add_argument('--page-id', required=True, help='수정할 페이지 ID')
+    p_update = sub.add_parser('update', help='Update an existing page')
+    p_update.add_argument('title', help='New title')
+    p_update.add_argument('file', help='Markdown file path (- for stdin)')
+    p_update.add_argument('--page-id', required=True, help='ID of the page to update')
 
     args = parser.parse_args()
     cfg = load_config()
 
-    # Markdown 읽기
+    # Read Markdown
     if args.file == '-':
         md = sys.stdin.read()
     else:
@@ -234,13 +234,13 @@ def main():
     if args.cmd == 'create':
         space_key = args.space or cfg.get('spaceKey', '')
         if not space_key:
-            print('[ERROR] --space 또는 mcp-config.json spaceKey 필요', file=sys.stderr)
+            print('[ERROR] --space or mcp-config.json spaceKey is required', file=sys.stderr)
             sys.exit(1)
         result = create_page(cfg, args.title, storage, space_key, args.parent)
         if result:
             page_id = result.get('id', '?')
             url = cfg['baseUrl'].rstrip('/') + result.get('_links', {}).get('webui', '')
-            print(f'[OK] 생성 Complete — pageId={page_id}')
+            print(f'[OK] Creation Complete — pageId={page_id}')
             if url:
                 print(f'     URL: {url}')
         else:
@@ -254,7 +254,7 @@ def main():
             sys.exit(1)
         result = update_page(cfg, args.page_id, args.title, storage, info['version'])
         if result:
-            print(f'[OK] 수정 Complete — pageId={args.page_id}, version={info["version"] + 1}')
+            print(f'[OK] Update Complete — pageId={args.page_id}, version={info["version"] + 1}')
         else:
             print('[ERROR] Update failed', file=sys.stderr)
             sys.exit(1)

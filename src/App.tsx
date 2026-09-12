@@ -8,6 +8,8 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { useBotStore } from '@/stores/botStore'
 import { useSyncStore } from '@/stores/syncStore'
 import { useEditAgent } from '@/hooks/useEditAgent'
+import { useEditAgentStore } from '@/stores/editAgentStore'
+import { useCronExecutor } from '@/hooks/useCronExecutor'
 import LaunchPage from '@/components/launch/LaunchPage'
 import MainLayout from '@/components/layout/MainLayout'
 import LoadingOverlay from '@/components/layout/LoadingOverlay'
@@ -30,19 +32,24 @@ export default function App() {
   usePersonaVaultSaver()
   useRagApi()
   useEditAgent()
+  useCronExecutor()
   const vaultLoaded = useRef(false)
+  const appReady = useRef(false)
 
-  // Restore previous chat session on startup
+  // ── Chat session persistence ──────────────────────────────────────────────
   const { restoreSession } = useChatStore()
+  // Restore the previous session on app start (debounced saving is handled by a subscriber inside chatStore)
   useEffect(() => { restoreSession() }, [])  // eslint-disable-line react-hooks/exhaustive-deps
-
   const botAutoStarted = useRef(false)
   const slackBotConfig = useSettingsStore(s => s.slackBotConfig)
   const { setRunning, startBot } = useBotStore()
   const { notification, dismissNotification } = useSyncStore()
   const { watchDiff, setWatchDiff } = useVaultStore()
+  const vaultRefreshCountdown = useEditAgentStore(s => s.vaultRefreshCountdown)
+  const { cancelVaultRefreshCountdown } = useEditAgentStore()
 
   // Skip launch animation when vault is already set (crash recovery / normal restart)
+  // LaunchPage is only shown on first use (no vault selected yet)
   useLayoutEffect(() => {
     if (appState === 'launch' && vaultPath) {
       setAppState('main')
@@ -55,40 +62,46 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
 
-  // Sync panel opacity CSS variable
+  // Sync panel opacity CSS variable so all panels update instantly
   useEffect(() => {
     document.documentElement.style.setProperty('--panel-opacity', panelOpacity.toString())
   }, [panelOpacity])
 
   // Auto-load persisted vault on app startup
+  // Deferred until after the UI renders — prevents freezing at startup
   useEffect(() => {
     if (vaultLoaded.current || !vaultPath) return
-    vaultLoaded.current = true
-    loadVault(vaultPath).then(async () => {
-      window.vaultAPI?.watchStart(vaultPath)
-      // Pre-load other vaults in background (2 concurrent)
-      const { vaults, activeVaultId } = useVaultStore.getState()
-      const others = Object.entries(vaults).filter(([id, e]) => id !== activeVaultId && e.path)
-      if (others.length > 0) {
-        const total = others.length
-        let done = 0
-        const BG_CONCURRENCY = 2
-        for (let i = 0; i < total; i += BG_CONCURRENCY) {
-          const batch = others.slice(i, i + BG_CONCURRENCY)
-          await Promise.all(batch.map(async ([id, entry]) => {
-            const label = entry.label || entry.path.split(/[/\\]/).pop() || id
+    // Start loading the vault after the first frame renders (requestIdleCallback → setTimeout fallback)
+    const schedule = window.requestIdleCallback ?? ((cb: () => void) => setTimeout(cb, 100))
+    const id = schedule(() => {
+      if (vaultLoaded.current) return
+      vaultLoaded.current = true
+      loadVault(vaultPath).then(async () => {
+        window.vaultAPI?.watchStart(vaultPath)
+        // Background vault preload: runs after an extra delay (waits for the main vault load to settle)
+        await new Promise(r => setTimeout(r, 2000))
+        const { vaults, activeVaultId } = useVaultStore.getState()
+        const others = Object.entries(vaults).filter(([vid, e]) => vid !== activeVaultId && e.path)
+        if (others.length > 0) {
+          const total = others.length
+          let done = 0
+          for (const [vid, entry] of others) {
+            const label = entry.label || entry.path.split(/[/\\]/).pop() || vid
             useVaultStore.getState().setBgLoadingInfo({ label, done, total })
-            await loadVaultBackground(id, entry.path)
+            await loadVaultBackground(vid, entry.path)
             done++
             useVaultStore.getState().setBgLoadingInfo({ label, done, total })
-          }))
+          }
+          useVaultStore.getState().setBgLoadingInfo(null)
         }
-        useVaultStore.getState().setBgLoadingInfo(null)
-      }
+      })
     })
+    return () => {
+      if (window.cancelIdleCallback) window.cancelIdleCallback(id as number)
+    }
   }, [vaultPath, loadVault, loadVaultBackground])
 
-  // Auto-start Slack bot when tokens are configured in Electron environment
+  // Slack bot auto-start — when tokens are configured and running in Electron
   useEffect(() => {
     if (botAutoStarted.current) return
     if (!window.botAPI) return
@@ -118,10 +131,10 @@ export default function App() {
           zIndex: 10000, display: 'flex', alignItems: 'center', gap: 12,
           padding: '10px 16px', borderRadius: 8, maxWidth: 520,
           background: 'rgba(30,20,10,0.95)',
-          border: '1px solid rgba(245,158,11,0.5)',
+          border: '1px solid var(--color-warning-bg)',
           boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
         }}>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#f59e0b', flexShrink: 0 }} />
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--color-warning)', flexShrink: 0 }} />
           <div style={{ fontSize: 12, color: '#fbbf24', flex: 1, lineHeight: 1.5 }}>
             {crashBanner}
           </div>
@@ -129,7 +142,7 @@ export default function App() {
             onClick={() => setCrashBanner(null)}
             style={{
               fontSize: 11, padding: '2px 10px', borderRadius: 4, flexShrink: 0,
-              background: 'rgba(245,158,11,0.15)', color: '#f59e0b',
+              background: 'var(--color-warning-bg)', color: 'var(--color-warning)',
               border: '1px solid rgba(245,158,11,0.3)', cursor: 'pointer',
             }}
           >
@@ -163,7 +176,7 @@ export default function App() {
             <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 2 }}>
               {watchDiff.added > 0 && <span style={{ color: 'var(--color-success)', marginRight: 6 }}>+{watchDiff.added}</span>}
               {watchDiff.removed > 0 && <span style={{ color: 'var(--color-error)', marginRight: 6 }}>−{watchDiff.removed}</span>}
-              {watchDiff.added === 0 && watchDiff.removed === 0 && 'Modified'}
+              {watchDiff.added === 0 && watchDiff.removed === 0 && 'Changed'}
             </div>
             {watchDiff.preview && (
               <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>
@@ -180,7 +193,77 @@ export default function App() {
         </div>
       )}
 
-      {/* Sync notification banner */}
+      {/* Edit Agent vault auto-refresh countdown banner */}
+      {vaultRefreshCountdown !== null && (
+        <div style={{
+          position: 'fixed',
+          bottom: 24,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 10001,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+          padding: '12px 16px',
+          borderRadius: 10,
+          background: 'var(--color-bg-surface)',
+          border: '1px solid var(--color-border)',
+          boxShadow: '0 6px 24px rgba(0,0,0,0.45)',
+          minWidth: 300,
+          maxWidth: 380,
+        }}>
+          {/* Top: icon + text + buttons */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 16, flexShrink: 0 }}>✏️</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                Edit Agent modified files
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
+                The vault will auto-refresh in {vaultRefreshCountdown}s
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+              <button
+                onClick={() => { cancelVaultRefreshCountdown(); if (vaultPath) void loadVault(vaultPath) }}
+                style={{
+                  padding: '4px 10px', borderRadius: 5, fontSize: 11, fontWeight: 600,
+                  background: 'var(--color-accent)', color: '#fff',
+                  border: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
+                }}
+              >
+                Now
+              </button>
+              <button
+                onClick={cancelVaultRefreshCountdown}
+                style={{
+                  padding: '4px 10px', borderRadius: 5, fontSize: 11,
+                  background: 'transparent', color: 'var(--color-text-muted)',
+                  border: '1px solid var(--color-border)', cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+          {/* Progress bar */}
+          <div style={{
+            height: 3, borderRadius: 2,
+            background: 'var(--color-border)',
+            overflow: 'hidden',
+          }}>
+            <div style={{
+              height: '100%',
+              width: `${(vaultRefreshCountdown / 30) * 100}%`,
+              background: 'var(--color-accent)',
+              borderRadius: 2,
+              transition: 'width 0.9s linear',
+            }} />
+          </div>
+        </div>
+      )}
+
+      {/* Confluence auto-sync notification banner */}
       {notification && (
         <div style={{
           position: 'fixed',
@@ -203,7 +286,7 @@ export default function App() {
               {notification.message}
             </div>
             <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
-              {notification.count} document(s) updated in vault.
+              {notification.count} document(s) updated in the vault.
             </div>
           </div>
           <button

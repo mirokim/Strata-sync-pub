@@ -1,5 +1,5 @@
-import { useState, useRef, useMemo } from 'react'
-import { Send, Paperclip, Swords, X } from 'lucide-react'
+import { useState, useRef, useMemo, useEffect } from 'react'
+import { Send, Paperclip, Swords, X, Square } from 'lucide-react'
 import { useChatStore } from '@/stores/chatStore'
 import { useGraphStore } from '@/stores/graphStore'
 import { useVaultStore } from '@/stores/vaultStore'
@@ -60,21 +60,25 @@ export default function ChatInput({ debateMode, onToggleDebate }: ChatInputProps
   const [text, setText] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [fileError, setFileError] = useState<string | null>(null)
-  const { sendMessage, isLoading } = useChatStore()
+  const { sendMessage, stopStreaming, isLoading } = useChatStore()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const fileErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Detect imageRefs of the selected document — for auto image attachment
+  useEffect(() => () => { if (fileErrorTimerRef.current) clearTimeout(fileErrorTimerRef.current) }, [])
+
+  // Detect imageRefs of the selected document — for automatic image attachment
   const selectedNodeId = useGraphStore(s => s.selectedNodeId)
   const loadedDocuments = useVaultStore(s => s.loadedDocuments)
   const imagePathRegistry = useVaultStore(s => s.imagePathRegistry)
   const imageDataCache = useVaultStore(s => s.imageDataCache)
+  const touchImageCache = useVaultStore(s => s.touchImageCache)
 
   const selectedDocImageRefs = useMemo(() => {
     if (!selectedNodeId || !loadedDocuments || !imagePathRegistry) return []
     const doc = loadedDocuments.find(d => d.id === selectedNodeId)
     if (!doc?.imageRefs?.length) return []
-    // Only return images that are actually in the registry
+    // Return only images that actually exist in the registry
     return doc.imageRefs.filter(ref => !!imagePathRegistry[ref])
   }, [selectedNodeId, loadedDocuments, imagePathRegistry])
 
@@ -84,14 +88,15 @@ export default function ChatInput({ debateMode, onToggleDebate }: ChatInputProps
     if (!canSend) return
     const currentText = text.trim()
 
-    // Auto-load vault images (cache first, IPC fallback on cache miss)
+    // Auto-load vault images (cache first, IPC fallback on miss)
     const autoAttachments: Attachment[] = []
     if (selectedDocImageRefs.length > 0) {
       for (const ref of selectedDocImageRefs) {
         try {
-          // 1. Immediate lookup from pre-indexed cache
+          // 1. Look up the pre-indexed cache immediately
           let dataUrl = imageDataCache[ref]
-          // 2. Cache miss: on-demand load via IPC
+          if (dataUrl) touchImageCache(ref)
+          // 2. Cache miss: load on demand via IPC
           if (!dataUrl && window.vaultAPI?.readImage) {
             const entry = imagePathRegistry?.[ref]
             if (entry) dataUrl = (await window.vaultAPI.readImage(entry.absolutePath)) ?? ''
@@ -140,7 +145,8 @@ export default function ChatInput({ debateMode, onToggleDebate }: ChatInputProps
     }
     if (errors.length > 0) {
       setFileError(errors.join(', '))
-      setTimeout(() => setFileError(null), 5000)
+      if (fileErrorTimerRef.current) clearTimeout(fileErrorTimerRef.current)
+      fileErrorTimerRef.current = setTimeout(() => setFileError(null), 5000)
     }
     if (newAttachments.length > 0) {
       setAttachments(prev => [...prev, ...newAttachments])
@@ -154,7 +160,6 @@ export default function ChatInput({ debateMode, onToggleDebate }: ChatInputProps
   return (
     <div
       className="shrink-0 flex flex-col px-4 py-3 gap-2"
-      style={{ borderTop: '1px solid var(--color-border)' }}
       data-testid="chat-input-container"
     >
       {/* Attachment preview chips */}
@@ -207,7 +212,7 @@ export default function ChatInput({ debateMode, onToggleDebate }: ChatInputProps
           style={{ color: 'var(--color-text-muted)', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)' }}
         >
           <span>🖼️</span>
-          <span>{selectedDocImageRefs.length} image{selectedDocImageRefs.length !== 1 ? 's' : ''} auto-attached</span>
+          <span>{selectedDocImageRefs.length} image(s) auto-attached</span>
         </div>
       )}
 
@@ -236,6 +241,7 @@ export default function ChatInput({ debateMode, onToggleDebate }: ChatInputProps
                   : { background: 'var(--color-bg-surface)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }
               }
               title={debateMode ? 'Switch to chat mode' : 'Switch to AI debate mode'}
+              aria-label={debateMode ? 'Switch to chat mode' : 'Switch to AI debate mode'}
               data-testid="debate-mode-toggle"
             >
               <Swords size={14} />
@@ -283,7 +289,7 @@ export default function ChatInput({ debateMode, onToggleDebate }: ChatInputProps
           value={text}
           onChange={e => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask the directors… (Enter to send / Shift+Enter for new line)"
+          placeholder="Ask the directors… (Enter to send / Shift+Enter for newline)"
           disabled={isLoading}
           rows={1}
           data-testid="chat-textarea"
@@ -297,20 +303,38 @@ export default function ChatInput({ debateMode, onToggleDebate }: ChatInputProps
           }}
         />
 
-        {/* Send button */}
-        <button
-          onClick={handleSend}
-          disabled={!canSend}
-          data-testid="chat-send-button"
-          className="shrink-0 p-2 rounded-lg transition-colors"
-          style={{
-            background: canSend ? 'var(--color-accent)' : 'var(--color-bg-secondary)',
-            color: canSend ? '#fff' : 'var(--color-text-muted)',
-            border: '1px solid var(--color-border)',
-          }}
-        >
-          <Send size={14} />
-        </button>
+        {/* Stop / Send button */}
+        {isLoading ? (
+          <button
+            onClick={stopStreaming}
+            data-testid="chat-stop-button"
+            className="shrink-0 p-2 rounded-lg transition-colors"
+            title="Stop streaming"
+            aria-label="Stop streaming"
+            style={{
+              background: 'rgba(239,68,68,0.15)',
+              color: '#ef4444',
+              border: '1px solid rgba(239,68,68,0.3)',
+            }}
+          >
+            <Square size={14} />
+          </button>
+        ) : (
+          <button
+            onClick={handleSend}
+            disabled={!canSend}
+            data-testid="chat-send-button"
+            className="shrink-0 p-2 rounded-lg transition-colors"
+            aria-label="Send message"
+            style={{
+              background: canSend ? 'var(--color-accent)' : 'var(--color-bg-secondary)',
+              color: canSend ? '#fff' : 'var(--color-text-muted)',
+              border: '1px solid var(--color-border)',
+            }}
+          >
+            <Send size={14} />
+          </button>
+        )}
       </div>
     </div>
   )

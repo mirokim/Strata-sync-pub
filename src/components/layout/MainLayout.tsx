@@ -10,6 +10,7 @@ import ConverterEditor from '@/components/converter/ConverterEditor'
 import MarkdownEditor from '@/components/editor/MarkdownEditor'
 import ImageViewer from '@/components/editor/ImageViewer'
 import ReportViewer from '@/components/editor/ReportViewer'
+import SlackLogViewer from '@/components/slackLog/SlackLogViewer'
 import PhysicsControls from '@/components/graph/PhysicsControls'
 import StatusBar from './StatusBar'
 import ToastContainer from '@/components/shared/ToastContainer'
@@ -149,7 +150,7 @@ export default function MainLayout() {
           {/* Center — transparent (graph shows through) */}
           <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
             {/* Physics controls */}
-            {centerTab !== 'editor' && centerTab !== 'settings' && !isFast && (
+            {centerTab !== 'editor' && centerTab !== 'settings' && centerTab !== 'slack-logs' && !isFast && (
               <div
                 style={{
                   position: 'absolute',
@@ -163,10 +164,10 @@ export default function MainLayout() {
               </div>
             )}
 
-            {/* Editor / Settings overlay */}
-            {(centerTab === 'editor' || centerTab === 'settings') && (
+            {/* Editor / Settings / Slack logs overlay */}
+            {(centerTab === 'editor' || centerTab === 'settings' || centerTab === 'slack-logs') && (
               <motion.div
-                key={centerTab === 'settings' ? 'settings' : (editingDocId ?? 'converter')}
+                key={centerTab === 'settings' ? 'settings' : centerTab === 'slack-logs' ? 'slack-logs' : (editingDocId ?? 'converter')}
                 initial={isFast ? false : { opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={overlayTransition}
@@ -181,13 +182,15 @@ export default function MainLayout() {
               >
                 {centerTab === 'settings'
                   ? <SettingsPanel />
-                  : editingDocId?.startsWith('gallery:')
-                    ? <ImageViewer />
-                    : editingDocId?.startsWith('report:')
-                      ? <ReportViewer />
-                      : editingDocId
-                        ? <MarkdownEditor />
-                        : <ConverterEditor />
+                  : centerTab === 'slack-logs'
+                    ? <SlackLogViewer />
+                    : editingDocId?.startsWith('gallery:')
+                      ? <ImageViewer />
+                      : editingDocId?.startsWith('report:')
+                        ? <ReportViewer />
+                        : editingDocId
+                          ? <MarkdownEditor />
+                          : <ConverterEditor />
                 }
               </motion.div>
             )}

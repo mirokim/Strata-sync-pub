@@ -10,8 +10,10 @@ import { useVaultStore } from '@/stores/vaultStore'
 import { useGraphStore } from '@/stores/graphStore'
 import { useUIStore } from '@/stores/uiStore'
 import { useTrashStore } from '@/stores/trashStore'
-import { parseVaultFilesAsync } from '@/lib/markdownParser'
+import { useSettingsStore } from '@/stores/settingsStore'
+import { parseVaultFiles } from '@/lib/markdownParser'
 import { buildGraph } from '@/lib/graphBuilder'
+import { safeFileOp, normalizePath } from '@/lib/utils'
 import SearchBar from './SearchBar'
 import SpeakerGroup from './SpeakerGroup'
 import FolderGroup from './FolderGroup'
@@ -19,6 +21,15 @@ import TagGroup from './TagGroup'
 import ContextMenu from './ContextMenu'
 import type { SpeakerId, LoadedDocument } from '@/types'
 import type { ContextMenuState } from './ContextMenu'
+
+// ── Filename validation (path injection prevention) ──────────────────────────
+const SAFE_FILENAME_RE = /^[^\/\\:*?"<>|]+$/
+function isValidFilename(name: string): boolean {
+  if (!name.trim()) return false
+  if (!SAFE_FILENAME_RE.test(name)) return false
+  if (name.includes('..')) return false
+  return true
+}
 
 function iconBtn(active = false): React.CSSProperties {
   return {
@@ -74,11 +85,9 @@ function FolderPickerModal({ folders, x, y, onPick, onClose }: FolderPickerProps
         top: clampedY,
         left: clampedX,
         zIndex: 9999,
-        background: 'var(--color-bg-overlay)',
-        backdropFilter: 'blur(16px)',
-        WebkitBackdropFilter: 'blur(16px)',
+        background: 'var(--color-bg-secondary)',
         border: '1px solid rgba(255,255,255,0.1)',
-        borderRadius: 8,
+        borderRadius: 2,
         padding: '4px',
         minWidth: 200,
         maxHeight: 280,
@@ -90,7 +99,7 @@ function FolderPickerModal({ folders, x, y, onPick, onClose }: FolderPickerProps
         padding: '4px 8px 6px',
         fontSize: 10,
         color: 'var(--color-text-muted)',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        borderBottom: '1px solid var(--color-bg-tertiary)',
         marginBottom: 4,
       }}>
         Select destination folder
@@ -106,7 +115,7 @@ function FolderPickerModal({ folders, x, y, onPick, onClose }: FolderPickerProps
             gap: 7,
             padding: '6px 10px',
             border: 'none',
-            borderRadius: 5,
+            borderRadius: 2,
             background: 'transparent',
             color: 'var(--color-text-secondary)',
             fontSize: 12,
@@ -208,7 +217,7 @@ export default function FileTree() {
     if (!vaultPath || !window.vaultAPI) return []
     const { files, folders } = await window.vaultAPI.loadFiles(vaultPath)
     if (!files) return []
-    const docs = await parseVaultFilesAsync(files) as LoadedDocument[]
+    const docs = parseVaultFiles(files) as LoadedDocument[]
     setLoadedDocuments(docs)
     setVaultFolders(folders ?? [])
     rebuildGraph(docs)
@@ -224,22 +233,19 @@ export default function FileTree() {
     const ext = filename.endsWith('.md') ? '.md' : ''
     const base = filename.replace(/\.md$/i, '')
     const copyFilename = `${base} copy${ext}`
+    if (!isValidFilename(copyFilename)) { alert('Invalid file name.'); return }
     const dir = absolutePath.replace(/[\\/][^\\/]+$/, '')
     const sep = absolutePath.includes('\\') ? '\\' : '/'
     const destPath = `${dir}${sep}${copyFilename}`
-    try {
-      const content = loadedDocuments?.find(d =>
-        (d as LoadedDocument).absolutePath === absolutePath
-      )?.rawContent ?? ''
-      await window.vaultAPI.saveFile(destPath, content)
-    } catch (e) {
-      console.error('[FileTree] createCopy failed:', e)
-    }
+    const content = loadedDocuments?.find(d =>
+      (d as LoadedDocument).absolutePath === absolutePath
+    )?.rawContent ?? ''
+    await safeFileOp('createCopy', () => window.vaultAPI!.saveFile(destPath, content))
+    await reloadVault()
   }
 
   const handleBookmark = (docId: string) => {
-    // TODO: persist bookmarks in a store
-    console.log('[FileTree] bookmark:', docId)
+    useSettingsStore.getState().toggleBookmark(docId)
   }
 
   const handleRename = async (absolutePath: string, filename: string) => {
@@ -248,12 +254,13 @@ export default function FileTree() {
     const newFilename = newName.trim().endsWith('.md')
       ? newName.trim()
       : `${newName.trim()}.md`
+    if (!isValidFilename(newFilename)) { alert('Invalid file name.'); return }
     if (newFilename === filename) return
 
     const oldDoc = loadedDocuments?.find(d => (d as LoadedDocument).absolutePath === absolutePath)
     const wasEditing = Boolean(oldDoc && editingDocId === oldDoc.id)
 
-    try {
+    await safeFileOp('rename', async () => {
       await window.vaultAPI?.renameFile(absolutePath, newFilename)
       if (vaultPath && window.vaultAPI) {
         const docs = await reloadVault()
@@ -262,21 +269,19 @@ export default function FileTree() {
           const dir = absolutePath.replace(/[\\/][^\\/]+$/, '')
           const newAbsPath = `${dir}${sep}${newFilename}`
           const newDoc = docs.find(d =>
-            d.absolutePath.replace(/\\/g, '/') === newAbsPath.replace(/\\/g, '/')
+            normalizePath(d.absolutePath) === normalizePath(newAbsPath)
           )
           if (newDoc) openInEditor(newDoc.id)
         }
       }
-    } catch (e) {
-      console.error('[FileTree] rename failed:', e)
-    }
+    })
   }
 
   const handleDelete = async (absolutePath: string, filename: string) => {
     const confirmed = window.confirm(`Delete "${filename}"?\nYou can restore it from Settings › Trash.`)
     if (!confirmed) return
-    try {
-      // Back up content before deletion → keep in trash store
+    await safeFileOp('delete', async () => {
+      // Back up the content before deleting → keep it in the trash store
       const content = await window.vaultAPI?.readFile(absolutePath) ?? ''
       const doc = loadedDocuments?.find(d => d.absolutePath === absolutePath)
       pushTrash({
@@ -287,9 +292,7 @@ export default function FileTree() {
       })
       await window.vaultAPI?.deleteFile(absolutePath)
       await reloadVault()
-    } catch (e) {
-      console.error('[FileTree] delete failed:', e)
-    }
+    })
   }
 
   // ── Create folder ──────────────────────────────────────────────────────────
@@ -298,17 +301,18 @@ export default function FileTree() {
     if (!vaultPath || !window.vaultAPI?.createFolder) return
     const name = window.prompt('New folder name (nested allowed: parent/child):')
     if (!name || !name.trim()) return
+    // Validate each path segment (parent/child allowed, ../ blocked)
+    const segments = name.trim().split(/[/\\]/).filter(Boolean)
+    if (segments.some(s => !isValidFilename(s))) { alert('Invalid folder name.'); return }
     const sep = vaultPath.includes('\\') ? '\\' : '/'
     const folderRelPath = name.trim().replace(/[/\\]/g, sep)
     const folderAbsPath = `${vaultPath}${sep}${folderRelPath}`
-    try {
-      await window.vaultAPI.createFolder(folderAbsPath)
-      const relNormalized = folderRelPath.replace(/\\/g, '/')
+    await safeFileOp('createFolder', async () => {
+      await window.vaultAPI!.createFolder(folderAbsPath)
+      const relNormalized = normalizePath(folderRelPath)
       setExtraFolders(prev => prev.includes(relNormalized) ? prev : [...prev, relNormalized])
       await reloadVault()
-    } catch (e) {
-      console.error('[FileTree] create folder failed:', e)
-    }
+    })
   }
 
   // ── Move file to folder ────────────────────────────────────────────────────
@@ -330,20 +334,18 @@ export default function FileTree() {
       ? `${vaultPath}${sep}${destFolderRelPath.replace(/[/\\]/g, sep)}`
       : vaultPath
 
-    try {
-      await window.vaultAPI.moveFile(absolutePath, destAbsPath)
+    await safeFileOp('move', async () => {
+      await window.vaultAPI!.moveFile(absolutePath, destAbsPath)
       const docs = await reloadVault()
 
       if (wasEditing) {
         const newRelPath = (destFolderRelPath ? `${destFolderRelPath}/` : '') + filename
         const newDoc = docs.find(d =>
-          d.absolutePath.replace(/\\/g, '/').endsWith(newRelPath.replace(/\\/g, '/'))
+          normalizePath(d.absolutePath).endsWith(normalizePath(newRelPath))
         )
         if (newDoc) openInEditor(newDoc.id)
       }
-    } catch (e) {
-      console.error('[FileTree] move failed:', e)
-    }
+    })
   }
 
   // ── New document ───────────────────────────────────────────────────────────
@@ -352,26 +354,24 @@ export default function FileTree() {
     if (!vaultPath || !window.vaultAPI) return
     const sep = vaultPath.includes('\\') ? '\\' : '/'
     const existing = new Set(
-      (loadedDocuments ?? []).map(d => (d as LoadedDocument).absolutePath.replace(/\\/g, '/'))
+      (loadedDocuments ?? []).map(d => normalizePath((d as LoadedDocument).absolutePath))
     )
     let name = 'Untitled'
     let counter = 1
     let newPath = `${vaultPath}${sep}${name}.md`
-    while (existing.has(newPath.replace(/\\/g, '/'))) {
+    while (existing.has(normalizePath(newPath))) {
       counter++
       name = `Untitled ${counter}`
       newPath = `${vaultPath}${sep}${name}.md`
     }
-    try {
-      await window.vaultAPI.saveFile(newPath, `# ${name}\n\n`)
+    await safeFileOp('newDocument', async () => {
+      await window.vaultAPI!.saveFile(newPath, `# ${name}\n\n`)
       const docs = await reloadVault()
       const newDoc = docs.find(d =>
-        d.absolutePath.replace(/\\/g, '/') === newPath.replace(/\\/g, '/')
+        normalizePath(d.absolutePath) === normalizePath(newPath)
       )
       if (newDoc) openInEditor(newDoc.id)
-    } catch (e) {
-      console.error('[FileTree] new document failed:', e)
-    }
+    })
   }
 
   return (
@@ -415,6 +415,7 @@ export default function FileTree() {
         <button
           style={iconBtn(expandOverride !== null)}
           title={expandOverride === true ? 'Collapse all' : 'Expand all'}
+          aria-label={expandOverride === true ? 'Collapse all' : 'Expand all'}
           onClick={handleExpandCollapseToggle}
         >
           {expandOverride === true ? <ChevronsDownUp size={11} /> : <ChevronsUpDown size={11} />}
@@ -423,6 +424,7 @@ export default function FileTree() {
         <button
           style={iconBtn(isVaultLoaded)}
           title={groupMode === 'folder' ? 'Switch to tag view' : 'Switch to folder view'}
+          aria-label={groupMode === 'folder' ? 'Switch to tag view' : 'Switch to folder view'}
           onClick={handleGroupModeToggle}
           disabled={!isVaultLoaded}
         >
@@ -434,6 +436,7 @@ export default function FileTree() {
         <button
           style={iconBtn()}
           title={vaultPath ? 'Create new folder' : 'Please select a vault first'}
+          aria-label="Create new folder"
           onClick={handleCreateFolder}
           disabled={!vaultPath}
         >
@@ -443,6 +446,7 @@ export default function FileTree() {
         <button
           style={iconBtn()}
           title={vaultPath ? 'Create new document' : 'Please select a vault first'}
+          aria-label="Create new document"
           onClick={handleNewDocument}
           disabled={!vaultPath}
         >

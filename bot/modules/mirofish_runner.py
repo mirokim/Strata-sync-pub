@@ -78,7 +78,7 @@ DEFAULT_PERSONAS = [
     },
 ]
 
-STANCE_LABEL = {"supportive": "supportive", "opposing": "opposing", "neutral": "neutral", "observer": "observer"}
+STANCE_KO = {"supportive": "supportive", "opposing": "opposing", "neutral": "neutral", "observer": "observer"}
 
 
 # ── Prompt Builder ────────────────────────────────────────────────────────────
@@ -99,7 +99,7 @@ def _build_post_prompt(
     mem_block = f"\n\n[My Previous Statements]\n{memory_context}" if memory_context else ""
 
     feed_ctx = "\n".join(
-        f"[{p.author_name}/{STANCE_LABEL.get(p.stance, p.stance)}]"
+        f"[{p.author_name}/{STANCE_KO.get(p.stance, p.stance)}]"
         f"{'↩️ ' if p.original_post_id else ' '}{p.content}"
         for p in recommended[-8:]
     ) or "(No posts yet)"
@@ -166,7 +166,7 @@ def run_simulation(
 
     # ── Simulation loop ───────────────────────────────────────────────────────
     for round_num in range(1, num_rounds + 1):
-        _log(f"[MiroFish] 라운드 {round_num}/{num_rounds}")
+        _log(f"[MiroFish] Round {round_num}/{num_rounds}")
 
         for persona in personas:
             if random.random() > persona["activity"]:
@@ -249,22 +249,23 @@ def run_simulation(
     # Engagement metrics aggregation
     engagement: dict[str, dict] = {}
     for p in env.posts:
-        engagement[p.author_name] = {
-            "likes":   len(p.likes),
-            "reposts": len(p.reposts),
-        }
+        # Accumulate per author — plain assignment would keep only the author's last post's numbers
+        stat = engagement.setdefault(p.author_name, {"likes": 0, "reposts": 0, "posts": 0})
+        stat["likes"]   += len(p.likes)
+        stat["reposts"] += len(p.reposts)
+        stat["posts"]   += 1
     top_engaged = sorted(
         engagement.items(),
         key=lambda x: x[1]["likes"] + x[1]["reposts"],
         reverse=True,
     )[:10]
     engagement_text = "\n".join(
-        f"- {name}: likes {s['likes']}, reposts {s['reposts']}"
+        f"- {name}: posts {s['posts']}, likes {s['likes']}, reposts {s['reposts']}"
         for name, s in top_engaged
     ) or "(no data)"
 
     feed_text = "\n".join(
-        f"[R{e['round']}] [{e['personaName']}/{STANCE_LABEL.get(e['stance'], e['stance'])}]"
+        f"[R{e['round']}] [{e['personaName']}/{STANCE_KO.get(e['stance'], e['stance'])}]"
         f"{'↩️' if e['actionType'] == 'repost' else ''} {e['content']}"
         for e in feed_entries
     )

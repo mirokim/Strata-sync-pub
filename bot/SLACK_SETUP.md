@@ -1,138 +1,138 @@
-# Strata Sync Slack Bot 설정 가이드
+# Strata Sync Slack Bot Setup Guide
 
-## 사전 요구사항
+## Prerequisites
 
 - Python 3.11+
 - `pip install slack-bolt slack-sdk requests`
-- Slack 워크스페이스 관리자 권한
+- Slack workspace admin permissions
 
 ---
 
-## 1. Slack 앱 생성
+## 1. Create the Slack app
 
 1. [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
-2. App Name: `Strata Sync` (또는 원하는 이름)
-3. 워크스페이스 선택 후 **Create App**
+2. App Name: `Strata Sync` (or any name you like)
+3. Select the workspace, then **Create App**
 
 ---
 
-## 2. 권한(Scopes) 설정
+## 2. Configure permissions (Scopes)
 
-**OAuth & Permissions** → **Bot Token Scopes** 에 아래 스코프 추가:
+**OAuth & Permissions** → add the following scopes under **Bot Token Scopes**:
 
-| Scope | 용도 |
+| Scope | Purpose |
 |---|---|
-| `app_mentions:read` | 채널 멘션 수신 |
-| `chat:write` | 메시지 전송 |
-| `chat:write.customize` | thinking 메시지 업데이트 |
-| `im:history` | DM 메시지 읽기 |
-| `im:read` | DM 채널 정보 |
-| `im:write` | DM 메시지 전송 |
-| `channels:history` | 채널 메시지 히스토리 |
-| `groups:history` | 비공개 채널 히스토리 |
-| `files:read` | 첨부 이미지 읽기 (Vision) |
-| `files:write` | 이미지 업로드 (볼트 이미지 전송) |
+| `app_mentions:read` | Receive channel mentions |
+| `chat:write` | Send messages |
+| `chat:write.customize` | Update the thinking message |
+| `im:history` | Read DM messages |
+| `im:read` | DM channel info |
+| `im:write` | Send DM messages |
+| `channels:history` | Channel message history |
+| `groups:history` | Private channel history |
+| `files:read` | Read attached images (Vision) |
+| `files:write` | Upload images (send vault images) |
 
 ---
 
-## 3. Socket Mode 활성화
+## 3. Enable Socket Mode
 
-**Socket Mode** → **Enable Socket Mode** 토글 ON
+**Socket Mode** → toggle **Enable Socket Mode** ON
 
-→ App-Level Token 생성 팝업에서:
+→ In the App-Level Token creation popup:
 - Token Name: `socket-token`
 - Scope: `connections:write`
-- **Generate** → 토큰 복사 (`xapp-1-...`)
+- **Generate** → copy the token (`xapp-1-...`)
 
-이것이 **App Token**입니다.
+This is the **App Token**.
 
 ---
 
-## 4. Event Subscriptions 설정
+## 4. Configure Event Subscriptions
 
 **Event Subscriptions** → **Enable Events** ON
 
-**Subscribe to bot events** 에 추가:
-- `app_mention` — 채널에서 @봇 멘션
-- `message.im` — DM 메시지
-- `app_home_opened` — 홈 탭 열기
+Add under **Subscribe to bot events**:
+- `app_mention` — @bot mentions in channels
+- `message.im` — DM messages
+- `app_home_opened` — Home tab opened
 
 ---
 
-## 5. App Home 설정 (선택)
+## 5. Configure App Home (optional)
 
 **App Home** → **Home Tab** Enable → **Messages Tab** Enable
 
 ---
 
-## 6. 앱 설치
+## 6. Install the app
 
-**Install App** → **Install to Workspace** → 권한 허용
+**Install App** → **Install to Workspace** → allow permissions
 
-설치 후 **Bot User OAuth Token** 복사 (`xoxb-...`)
+After installing, copy the **Bot User OAuth Token** (`xoxb-...`)
 
-이것이 **Bot Token**입니다.
+This is the **Bot Token**.
 
 ---
 
-## 7. Strata Sync 설정
+## 7. Configure Strata Sync
 
-앱 내 설정 → **Slack 봇** 탭:
+In-app Settings → **Slack Bot** tab:
 
-| 필드 | 값 |
+| Field | Value |
 |---|---|
-| **Bot Token** | `xoxb-...` (6단계에서 복사) |
-| **App Token** | `xapp-1-...` (3단계에서 복사) |
-| **응답 모델** | `claude-sonnet-4-6` (기본값) |
+| **Bot Token** | `xoxb-...` (copied in step 6) |
+| **App Token** | `xapp-1-...` (copied in step 3) |
+| **Response model** | `claude-sonnet-4-6` (default) |
 
-**시작** 버튼 클릭 → 로그에 `✅ Bolt app started` 표시 확인
+Click **Start** → confirm `✅ Bolt app started` appears in the log
 
 ---
 
-## 8. 사용법
+## 8. Usage
 
-### 채널에서
+### In a channel
 ```
-@StrataSync 캐릭터A의 컨셉은 뭐야?
-@StrataSync [art] 아트 방향 알려줘
-@StrataSync 캐릭터A 이미지 보여줘
-```
-
-### DM에서
-```
-캐릭터A의 스킬 설명해줘
-[spec] 2월 스펙 정리해줘
-이미지 있어 배경 일러스트
+@StrataSync What is the concept of Character A?
+@StrataSync [art] Tell me the art direction
+@StrataSync Show me an image of Character A
 ```
 
-### 페르소나 태그
-| 태그 | 페르소나 |
+### In a DM
+```
+Explain Character A's skills
+[spec] Summarize the February spec
+Is there an image of the background illustration
+```
+
+### Persona tags
+| Tag | Persona |
 |---|---|
-| `[chief]` 또는 태그 없음 | 총괄 디렉터 |
-| `[art]` | 아트 디렉터 |
-| `[spec]` | 기획 디렉터 |
-| `[tech]` | 프로그래밍 디렉터 |
+| `[chief]` or no tag | Chief Director |
+| `[art]` | Art Director |
+| `[spec]` | Design Director |
+| `[tech]` | Programming Director |
 
-### 이미지 기능
-- **자동**: 답변할 때 관련 문서에 `![[이미지.png]]`가 있으면 자동으로 첨부
-- **명시적 검색**: "이미지 보여줘", "이미지 있어", "사진 보여줘" 키워드 포함 시 볼트에서 파일명 검색 후 첨부
-- **Vision**: 사용자가 이미지를 첨부하면 Claude가 이미지를 분석해 답변
-
----
-
-## 9. Enterprise Grid 환경 (이미지 다운로드 실패 시)
-
-기업용 Slack에서 이미지 URL이 SSO로 차단되는 경우, 봇이 자동으로 썸네일 URL로 폴백합니다.
-여전히 안 되면 `files:read` 스코프 외에 워크스페이스 관리자에게 파일 접근 정책 확인 요청.
+### Image features
+- **Automatic**: when answering, images referenced as `![[image.png]]` in the relevant documents are attached automatically
+- **Explicit search**: when the message contains keywords such as "이미지 보여줘", "이미지 있어", "사진 보여줘" (show/have image, show photo), the vault is searched by file name and matching files are attached
+- **Vision**: when the user attaches an image, Claude analyzes it and answers
 
 ---
 
-## 10. 문제 해결
+## 9. Enterprise Grid environments (when image download fails)
 
-| 증상 | 원인 | 해결 |
+When image URLs are blocked by SSO in enterprise Slack, the bot automatically falls back to thumbnail URLs.
+If it still fails, beyond the `files:read` scope, ask the workspace admin to check the file access policy.
+
+---
+
+## 10. Troubleshooting
+
+| Symptom | Cause | Fix |
 |---|---|---|
-| 봇이 응답 없음 | Electron 앱이 꺼져 있음 | Strata Sync 앱 실행 후 볼트 로드 |
-| `❌ 시작 실패` | 토큰 오류 | Bot/App Token 재확인 |
-| 이미지 업로드 실패 | `files:write` 스코프 없음 | 2단계 스코프 추가 후 재설치 |
-| Vision 분석 안 됨 | Anthropic API 키 없음 | 설정 → AI 탭에서 키 입력 |
-| 답변이 느림 | RAG + LLM 처리 시간 | 정상 (약 10~30초), Vision 포함 시 최대 90초 |
+| Bot does not respond | Electron app is not running | Launch the Strata Sync app and load the vault |
+| `❌ Start failed` | Token error | Re-check the Bot/App Token |
+| Image upload fails | `files:write` scope missing | Add the scope from step 2 and reinstall |
+| Vision analysis not working | Anthropic API key missing | Enter the key in Settings → AI tab |
+| Slow answers | RAG + LLM processing time | Normal (about 10–30 s), up to 90 s with Vision |

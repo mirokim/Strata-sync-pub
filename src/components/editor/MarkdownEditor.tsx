@@ -28,8 +28,9 @@ import { buildGraph } from '@/lib/graphBuilder'
 import { tfidfIndex } from '@/lib/graphAnalysis'
 import { updateDocInWorker } from '@/lib/bm25WorkerClient'
 import { buildAdjacencyMap } from '@/lib/graphRAG'
-import { saveTfIdfCache } from '@/lib/tfidfCache'
+import { invalidateTfIdfCache } from '@/lib/tfidfCache'
 import { MOCK_DOCUMENTS } from '@/data/mockDocuments'
+import { showToast } from '@/stores/toastStore'
 import type { LoadedDocument } from '@/types'
 import { markdownHighlight, vaultTheme } from '@/lib/editor/codemirrorTheme'
 import { buildWikiLinkPlugin, buildHighlightPlugin, buildCommentPlugin } from '@/lib/editor/wikiLinkPlugin'
@@ -263,6 +264,7 @@ export default function MarkdownEditor() {
       }
     } catch (e) {
       console.error('[MarkdownEditor] rename failed:', e)
+      showToast(`Rename failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
     }
   }, [vaultPath, setLoadedDocuments, setNodes, setLinks, openInEditor])
 
@@ -288,6 +290,12 @@ export default function MarkdownEditor() {
           content: text,
           mtime: Date.now(),
         })
+        // parseVaultFiles resolves docId collisions with a "_2" suffix via pushWithUniqueId.
+        // A standalone parseMarkdownFile call knows nothing about that and returns the raw, non-unique id —
+        // using it as-is leaves two documents with the same id in loadedDocuments, and the
+        // BM25 index (rawTermFreqs.set(doc.id, ...)) overwrites one with the other, skewing N.
+        // (Real vaults contain colliding pairs such as "active\3월.md" vs "active\3월..md")
+        reparsed.id = currentDoc.id
 
         const updated = loadedDocsRef.current.map(d =>
           d.id === currentDoc.id ? reparsed : d,
@@ -305,15 +313,22 @@ export default function MarkdownEditor() {
         // BM25 incremental update — reprocess only the saved document
         if (tfidfIndex.isBuilt) {
           try {
-            const fingerprint = String(Date.now())
+            // In-memory fingerprint only — not persisted to disk (see the comment below)
+            const fingerprint = `edit:${Date.now()}`
             const adj = buildAdjacencyMap(graphLinks)
             const { serialized, implicitLinks } = await updateDocInWorker(
               tfidfIndex.serialize(fingerprint), reparsed, adj, fingerprint,
             )
             tfidfIndex.restore(serialized)
             tfidfIndex.setImplicitLinks(implicitLinks, adj)
+            // Invalidate the cache instead of saving it.
+            // loadTfIdfCache compares against buildFingerprint(docs) = a list of "id:mtime",
+            // and right after a save the file's real on-disk mtime is unknown, so no matching fingerprint can be built.
+            // The old code stamped String(Date.now()) as the fingerprint, overwriting a valid cache,
+            // which caused a permanent cache miss + full rebuild on every subsequent startup.
+            // Invalidating means one rebuild on the next vault load, then it is re-cached with the correct fingerprint.
             const vaultRoot = useVaultStore.getState().vaultPath
-            if (vaultRoot) saveTfIdfCache(vaultRoot, serialized).catch(() => {})
+            if (vaultRoot) invalidateTfIdfCache(vaultRoot).catch(() => {})
           } catch {
             // BM25 update failure is silently handled (recovers on next full load)
           }
@@ -325,6 +340,7 @@ export default function MarkdownEditor() {
       setTimeout(() => setSaveStatus('idle'), 2000)
     } catch (e) {
       console.error('[MarkdownEditor] save failed:', e)
+      showToast(`File save failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
       setSaveStatus('error')
     }
   }, [setLoadedDocuments, setNodes, setLinks])

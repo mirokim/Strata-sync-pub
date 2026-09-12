@@ -9,6 +9,7 @@ dist-electron/
 .env
 .env.local
 .env.*.local
+mcp-config.json
 
 # Bot config contains API keys/tokens — use config.example.json as template
 bot/config.json
@@ -44,3 +45,11 @@ venv/
 
 # Claude Code local settings
 .claude/
+
+# Local knowledge graph DB
+.megamemory/
+
+# Runtime logs
+bot/cron-logs/
+bot/slackbot_logs/
+logs/

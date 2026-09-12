@@ -8,6 +8,7 @@ type StreamFn = (
   messages: { role: string; content: string }[],
   onChunk: (text: string) => void,
   onUsage?: (inp: number, out: number) => void,
+  onStop?: (reason: string | null) => void,
 ) => Promise<void>
 
 const PROVIDER_MAP: Record<string, string> = {
@@ -76,23 +77,41 @@ export function getUsageSummary() {
 }
 export function getUsageLog(limit = 100) { return _usageLog.slice(-limit) }
 
+export interface ChatResult {
+  text: string
+  /** 'end_turn' | 'max_tokens' | 'stop_sequence' | ... — null if the provider does not report it */
+  stopReason: string | null
+}
+
 /**
- * Stream a message to any model. Returns the complete response text.
+ * Stream a message to any model. Returns the response text **and** the stop reason.
+ * If stopReason === 'max_tokens' the output was truncated and must not be used for saving/overwriting.
  */
-export async function chat(
+export async function chatDetailed(
   modelId: string, systemPrompt: string,
   messages: { role: string; content: string }[],
   caller = 'chat',
-): Promise<string> {
+): Promise<ChatResult> {
   const provider = resolveProvider(modelId)
   const apiKey = getApiKey(provider)
   if (!apiKey) throw new Error(`No API key for ${provider}. Set it in mcp-config.json`)
 
   const streamFn = await getStreamFn(provider)
   let result = ''
+  let stopReason: string | null = null
   await streamFn(apiKey, modelId, systemPrompt, messages, (chunk) => { result += chunk },
-    (inp, out) => recordUsage(modelId, inp, out, caller))
-  return result
+    (inp, out) => recordUsage(modelId, inp, out, caller),
+    (reason) => { stopReason = reason })
+  return { text: result, stopReason }
+}
+
+/** Stream a message to any model. Returns the complete response text. */
+export async function chat(
+  modelId: string, systemPrompt: string,
+  messages: { role: string; content: string }[],
+  caller = 'chat',
+): Promise<string> {
+  return (await chatDetailed(modelId, systemPrompt, messages, caller)).text
 }
 
 /**

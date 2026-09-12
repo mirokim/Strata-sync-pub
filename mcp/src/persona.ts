@@ -121,6 +121,11 @@ export function buildProjectContext(directorBio?: string): string {
  */
 export function getPersonaPrompt(persona: string): string {
   const base = PERSONA_PROMPTS[persona as DirectorId]
-  if (!base) return PERSONA_PROMPTS.chief_director
+  if (!base) {
+    // Silently falling back to PM would turn a typo into another persona's answer — fail explicitly
+    const known = Object.keys(PERSONA_PROMPTS).join(', ')
+    console.error(`[persona] Unknown persona id: "${persona}" — available: ${known}`)
+    throw new Error(`Unknown persona id: "${persona}". Valid ids: ${known}`)
+  }
   return buildProjectContext() + base
 }

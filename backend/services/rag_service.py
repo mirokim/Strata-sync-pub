@@ -42,6 +42,8 @@ def prepare_chunks(documents: list) -> list[dict]:
     splitter = _splitter
 
     output: list[dict] = []
+    seen_ids: set[str] = set()
+    doc_section_ordinal: dict[str, int] = {}
 
     for doc in documents:
         # Support both Pydantic models and plain dicts
@@ -50,19 +52,36 @@ def prepare_chunks(documents: list) -> list[dict]:
         else:
             d = dict(doc)
 
+        doc_id = d.get("doc_id", "")
+
+        # Ordinal of the section within the document — material for a unique key when section_id is missing.
+        # (Falling back to doc_id gives every section of the same document the same key,
+        #  and idx restarts from 0 per section, so chunk IDs collide and upsert overwrites.)
+        section_ordinal = doc_section_ordinal.get(doc_id, 0)
+        doc_section_ordinal[doc_id] = section_ordinal + 1
+
         content = d.get("content", "").strip()
         if not content:
             continue
 
-        section_id = d.get("section_id") or d.get("doc_id", "")
+        raw_section_id = d.get("section_id")
+        # Metadata keeps the existing fallback (doc_id), but ID generation uses the unique key
+        section_id = raw_section_id or doc_id
+        section_key = raw_section_id or f"{doc_id}#{section_ordinal}"
+
         sub_chunks = splitter.split_text(content)
 
         for idx, text in enumerate(sub_chunks):
+            chunk_id = _chunk_id(doc_id, section_key, idx)
+            if chunk_id in seen_ids:
+                # Same input passed more than once — only one upsert target, so exclude from the count
+                continue
+            seen_ids.add(chunk_id)
             output.append(
                 {
-                    "id": _chunk_id(d["doc_id"], section_id, idx),
+                    "id": chunk_id,
                     "content": text,
-                    "doc_id": d["doc_id"],
+                    "doc_id": doc_id,
                     "filename": d["filename"],
                     "section_id": section_id,
                     "heading": d.get("heading") or "",

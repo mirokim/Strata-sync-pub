@@ -4,10 +4,10 @@
  * and streams a markdown report.
  */
 import type { ChatMessage } from '@/types'
-import { MODEL_OPTIONS, getProviderForModel } from '@/lib/modelConfig'
+import { getProviderForModel } from '@/lib/modelConfig'
 import { SPEAKER_CONFIG } from '@/lib/speakerConfig'
 import { useSettingsStore, getApiKey } from '@/stores/settingsStore'
-import { sanitizeUnicode as sanitize } from '@/lib/utils'
+import { sanitize } from '@/lib/stringUtils'
 
 // ── Conversation → readable text ──────────────────────────────────────────────
 
@@ -18,8 +18,8 @@ function buildConversationText(messages: ChatMessage[]): string {
       const label = m.role === 'user'
         ? 'User'
         : (SPEAKER_CONFIG[m.persona]?.label ?? m.persona)
-      const ts = new Date(m.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
-      return `[${label}] ${ts}\n${m.content.trim()}`
+      const ts = new Date(m.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+      return `[${label}] ${ts}\n${sanitize(m.content).trim()}`
     })
     .join('\n\n')
 }
@@ -66,13 +66,16 @@ export async function streamAIReport(
   const apiKey = getApiKey(provider)
   if (!apiKey) throw new Error(`${provider} API key is not set.`)
 
-  const model = MODEL_OPTIONS.find(m => m.id === reportModelId)!
   const conversationText = buildConversationText(messages)
-  const userPrompt = sanitize(buildUserPrompt(conversationText))
-  const systemPrompt = sanitize(SYSTEM_PROMPT)
+  if (!conversationText.trim()) {
+    throw new Error('No conversation content to generate a report from.')
+  }
+
+  const userPrompt = buildUserPrompt(conversationText)
+  const systemPrompt = SYSTEM_PROMPT
   const apiMessages = [{ role: 'user' as const, content: userPrompt }]
 
-  switch (model.provider) {
+  switch (provider) {
     case 'anthropic': {
       const { streamCompletion } = await import('./providers/anthropic')
       await streamCompletion(apiKey, reportModelId, systemPrompt, apiMessages, onChunk)
@@ -94,6 +97,6 @@ export async function streamAIReport(
       break
     }
     default:
-      throw new Error(`Unsupported provider: ${model.provider}`)
+      throw new Error(`Unsupported provider: ${provider}`)
   }
 }

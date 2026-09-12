@@ -3,8 +3,36 @@ const path = require('path')
 const fs = require('fs')
 const crypto = require('crypto')
 const { spawn } = require('child_process')
+const cronScheduler = require('./cronScheduler.cjs')
+
+// ── C1: RAG HTTP server auth token (generated once per process) ───────────
+// Bound to 127.0.0.1, but other local processes can still reach it, so a random token is required.
+// bot.py receives it via the rag_auth_token field in config.json and must send it in the x-rag-auth header.
+const _ragAuthToken = crypto.randomBytes(24).toString('hex')
 
 let mainWindow
+
+// ── Crash protection: prevent silent exits ──────────────────────────────────
+
+const CRASH_LOG = path.join(__dirname, '..', 'crash.log')
+
+function logCrash(type, err) {
+  const ts = new Date().toISOString()
+  const msg = `[${ts}] [${type}] ${err?.stack || err?.message || err}\n`
+  try { fs.appendFileSync(CRASH_LOG, msg) } catch {}
+  console.error(`[crash] ${type}:`, err)
+}
+
+process.on('uncaughtException', (err) => {
+  logCrash('uncaughtException', err)
+})
+
+process.on('unhandledRejection', (reason) => {
+  logCrash('unhandledRejection', reason)
+})
+
+// Raise renderer memory limit (default ~512MB → 2GB) — prevents OOM crashes
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=2048')
 
 // ── Security: Allowed API domains for CORS bypass ──────────────────────────────
 const ALLOWED_API_DOMAINS = [
@@ -14,14 +42,31 @@ const ALLOWED_API_DOMAINS = [
   'api.x.ai',
 ]
 
+// ── Python backend subprocess (Phase 1-3) ──────────────────────────────────────
+const BACKEND_PORT = parseInt(process.env.BACKEND_PORT || '8765', 10)
+let pythonProcess = null
+let backendReady = false
+
 // ── Slack bot subprocess ────────────────────────────────────────────────────────
 let slackBotProcess = null
-const slackBotLogBuffer = []  // ring buffer — last 500 lines
+const slackBotLogBuffer = []  // ring buffer — last 2000 lines
+let _botLogStream = null
+let _sslBypassRefCount = 0
+
+function _getBotLogStream() {
+  const today = new Date().toISOString().slice(0, 10)
+  const logsDir = path.join(__dirname, '..', 'bot', 'slackbot_logs')
+  if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true })
+  const logFile = path.join(logsDir, `${today}.log`)
+  if (!_botLogStream || _botLogStream._date !== today) {
+    if (_botLogStream) _botLogStream.end()
+    _botLogStream = fs.createWriteStream(logFile, { flags: 'a', encoding: 'utf8' })
+    _botLogStream._date = today
+  }
+  return _botLogStream
+}
 
 const _PYTHON_CMD = process.platform === 'win32' ? 'python' : 'python3'
-
-// ── RAG API authentication token (generated once at app startup) ────────────
-const ragApiToken = crypto.randomBytes(32).toString('hex')
 
 function startSlackBot(config) {
   if (slackBotProcess) return { ok: false, error: 'Already running' }
@@ -30,27 +75,37 @@ function startSlackBot(config) {
 
   // Merge caller-supplied config with existing file (if any)
   // Whitelist allowed keys to prevent arbitrary config injection
-  const ALLOWED_BOT_KEYS = new Set(['botToken', 'appToken', 'signingSecret', 'channels', 'debug'])
+  const ALLOWED_BOT_KEYS = new Set(['botToken', 'appToken', 'signingSecret', 'channels', 'debug', 'sendImages', 'slack_model'])
   let existing = {}
   try { existing = JSON.parse(fs.readFileSync(configPath, 'utf8')) } catch {}
   const safeConfig = Object.fromEntries(Object.entries(config).filter(([k]) => ALLOWED_BOT_KEYS.has(k)))
-  const merged = { ...existing, ...safeConfig }
+  // Rename camelCase keys to snake_case expected by bot.py
+  const KEY_MAP = { botToken: 'slack_bot_token', appToken: 'slack_app_token' }
+  const renamedConfig = Object.fromEntries(
+    Object.entries(safeConfig).map(([k, v]) => [KEY_MAP[k] ?? k, v])
+  )
+  // C1: inject the auth token bot.py uses when calling the RAG HTTP server
+  const merged = { ...existing, ...renamedConfig, rag_auth_token: _ragAuthToken }
   fs.writeFileSync(configPath, JSON.stringify(merged, null, 2), 'utf8')
 
   const proc = spawn(_PYTHON_CMD, ['bot.py', '--headless'], {
     cwd: botDir,
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, RAG_API_TOKEN: ragApiToken },
   })
 
   const sendToWindow = (channel, ...args) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, ...args)
   }
 
-  const pushLog = (line) => {
-    slackBotLogBuffer.push(line)
-    if (slackBotLogBuffer.length > 500) slackBotLogBuffer.splice(0, slackBotLogBuffer.length - 500)
-    sendToWindow('bot:log', line)
+  const pushLog = (rawLine) => {
+    // H6: mask Slack tokens (xoxb-/xoxa-/xoxp-/xoxs- etc.) before storing
+    const line = String(rawLine).replace(/xox[abpsr]-[A-Za-z0-9-]+/g, '[REDACTED]')
+    const ts = new Date().toISOString().slice(11, 19)
+    const stamped = `[${ts}] ${line}`
+    slackBotLogBuffer.push(stamped)
+    if (slackBotLogBuffer.length > 2000) slackBotLogBuffer.splice(0, slackBotLogBuffer.length - 2000)
+    sendToWindow('bot:log', stamped)
+    try { _getBotLogStream().write(`${stamped}\n`) } catch {}
   }
 
   proc.stdout.on('data', (data) => {
@@ -80,30 +135,107 @@ function stopSlackBot() {
   slackBotProcess = null
 }
 
+function startPythonBackend() {
+  const cmd = _PYTHON_CMD
+  const args = [
+    '-m', 'uvicorn', 'backend.main:app',
+    '--host', '127.0.0.1',
+    '--port', String(BACKEND_PORT),
+    '--no-access-log',
+  ]
+
+  try {
+    pythonProcess = spawn(cmd, args, {
+      cwd: process.cwd(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  } catch (err) {
+    console.warn('[backend] Failed to start Python subprocess:', err)
+    return
+  }
+
+  const onData = (data) => {
+    const text = data.toString()
+    if (text.trim()) console.log('[backend]', text.trim())
+    if (text.includes('Application startup complete')) {
+      backendReady = true
+      BrowserWindow.getAllWindows().forEach((w) =>
+        w.webContents.send('backend:ready', { port: BACKEND_PORT })
+      )
+    }
+  }
+
+  pythonProcess.stdout.on('data', onData)
+  pythonProcess.stderr.on('data', onData) // uvicorn writes startup info to stderr
+  pythonProcess.on('error', (err) => {
+    console.warn('[backend] spawn error (Python not installed?):', err.message)
+    pythonProcess = null
+  })
+  pythonProcess.on('exit', (code) => {
+    console.log(`[backend] exited with code ${code}`)
+    backendReady = false
+    pythonProcess = null
+  })
+}
+
+function stopPythonBackend() {
+  if (pythonProcess) {
+    pythonProcess.kill('SIGTERM')
+    pythonProcess = null
+  }
+}
+
 // ── Vault path tracking (for IPC security validation) ─────────────────────────
-/** Absolute path of the currently loaded vault — updated on vault:load-files */
+/** Set of absolute paths of all loaded vaults — added on vault:load-files and vault:set-active-path */
+const loadedVaultPaths = new Set()
+/** Current active vault path (single reference) */
 let currentVaultPath = null
 
 // ── Vault IPC helpers (Phase 6) ────────────────────────────────────────────────
 
 /**
  * Verify that filePath is strictly inside vaultPath (no path traversal).
+ *
+ * Primary check: normalized string-prefix (covers new/not-yet-created files).
+ * Secondary check: realpathSync to detect symlink escapes (when files exist).
  */
 function isInsideVault(vaultPath, filePath) {
+  // Primary: normalize both paths lexically (no I/O, works for new files)
+  const normVault = path.normalize(path.resolve(vaultPath)).replace(/\\/g, '/').replace(/\/$/, '')
+  const normFile  = path.normalize(path.resolve(filePath)).replace(/\\/g, '/')
+  const passedPrimary = normFile.startsWith(normVault + '/')
+
+  if (!passedPrimary) return false  // clearly outside vault
+
+  // Secondary: if both paths exist, resolve symlinks to prevent escapes
   try {
-    const resolvedVault = fs.realpathSync(vaultPath)
-    const resolvedFile = fs.realpathSync(path.resolve(filePath))
-    const rel = path.relative(resolvedVault, resolvedFile)
+    const realVault = fs.realpathSync(vaultPath)
+    const realFile  = fs.realpathSync(path.resolve(filePath))
+    const rel = path.relative(realVault, realFile)
     return !rel.startsWith('..') && !path.isAbsolute(rel)
   } catch {
-    // realpathSync fails if path doesn't exist yet (new file) — fall back to lexical check
-    const rel = path.relative(path.resolve(vaultPath), path.resolve(filePath))
-    return !rel.startsWith('..') && !path.isAbsolute(rel)
+    // File doesn't exist yet (new file being created) — primary check passed, allow it
+    try {
+      const realVault  = fs.realpathSync(vaultPath)
+      const realParent = fs.realpathSync(path.dirname(path.resolve(filePath)))
+      const realFile   = path.join(realParent, path.basename(filePath))
+      const rel = path.relative(realVault, realFile)
+      return !rel.startsWith('..') && !path.isAbsolute(rel)
+    } catch {
+      // Parent also doesn't exist or vault isn't real — deny for safety
+      return false
+    }
   }
 }
 
 /** Recognized image file extensions within the vault */
 const IMAGE_EXTENSIONS = /\.(png|jpg|jpeg|gif|webp|svg|bmp|avif|tiff?|heic)$/i
+
+// ── Jira / Confluence validation constants ─────────────────────────────────
+/** Hard lower-bound for date range queries — prevents runaway full-history scans */
+const JIRA_DATE_HARD_MIN = '2025-01-01'
+/** Project key format: 1–10 upper/lower alphanum + _ - */
+const PROJECT_KEY_RE = /^[A-Z0-9_-]{1,10}$/i
 
 /**
  * Detect image MIME type from file magic bytes.
@@ -151,7 +283,7 @@ async function readImageAsDataUrl(absPath) {
   return `data:${mime};base64,${buffer.toString('base64')}`
 }
 
-// ── Image registry cache (for strata-img:// protocol handler) ────────────────
+// ── Image registry cache (for strata-img:// protocol handler) ───────────────
 // Kept in main process memory so the protocol handler can resolve filenames
 // without an IPC round-trip.
 
@@ -227,7 +359,7 @@ function resolveImagePath(normalizedName) {
   return searchDir(currentVaultPath, 0)
 }
 
-// ── Register strata-img:// custom protocol ────────────────────────────────────
+// ── Register strata-img:// custom protocol ─────────────────────────────────
 // Must be called before app.ready — registers the scheme as "secure" so Chromium
 // treats it like https:// (no mixed-content errors when served from http:// dev server).
 protocol.registerSchemesAsPrivileged([
@@ -240,7 +372,7 @@ protocol.registerSchemesAsPrivileged([
  * - Stops at depth > 10
  * Returns { files: string[], folders: string[], images: string[] }
  *   files:   absolute paths to .md files
- *   folders: vault-relative paths to subdirectories
+ *   folders: vault-relative paths to subdirectories (e.g. "Minion System")
  *   images:  absolute paths to image files (paths only, content not read)
  */
 async function collectVaultContents(vaultPath, dirPath, depth = 0) {
@@ -260,7 +392,7 @@ async function collectVaultContents(vaultPath, dirPath, depth = 0) {
     if (entry.name.startsWith('.')) continue  // skip hidden (.obsidian, etc.)
     const fullPath = path.join(dirPath, entry.name)
 
-    // 1) Markdown file
+    // 1) .md file
     if (entry.name.toLowerCase().endsWith('.md')) {
       if (isInsideVault(vaultPath, fullPath)) files.push(fullPath)
       continue
@@ -318,11 +450,12 @@ function registerVaultIpcHandlers() {
     }
 
     currentVaultPath = resolvedVault
+    loadedVaultPaths.add(resolvedVault)
     const { files: filePaths, folders: folderRelPaths, images: imagePaths } =
       await collectVaultContents(resolvedVault, resolvedVault)
     console.log(`[vault] Found ${filePaths.length} .md files, ${folderRelPaths.length} folders, ${imagePaths.length} images (${resolvedVault})`)
 
-    // Read files: batch parallel to prevent Windows file handle exhaustion
+    // Read files: up to BATCH_SIZE in parallel (unbounded concurrent I/O → Windows file handle explosion)
     const BATCH_SIZE = 100
     const fileResults = []
     for (let i = 0; i < filePaths.length; i += BATCH_SIZE) {
@@ -346,12 +479,11 @@ function registerVaultIpcHandlers() {
     }
     const files = fileResults.filter(Boolean)
 
-    // Image files: return only paths in registry (filename -> {relativePath, absolutePath})
+    // Image files: return paths only as a registry (filename → {relativePath, absolutePath})
     const imageRegistry = {}
     for (const absPath of imagePaths) {
       const filename = path.basename(absPath)
       const relativePath = path.relative(resolvedVault, absPath).replace(/\\/g, '/')
-      // On filename collision, first found takes priority (matches Obsidian behavior)
       if (!imageRegistry[filename]) {
         imageRegistry[filename] = { relativePath, absolutePath: absPath }
       }
@@ -366,7 +498,7 @@ function registerVaultIpcHandlers() {
   })
 
   // ── vault:scan-metadata ───────────────────────────────────────────────────────
-  // Lightweight scan: returns path + mtime only (no content) for cache fingerprint
+  // Return only path + mtime without file contents (lightweight scan for cache fingerprint)
   ipcMain.handle('vault:scan-metadata', async (_event, vaultPath) => {
     if (!vaultPath || typeof vaultPath !== 'string') return []
     const resolvedVault = path.resolve(vaultPath)
@@ -389,17 +521,16 @@ function registerVaultIpcHandlers() {
   let watchDebounce = null
 
   ipcMain.handle('vault:watch-start', (_event, vaultPath) => {
-    if (!vaultPath || typeof vaultPath !== 'string') return false
-    // Security: only allow watching the currently loaded vault
-    const resolvedPath = path.resolve(vaultPath)
-    if (currentVaultPath && resolvedPath !== currentVaultPath) return false
+    if (!vaultPath) return false
     if (watcher) { watcher.close(); watcher = null }
+    clearTimeout(watchDebounce); watchDebounce = null
 
     try {
       let lastChangedFile = null
       watcher = fs.watch(vaultPath, { recursive: true }, (_eventType, filename) => {
         if (!filename || !filename.endsWith('.md')) return
-        // Skip internal app config directory — written by the app itself
+        // Skip internal app config directory (.strata-sync/) — written by the app itself
+        // (e.g. personas.md saved by usePersonaVaultSaver). These are not user vault edits.
         if (filename.replace(/\\/g, '/').startsWith('.strata-sync/')) return
         lastChangedFile = filename
         clearTimeout(watchDebounce)
@@ -424,31 +555,35 @@ function registerVaultIpcHandlers() {
   })
 
   // ── vault:set-active-path ────────────────────────────────────────────────────
-  // Pre-update currentVaultPath when loadVaultCached skips vault:load-files
+  // Proactively update currentVaultPath when loadVaultCached does not call vault:load-files
+  // H5: when the active path changes, replace the set with only the new path so old vault permissions do not accumulate
   ipcMain.handle('vault:set-active-path', (_event, vaultPath) => {
     if (!vaultPath || typeof vaultPath !== 'string') return false
     const resolved = path.resolve(vaultPath)
     try { fs.accessSync(resolved) } catch { return false }
     currentVaultPath = resolved
+    loadedVaultPaths.clear()
+    loadedVaultPaths.add(resolved)
     return true
   })
 
   // ── vault:save-file ──────────────────────────────────────────────────────────
-  ipcMain.handle('vault:save-file', (_event, filePath, content) => {
+  ipcMain.handle('vault:save-file', async (_event, filePath, content) => {
     if (!filePath || typeof filePath !== 'string') throw new Error('Invalid file path')
     if (typeof content !== 'string') throw new Error('Invalid content')
     const resolved = path.resolve(filePath)
-    if (!currentVaultPath || !isInsideVault(currentVaultPath, resolved)) {
+    // Allow if inside any of the loaded vault paths (multi-vault support)
+    const vaultPaths = loadedVaultPaths.size > 0 ? loadedVaultPaths : (currentVaultPath ? new Set([currentVaultPath]) : null)
+    if (vaultPaths && ![...vaultPaths].some(vp => isInsideVault(vp, resolved))) {
       throw new Error(`Security error: cannot write to path outside vault (${resolved})`)
     }
-    fs.mkdirSync(path.dirname(resolved), { recursive: true })
-    // Atomic write: write to temp file then rename to prevent data loss on crash
+    await fs.promises.mkdir(path.dirname(resolved), { recursive: true })
     const tmp = resolved + '.~tmp'
     try {
-      fs.writeFileSync(tmp, content, 'utf-8')
-      fs.renameSync(tmp, resolved)
+      await fs.promises.writeFile(tmp, content, 'utf-8')
+      await fs.promises.rename(tmp, resolved)
     } catch (e) {
-      try { fs.unlinkSync(tmp) } catch {}
+      try { await fs.promises.unlink(tmp) } catch {}
       throw e
     }
     return { success: true, path: resolved }
@@ -459,15 +594,12 @@ function registerVaultIpcHandlers() {
     if (!absolutePath || typeof absolutePath !== 'string') throw new Error('Invalid path')
     if (!newFilename || typeof newFilename !== 'string') throw new Error('Invalid filename')
     const resolved = path.resolve(absolutePath)
-    if (!currentVaultPath || !isInsideVault(currentVaultPath, resolved)) {
+    if (currentVaultPath && !isInsideVault(currentVaultPath, resolved)) {
       throw new Error(`Security error: cannot rename file outside vault (${resolved})`)
     }
     if (!fs.existsSync(resolved)) throw new Error(`File does not exist: ${resolved}`)
-    // Sanitize newFilename — strip any path traversal, accept only the basename
-    const safeFilename = path.basename(newFilename)
-    if (!safeFilename) throw new Error('Invalid filename: empty after sanitization')
     const dir = path.dirname(resolved)
-    const newPath = path.join(dir, safeFilename)
+    const newPath = path.join(dir, newFilename)
     fs.renameSync(resolved, newPath)
     return { success: true, newPath }
   })
@@ -476,7 +608,7 @@ function registerVaultIpcHandlers() {
   ipcMain.handle('vault:delete-file', (_event, absolutePath) => {
     if (!absolutePath || typeof absolutePath !== 'string') throw new Error('Invalid path')
     const resolved = path.resolve(absolutePath)
-    if (!currentVaultPath || !isInsideVault(currentVaultPath, resolved)) {
+    if (currentVaultPath && !isInsideVault(currentVaultPath, resolved)) {
       throw new Error(`Security error: cannot delete file outside vault (${resolved})`)
     }
     if (!fs.existsSync(resolved)) throw new Error(`File does not exist: ${resolved}`)
@@ -485,20 +617,23 @@ function registerVaultIpcHandlers() {
   })
 
   // ── vault:read-file ───────────────────────────────────────────────────────────
-  ipcMain.handle('vault:read-file', (_event, filePath) => {
+  ipcMain.handle('vault:read-file', async (_event, filePath) => {
     if (!filePath || typeof filePath !== 'string') return null
     const resolved = path.resolve(filePath)
-    // Security: reject reads outside the current vault (or when no vault is loaded)
-    if (!currentVaultPath || !isInsideVault(currentVaultPath, resolved)) return null
-    if (!fs.existsSync(resolved)) return null
-    return fs.readFileSync(resolved, 'utf-8')
+    // Must be inside current vault — same guard as vault:save-file and vault:read-image
+    if (currentVaultPath && !isInsideVault(currentVaultPath, resolved)) return null
+    try {
+      return await fs.promises.readFile(resolved, 'utf-8')
+    } catch {
+      return null
+    }
   })
 
   // ── vault:read-image ──────────────────────────────────────────────────────────
   ipcMain.handle('vault:read-image', (_event, filePath) => {
     if (!filePath || typeof filePath !== 'string') return null
     const resolved = path.resolve(filePath)
-    if (!currentVaultPath || !isInsideVault(currentVaultPath, resolved)) return null
+    if (currentVaultPath && !isInsideVault(currentVaultPath, resolved)) return null
     if (!fs.existsSync(resolved)) return null
     return readImageAsDataUrl(resolved)
   })
@@ -517,7 +652,7 @@ function registerVaultIpcHandlers() {
   ipcMain.handle('vault:create-folder', (_event, folderPath) => {
     if (!folderPath || typeof folderPath !== 'string') throw new Error('Invalid folder path')
     const resolved = path.resolve(folderPath)
-    if (!currentVaultPath || !isInsideVault(currentVaultPath, resolved)) {
+    if (currentVaultPath && !isInsideVault(currentVaultPath, resolved)) {
       throw new Error(`Security error: cannot create folder outside vault (${resolved})`)
     }
     fs.mkdirSync(resolved, { recursive: true })
@@ -530,12 +665,14 @@ function registerVaultIpcHandlers() {
     if (!destFolderPath || typeof destFolderPath !== 'string') throw new Error('Invalid destination folder')
     const resolvedSrc = path.resolve(absolutePath)
     const resolvedDest = path.resolve(destFolderPath)
-    if (!currentVaultPath || !isInsideVault(currentVaultPath, resolvedSrc)) {
+    if (currentVaultPath && !isInsideVault(currentVaultPath, resolvedSrc)) {
       throw new Error(`Security error: cannot move file outside vault (${resolvedSrc})`)
     }
-    const isVaultRoot = resolvedDest === path.resolve(currentVaultPath)
-    if (!isVaultRoot && !isInsideVault(currentVaultPath, resolvedDest)) {
-      throw new Error(`Security error: cannot move file to a location outside vault (${resolvedDest})`)
+    if (currentVaultPath) {
+      const isVaultRoot = resolvedDest === path.resolve(currentVaultPath)
+      if (!isVaultRoot && !isInsideVault(currentVaultPath, resolvedDest)) {
+        throw new Error(`Security error: cannot move file to a location outside vault (${resolvedDest})`)
+      }
     }
     if (!fs.existsSync(resolvedSrc)) throw new Error(`File does not exist: ${resolvedSrc}`)
     fs.mkdirSync(resolvedDest, { recursive: true })
@@ -546,6 +683,14 @@ function registerVaultIpcHandlers() {
   })
 }
 
+function registerBackendIpcHandlers() {
+  ipcMain.handle('backend:getStatus', () => ({
+    ready: backendReady,
+    port: BACKEND_PORT,
+  }))
+
+  ipcMain.handle('backend:isReady', () => backendReady)
+}
 
 // ── Window control IPC handlers (Fix 0) ───────────────────────────────────────
 
@@ -587,7 +732,7 @@ ipcMain.handle('report:export-pdf', async (_event, html, suggestedName) => {
   })
   if (canceled || !filePath) return { ok: false, reason: 'canceled' }
 
-  // Load HTML in a hidden BrowserWindow and print to PDF
+  // Load HTML into a hidden BrowserWindow and printToPDF
   const win = new BrowserWindow({
     show: false,
     webPreferences: { sandbox: true },
@@ -620,7 +765,7 @@ ipcMain.handle('web:search', async (_event, query) => {
   const https = require('https')
   const querystring = require('querystring')
   return new Promise((resolve) => {
-    const params = querystring.stringify({ q: query, kl: 'us-en' })
+    const params = querystring.stringify({ q: query, kl: 'kr-kr' })
     const req = https.request({
       hostname: 'html.duckduckgo.com',
       path: '/html/',
@@ -628,7 +773,7 @@ ipcMain.handle('web:search', async (_event, query) => {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Language': 'ko-KR,ko;q=0.9',
         'Content-Length': Buffer.byteLength(params),
       },
     }, (res) => {
@@ -647,9 +792,28 @@ ipcMain.handle('web:search', async (_event, query) => {
 
 function registerConfluenceIpcHandlers() {
   /**
+   * Fetch all pages from a Confluence space via REST API v1.
+   * Uses Electron's net.fetch to bypass CORS.
+   * Returns raw page objects: { id, title, body.storage.value, metadata.labels, version, history }
+   */
+  /**
    * Returns the REST API base path for a Confluence instance.
    * Atlassian Cloud uses /wiki/rest/api; Server/Data Center uses /rest/api.
    */
+
+  /**
+   * Strip Confluence page paths (/display/, /pages/, /browse/, viewpage.action)
+   * so users can paste any Confluence URL as the base URL.
+   */
+  function normalizeConfluenceBaseUrl(baseUrl) {
+    try {
+      const parsed = new URL(baseUrl)
+      const pagePathRe = /\/(display|pages|browse|viewpage\.action)(\/|$)/i
+      if (pagePathRe.test(parsed.pathname)) return parsed.origin
+    } catch { /* fall through */ }
+    return baseUrl.replace(/\/+$/, '')
+  }
+
   function getRestApiBase(baseUrl) {
     try {
       const host = new URL(baseUrl).hostname
@@ -680,14 +844,364 @@ function registerConfluenceIpcHandlers() {
    */
   async function withSSLBypass(bypass, fn) {
     if (!bypass) return fn()
-    const { session } = require('electron')
-    session.defaultSession.setCertificateVerifyProc((_req, cb) => cb(0))
+    _sslBypassRefCount++
+    if (_sslBypassRefCount === 1) {
+      // Enable SSL bypass only on first entry
+      session.defaultSession.setCertificateVerifyProc((_req, cb) => cb(0))
+    }
     try {
       return await fn()
     } finally {
-      session.defaultSession.setCertificateVerifyProc(null)  // restore default
+      _sslBypassRefCount--
+      if (_sslBypassRefCount === 0) {
+        // Restore only when the last call finishes
+        session.defaultSession.setCertificateVerifyProc(null)
+      }
     }
   }
+
+  // ── Jira API ──────────────────────────────────────────────────────────────
+  ipcMain.handle('jira:test-connection', async (_event, config) => {
+    const { baseUrl, authType = 'cloud', email, apiToken, bypassSSL = false } = config
+    if (!baseUrl || !apiToken) throw new Error('baseUrl and apiToken are required.')
+    try {
+      const parsed = new URL(baseUrl)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error()
+    } catch { throw new Error('Invalid baseUrl format. Must be in the form http(s)://...') }
+    if (authType !== 'server_pat' && !email) throw new Error('Email (username) is required.')
+
+    const base = baseUrl.replace(/\/+$/, '')
+    const isCloud = base.includes('atlassian.net')
+    const apiVersion = isCloud ? '3' : '2'
+    const restBase = `${base}/rest/api/${apiVersion}`
+
+    let authHeader
+    if (authType === 'server_pat') {
+      authHeader = `Bearer ${apiToken}`
+    } else {
+      authHeader = `Basic ${Buffer.from(`${email}:${apiToken}`).toString('base64')}`
+    }
+    const headers = { Authorization: authHeader, Accept: 'application/json' }
+
+    const url = `${restBase}/myself`
+    let res
+    try {
+      res = await withSSLBypass(bypassSSL, () => net.fetch(url, { headers }))
+    } catch (fetchErr) {
+      const msg = fetchErr?.message ?? String(fetchErr)
+      if (msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('ETIMEDOUT')) {
+        throw new Error(`Cannot connect to server. Check your VPN and Base URL.\n(${msg})`)
+      }
+      throw new Error(`Connection error: ${msg}`)
+    }
+
+    if (res.status === 401) throw new Error('Authentication failed (401). Check your email/password or API token.')
+    if (res.status === 403) throw new Error('Access denied (403). Check your account permissions.')
+    if (!res.ok) throw new Error(`Connection failed: ${res.status} ${res.statusText}`)
+
+    let displayName = ''
+    try {
+      const data = await res.json()
+      displayName = data.displayName ?? data.name ?? ''
+    } catch { /* ignore */ }
+
+    return { ok: true, displayName }
+  })
+
+  ipcMain.handle('jira:fetch-issues', async (_event, config) => {
+    const { baseUrl, authType = 'cloud', email, apiToken, projectKey, jql: customJql, dateFrom, dateTo, bypassSSL = false } = config
+    if (!baseUrl || !apiToken) throw new Error('baseUrl and apiToken are required.')
+    // Validate URL format and protocol to prevent SSRF
+    try {
+      const parsed = new URL(baseUrl)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error()
+    } catch { throw new Error('Invalid baseUrl format. Must be in the form http(s)://...') }
+    if (authType !== 'server_pat' && !email) throw new Error('Cloud / Server Basic auth requires an email.')
+    if (projectKey && !PROJECT_KEY_RE.test(projectKey)) throw new Error('Invalid Project Key format. Only letters, digits, and _- (max 10 chars) are allowed.')
+
+    const effectiveDateFrom = (!dateFrom || dateFrom < JIRA_DATE_HARD_MIN) ? JIRA_DATE_HARD_MIN : dateFrom
+
+    const base = baseUrl.replace(/\/+$/, '')
+    const isCloud = authType === 'cloud'
+    const apiVersion = isCloud ? '3' : '2'
+    const restBase = `${base}/rest/api/${apiVersion}`
+
+    // Build auth header
+    let authHeader
+    if (authType === 'server_pat') {
+      authHeader = `Bearer ${apiToken}`
+    } else {
+      const b64 = Buffer.from(`${email}:${apiToken}`).toString('base64')
+      authHeader = `Basic ${b64}`
+    }
+    const headers = { 'Authorization': authHeader, 'Accept': 'application/json', 'Content-Type': 'application/json' }
+
+    // Build JQL — customJql is user input, so block dangerous patterns
+    let jql = customJql?.trim()
+    if (jql && /\b(DROP|DELETE|INSERT|UPDATE|EXEC|UNION)\b/i.test(jql)) {
+      throw new Error('JQL contains disallowed keywords.')
+    }
+    if (!jql) {
+      jql = projectKey ? `project = "${projectKey}"` : 'order by updated DESC'
+      jql += ` AND updated >= "${effectiveDateFrom}"`
+      if (dateTo) jql += ` AND updated <= "${dateTo}"`
+      jql += ' ORDER BY updated DESC'
+    }
+
+    const fields = 'summary,description,status,assignee,reporter,priority,issuetype,labels,components,created,updated,comment,attachment,fixVersions,customfield_10016'
+
+    const issues = []
+    let startAt = 0
+    const maxResults = 50
+
+    while (true) {
+      const url = `${restBase}/search?jql=${encodeURIComponent(jql)}&startAt=${startAt}&maxResults=${maxResults}&fields=${encodeURIComponent(fields)}`
+      let res
+      try {
+        res = await withSSLBypass(bypassSSL, () => net.fetch(url, { headers }))
+      } catch (fetchErr) {
+        const msg = fetchErr?.message ?? String(fetchErr)
+        if (msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND')) {
+          throw new Error(`Cannot connect to server. Check your VPN connection and Base URL.\n(${msg})`)
+        }
+        throw fetchErr
+      }
+      if (!res.ok) {
+        const errText = await res.text().catch(() => String(res.status))
+        if (res.status === 401) throw new Error(`Authentication failed (401). Check your API token or email.`)
+        if (res.status === 403) throw new Error(`Access denied (403). You do not have read permission for this project.`)
+        throw new Error(`Jira API ${res.status}: ${errText.slice(0, 300)}`)
+      }
+      const data = await res.json()
+      for (const issue of (data.issues ?? [])) issues.push(issue)
+      if (issues.length >= data.total || (data.issues ?? []).length < maxResults) break
+      startAt += maxResults
+    }
+
+    return issues
+  })
+
+  ipcMain.handle('jira:save-issues', async (_event, vaultPath, targetFolder, issuesWithMd) => {
+    if (!vaultPath || typeof vaultPath !== 'string') throw new Error('Invalid vault path')
+    const resolvedVault = path.resolve(vaultPath)
+    if (!targetFolder || typeof targetFolder !== 'string') throw new Error('Invalid target folder')
+    if (!path.isAbsolute(targetFolder) && targetFolder.includes('..')) throw new Error('Invalid target folder')
+    const targetDir = path.isAbsolute(targetFolder) ? targetFolder : path.resolve(path.join(resolvedVault, targetFolder))
+    // C2: enforce that an absolute targetFolder is also inside the vault (path traversal defense)
+    if (path.isAbsolute(targetFolder) && !isInsideVault(resolvedVault, targetDir)) {
+      throw new Error(`Security error: targetFolder must be inside the vault (${targetDir})`)
+    }
+
+    fs.mkdirSync(targetDir, { recursive: true })
+    let saved = 0
+    const savedFiles = []
+    for (const { filename, content } of issuesWithMd) {
+      if (!filename || typeof content !== 'string') continue
+      const safeFilename = path.basename(filename)
+      const filePath = path.join(targetDir, safeFilename)
+      fs.writeFileSync(filePath, content, 'utf-8')
+      saved++
+      savedFiles.push(filePath)
+    }
+    return { saved, targetDir, files: savedFiles }
+  })
+
+  // ── Jira: Get assignable project members ──────────────────────────────────
+  ipcMain.handle('jira:get-members', async (_event, config) => {
+    const { baseUrl, authType = 'cloud', email, apiToken, projectKey, bypassSSL = false } = config
+    if (!baseUrl || !apiToken) throw new Error('baseUrl and apiToken are required.')
+    try {
+      const parsed = new URL(baseUrl)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error()
+    } catch { throw new Error('Invalid baseUrl format.') }
+
+    const base = baseUrl.replace(/\/+$/, '')
+    const isCloud = base.includes('atlassian.net')
+    const apiVersion = isCloud ? '3' : '2'
+    const restBase = `${base}/rest/api/${apiVersion}`
+
+    let authHeader
+    if (authType === 'server_pat') {
+      authHeader = `Bearer ${apiToken}`
+    } else {
+      authHeader = `Basic ${Buffer.from(`${email}:${apiToken}`).toString('base64')}`
+    }
+    const headers = { Authorization: authHeader, Accept: 'application/json' }
+
+    // Cloud: /rest/api/3/users/search  (no project required)
+    // Server/DC: /rest/api/2/user/assignable/search?project=KEY  (project required)
+    //            /rest/api/2/user/search?username=.  (fallback — lists all users)
+    const url = projectKey
+      ? `${restBase}/user/assignable/search?project=${encodeURIComponent(projectKey)}&maxResults=50`
+      : isCloud
+        ? `${restBase}/users/search?maxResults=50`
+        : `${restBase}/user/search?username=.&maxResults=50`
+    let res
+    try {
+      res = await withSSLBypass(bypassSSL, () => net.fetch(url, { headers }))
+    } catch (fetchErr) {
+      throw new Error(`Connection error: ${fetchErr?.message ?? fetchErr}`)
+    }
+    if (!res.ok) {
+      const errText = await res.text().catch(() => String(res.status))
+      throw new Error(`Jira API ${res.status}: ${errText.slice(0, 200)}`)
+    }
+    const data = await res.json()
+    return (Array.isArray(data) ? data : []).map(u => ({
+      accountId: u.accountId ?? '',
+      displayName: u.displayName ?? '',
+      emailAddress: u.emailAddress ?? '',
+    }))
+  })
+
+  // ── Jira: Create a new issue ──────────────────────────────────────────────
+  ipcMain.handle('jira:create-issue', async (_event, config, fields) => {
+    const { baseUrl, authType = 'cloud', email, apiToken, projectKey, bypassSSL = false } = config
+    if (!baseUrl || !apiToken) throw new Error('baseUrl and apiToken are required.')
+    try {
+      const parsed = new URL(baseUrl)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error()
+    } catch { throw new Error('Invalid baseUrl format.') }
+    if (!fields?.summary?.trim()) throw new Error('summary (issue title) is required.')
+    const effectiveProjectKey = (fields.projectKey || projectKey || '').trim()
+    if (effectiveProjectKey && !PROJECT_KEY_RE.test(effectiveProjectKey)) throw new Error('Invalid Project Key format. Only letters, digits, and _- (max 10 chars) are allowed.')
+
+    const base = baseUrl.replace(/\/+$/, '')
+    const isCloud = authType === 'cloud'
+    const restBase = isCloud ? `${base}/rest/api/3` : `${base}/rest/api/2`
+
+    let authHeader
+    if (authType === 'server_pat') {
+      authHeader = `Bearer ${apiToken}`
+    } else {
+      authHeader = `Basic ${Buffer.from(`${email}:${apiToken}`).toString('base64')}`
+    }
+    const headers = { Authorization: authHeader, Accept: 'application/json', 'Content-Type': 'application/json' }
+
+    const descText = (fields.description ?? '').trim()
+    const body = {
+      fields: {
+        project: { key: effectiveProjectKey },
+        summary: fields.summary.trim(),
+        description: isCloud
+          ? { version: 1, type: 'doc', content: descText ? [{ type: 'paragraph', content: [{ type: 'text', text: descText }] }] : [] }
+          : descText,
+        issuetype: fields.issuetype
+          ? (/^\d+$/.test(fields.issuetype) ? { id: fields.issuetype } : { name: fields.issuetype })
+          : { name: 'Task' },
+        ...(fields.priority ? { priority: { name: fields.priority } } : {}),
+        labels: Array.isArray(fields.labels) ? fields.labels : [],
+      },
+    }
+    if (fields.assigneeAccountId) body.fields.assignee = isCloud
+      ? { accountId: fields.assigneeAccountId }
+      : { name: fields.assigneeAccountId }
+    if (fields.parentKey) body.fields.parent = { key: fields.parentKey }
+    if (fields.component) body.fields.components = [{ name: fields.component }]
+
+    let res
+    try {
+      res = await withSSLBypass(bypassSSL, () => net.fetch(`${restBase}/issue`, {
+        method: 'POST', headers, body: JSON.stringify(body),
+      }))
+    } catch (fetchErr) {
+      throw new Error(`Connection error: ${fetchErr?.message ?? fetchErr}`)
+    }
+    if (!res.ok) {
+      const errText = await res.text().catch(() => String(res.status))
+      if (res.status === 400) throw new Error(`Request error (400): ${errText.slice(0, 300)}`)
+      if (res.status === 401) throw new Error('Authentication failed (401). Check your API token.')
+      if (res.status === 403) throw new Error('Permission denied (403). Issue creation permission is required.')
+      throw new Error(`Jira API ${res.status}: ${errText.slice(0, 200)}`)
+    }
+    const data = await res.json()
+    const issueKey = data.key
+
+    // ── Auto-assign to active sprint ──────────────────────────────────────
+    let sprintId = null
+    try {
+      const agileBase = `${base}/rest/agile/1.0`
+      const pKey = fields.projectKey || projectKey
+      // Use boardId from settings if present, otherwise auto-discover a scrum board
+      let boardId = config.boardId ?? null
+      if (!boardId) {
+        const boardRes = await withSSLBypass(bypassSSL, () =>
+          net.fetch(`${agileBase}/board?projectKeyOrId=${pKey}&type=scrum&maxResults=10`, { headers })
+        )
+        if (boardRes.ok) {
+          const boardData = await boardRes.json()
+          boardId = boardData?.values?.[0]?.id ?? null
+        }
+      }
+      if (boardId) {
+        const sprintRes = await withSSLBypass(bypassSSL, () =>
+          net.fetch(`${agileBase}/board/${boardId}/sprint?state=active&maxResults=1`, { headers })
+        )
+        if (sprintRes.ok) {
+          const sprintData = await sprintRes.json()
+          sprintId = sprintData?.values?.[0]?.id ?? null
+        }
+      }
+    } catch (_) { /* keep in backlog if sprint lookup fails */ }
+
+    if (sprintId) {
+      try {
+        await withSSLBypass(bypassSSL, () =>
+          net.fetch(`${base}/rest/agile/1.0/sprint/${sprintId}/issue`, {
+            method: 'POST', headers, body: JSON.stringify({ issues: [issueKey] }),
+          })
+        )
+      } catch (_) { /* ignore sprint assignment failure */ }
+    }
+
+    return { key: issueKey, id: data.id, url: `${base}/browse/${issueKey}`, sprintId }
+  })
+
+  ipcMain.handle('confluence:test-connection', async (_event, config) => {
+    const { baseUrl, authType = 'cloud', email, apiToken, bypassSSL = false } = config
+    if (!baseUrl || !apiToken) throw new Error('baseUrl and apiToken are required.')
+    try {
+      const parsed = new URL(baseUrl)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error()
+    } catch { throw new Error('Invalid baseUrl format. Must be in the form http(s)://...') }
+    if (authType !== 'server_pat' && !email) throw new Error('Email (username) is required.')
+
+    const base = normalizeConfluenceBaseUrl(baseUrl)
+    const headers = buildConfluenceAuthHeaders(authType, email, apiToken)
+    const restBase = getRestApiBase(base)
+
+    async function tryFetch(url) {
+      try {
+        return await withSSLBypass(bypassSSL, () => net.fetch(url, { headers }))
+      } catch (fetchErr) {
+        const msg = fetchErr?.message ?? String(fetchErr)
+        if (msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('ETIMEDOUT')) {
+          throw new Error(`Cannot connect to server. Check your VPN and Base URL.\n(${msg})`)
+        }
+        throw new Error(`Connection error: ${msg}`)
+      }
+    }
+
+    // /rest/api/space?limit=1 — requires auth on all Confluence versions, universally supported
+    const spaceUrl = `${restBase}/space?limit=1`
+    const res = await tryFetch(spaceUrl)
+
+    if (res.status === 401) throw new Error('Authentication failed (401). Check your username/password or API token.')
+    if (res.status === 403) throw new Error('Access denied (403). Check your account permissions.')
+    if (!res.ok) throw new Error(`Connection failed: ${res.status} ${res.statusText}`)
+
+    // Fetch the user display name from /user/current, but treat a 404 as a successful connection
+    let displayName = ''
+    try {
+      const userRes = await tryFetch(`${restBase}/user/current`)
+      if (userRes.ok) {
+        const data = await userRes.json()
+        displayName = data.displayName ?? data.username ?? data.name ?? ''
+      }
+    } catch { /* ignore display name lookup failure */ }
+
+    return { ok: true, displayName }
+  })
 
   ipcMain.handle('confluence:fetch-pages', async (_event, config) => {
     const { baseUrl, authType = 'cloud', email, apiToken, spaceKey, dateFrom, dateTo, bypassSSL = false } = config
@@ -696,23 +1210,30 @@ function registerConfluenceIpcHandlers() {
     if (!baseUrl || !apiToken || !spaceKey) {
       throw new Error('baseUrl, apiToken, and spaceKey are required.')
     }
+    // Validate URL format and protocol to prevent SSRF
+    try {
+      const parsed = new URL(baseUrl)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error()
+    } catch { throw new Error('Invalid baseUrl format. Must be in the form http(s)://...') }
     if (authType !== 'server_pat' && !email) {
       throw new Error('Cloud / Server Basic auth requires an email (or username).')
     }
-    // Sanitize spaceKey — Confluence space keys are alphanumeric + hyphens/underscores only.
-    // Reject anything else to prevent CQL injection.
-    if (!/^[A-Za-z0-9_~-]+$/.test(spaceKey)) {
-      throw new Error(`Invalid spaceKey: "${spaceKey}". Space keys may only contain letters, digits, hyphens, underscores, and tildes.`)
+
+    // Date range validation — hard lower bound: JIRA_DATE_HARD_MIN
+    const effectiveDateFrom = (!dateFrom || dateFrom < JIRA_DATE_HARD_MIN) ? JIRA_DATE_HARD_MIN : dateFrom
+    if (dateFrom && dateFrom < JIRA_DATE_HARD_MIN) {
+      console.warn(`[Confluence] dateFrom(${dateFrom}) < minimum allowed(${JIRA_DATE_HARD_MIN}), correcting to ${JIRA_DATE_HARD_MIN}.`)
     }
 
-    // Date range validation — hard lower bound: 2025-01-01
-    const HARD_MIN = '2025-01-01'
-    const effectiveDateFrom = (!dateFrom || dateFrom < HARD_MIN) ? HARD_MIN : dateFrom
-    if (dateFrom && dateFrom < HARD_MIN) {
-      console.warn(`[Confluence] dateFrom(${dateFrom}) < minimum allowed(${HARD_MIN}), correcting to ${HARD_MIN}.`)
-    }
+    // Input validation — prevent CQL injection
+    const SPACE_KEY_RE = /^[A-Z0-9_~-]{1,100}$/i
+    // YYYY-MM-DD or YYYY-MM-DD HH:mm (datetime — incremental sync based on lastSyncAt)
+    const DATE_RE = /^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?$/
+    if (!SPACE_KEY_RE.test(spaceKey)) throw new Error('Invalid Space Key format. Only letters, digits, and _~- are allowed.')
+    if (dateTo && !DATE_RE.test(dateTo)) throw new Error('Invalid dateTo format. Must be YYYY-MM-DD.')
+    if (!DATE_RE.test(effectiveDateFrom)) throw new Error('Invalid dateFrom format. Must be YYYY-MM-DD or YYYY-MM-DD HH:mm.')
 
-    const base = baseUrl.replace(/\/+$/, '')
+    const base = normalizeConfluenceBaseUrl(baseUrl)
     const headers = buildConfluenceAuthHeaders(authType, email, apiToken)
     const restBase = getRestApiBase(base)
 
@@ -730,7 +1251,7 @@ function registerConfluenceIpcHandlers() {
       const url =
         `${restBase}/content/search` +
         `?cql=${encodeURIComponent(cql)}` +
-        `&expand=body.storage,metadata.labels,version,history` +
+        `&expand=body.storage,body.view,metadata.labels,version,history` +
         `&limit=${limit}` +
         `&start=${start}`
 
@@ -751,8 +1272,8 @@ function registerConfluenceIpcHandlers() {
         const errText = await res.text().catch(() => String(res.status))
         if (res.status === 401) {
           const hint = authType === 'server_pat'
-            ? 'Please verify your PAT token is correct.'
-            : 'Please verify your API token or email/username.'
+            ? 'Check that your PAT token is correct.'
+            : 'Check your API token or email/username.'
           throw new Error(`Authentication failed (401). ${hint}`)
         }
         if (res.status === 403) throw new Error(`Access denied (403). You do not have read permission for this space.`)
@@ -782,26 +1303,25 @@ function registerConfluenceIpcHandlers() {
     if (!vaultPath || typeof vaultPath !== 'string') throw new Error('Invalid vault path')
     const resolvedVault = path.resolve(vaultPath)
 
-    // Validate targetFolder — block absolute paths and traversal, allow nested relative paths
     if (!targetFolder || typeof targetFolder !== 'string') throw new Error('Invalid target folder')
-    if (path.isAbsolute(targetFolder) || targetFolder.includes('..')) throw new Error('Invalid target folder')
-    const targetDir = path.resolve(path.join(resolvedVault, targetFolder))
-    if (!isInsideVault(resolvedVault, targetDir)) throw new Error('Target folder is outside vault')
+    if (!path.isAbsolute(targetFolder) && targetFolder.includes('..')) throw new Error('Invalid target folder')
+    const targetDir = path.isAbsolute(targetFolder) ? targetFolder : path.resolve(path.join(resolvedVault, targetFolder))
+    // C2: enforce that an absolute targetFolder is also inside the vault (path traversal defense)
+    if (path.isAbsolute(targetFolder) && !isInsideVault(resolvedVault, targetDir)) {
+      throw new Error(`Security error: targetFolder must be inside the vault (${targetDir})`)
+    }
 
     fs.mkdirSync(targetDir, { recursive: true })
     let saved = 0
     const savedFiles = []
     for (const { filename, content } of pagesWithMd) {
       if (!filename || typeof content !== 'string') continue
-      // Sanitize to plain basename — no path traversal
       const safeFilename = path.basename(filename)
       const filePath = path.join(targetDir, safeFilename)
-      if (!isInsideVault(resolvedVault, filePath)) continue
       fs.writeFileSync(filePath, content, 'utf-8')
       savedFiles.push(filePath)
       saved++
     }
-    // targetDir IS the active dir (per manual: vault/active/ = targetFolder)
     return { saved, targetDir, activeDir: targetDir, files: savedFiles }
   })
 
@@ -809,6 +1329,200 @@ function registerConfluenceIpcHandlers() {
    * Rollback: delete the given file paths and remove empty directories.
    * Returns { deleted, errors } — errors are non-fatal (file locked / already gone).
    */
+  // ── MCP Config sync (GUI → mcp-config.json) ──────────────────────────────
+  ipcMain.handle('config:write-mcp', async (_event, patch) => {
+    // SEC-4: allowlist — only known GUI-managed keys may be written
+    const ALLOWED_MCP_KEYS = new Set(['jira', 'confluence', 'slackBot', 'vaultPath'])
+    const mcpConfigPath = process.env.STRATA_SYNC_CONFIG
+      || path.join(__dirname, '..', 'mcp-config.json')
+    let current = {}
+    try { current = JSON.parse(fs.readFileSync(mcpConfigPath, 'utf-8')) } catch {}
+    // Deep merge one level (top-level keys like jira, confluence, slackBot)
+    const merged = { ...current }
+    for (const [k, v] of Object.entries(patch)) {
+      if (!ALLOWED_MCP_KEYS.has(k)) {
+        console.warn(`[config:write-mcp] Ignoring disallowed key: "${k}"`)
+        continue
+      }
+      merged[k] = typeof v === 'object' && v !== null && !Array.isArray(v)
+        ? { ...(current[k] ?? {}), ...v }
+        : v
+    }
+    fs.writeFileSync(mcpConfigPath, JSON.stringify(merged, null, 2), 'utf-8')
+    return { ok: true }
+  })
+
+  // ── Settings file persistence (userData/settings.json, vault.json) ────────
+  // Atomic write: tmp → rename (prevents file corruption on crash)
+  // Backup: keep .bak after a successful write → restore from .bak on read failure
+  const settingsDir = app.getPath('userData')
+  const ALLOWED_SETTINGS_FILES = new Set(['settings.json', 'vault.json'])
+
+  function validateSettingsFile(filename) {
+    if (!ALLOWED_SETTINGS_FILES.has(filename)) throw new Error(`Disallowed settings file: "${filename}"`)
+    return path.join(settingsDir, filename)
+  }
+
+  ipcMain.handle('settings:read', async (_event, filename) => {
+    const filePath = validateSettingsFile(filename)
+    const bakPath = filePath + '.bak'
+    // 1st: original file
+    try {
+      const raw = fs.readFileSync(filePath, 'utf-8')
+      return JSON.parse(raw)
+    } catch (err) {
+      if (err.code !== 'ENOENT') {
+        console.warn(`[settings:read] ${filename} corrupted or unreadable:`, err.message, '— trying .bak')
+      }
+    }
+    // 2nd: restore from backup file
+    try {
+      const raw = fs.readFileSync(bakPath, 'utf-8')
+      const parsed = JSON.parse(raw)
+      console.warn(`[settings:read] ${filename} → restored from .bak`)
+      fs.writeFileSync(filePath, raw, 'utf-8')
+      return parsed
+    } catch { /* no backup either — first run */ }
+    return null
+  })
+
+  ipcMain.handle('settings:write', async (_event, filename, data) => {
+    const filePath = validateSettingsFile(filename)
+    const tmpPath = filePath + '.tmp'
+    const bakPath = filePath + '.bak'
+
+    // Validate data type
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new Error(`settings:write — data must be a plain object`)
+    }
+
+    // JSON serialization (guards against circular refs, BigInt, etc.)
+    let json
+    try {
+      json = JSON.stringify(data, null, 2)
+    } catch (err) {
+      throw new Error(`settings:write — JSON serialization failed: ${err.message}`)
+    }
+
+    // Size limit (10MB)
+    if (json.length > 10 * 1024 * 1024) {
+      throw new Error(`settings:write — file size exceeded (${(json.length / 1024 / 1024).toFixed(1)}MB > 10MB)`)
+    }
+
+    // Atomic write
+    fs.writeFileSync(tmpPath, json, 'utf-8')
+    try { fs.renameSync(filePath, bakPath) } catch { /* no original on first save */ }
+    try {
+      fs.renameSync(tmpPath, filePath)
+    } catch (err) {
+      // 2nd rename failed → restore original from .bak
+      console.error(`[settings:write] ${filename} rename failed:`, err.message)
+      try { fs.renameSync(bakPath, filePath) } catch { /* .bak restore also failed */ }
+      try { fs.unlinkSync(tmpPath) } catch { /* clean up tmp */ }
+      throw err
+    }
+    return { ok: true }
+  })
+
+  // ── Confluence Write: get page info ───────────────────────────────────────
+  ipcMain.handle('confluence:get-page-info', async (_event, config, pageIdOrUrl) => {
+    const { baseUrl, authType = 'cloud', email, apiToken, bypassSSL = false } = config
+    if (!baseUrl || !apiToken) throw new Error('baseUrl and apiToken are required.')
+    const base = normalizeConfluenceBaseUrl(baseUrl)
+    const headers = buildConfluenceAuthHeaders(authType, email, apiToken)
+    const restBase = getRestApiBase(base)
+
+    // Extract numeric page ID from URL or use directly
+    let pageId = String(pageIdOrUrl).trim()
+    const urlMatch = pageId.match(/pageId=(\d+)/) || pageId.match(/\/pages\/(\d+)/)
+    if (urlMatch) pageId = urlMatch[1]
+    if (!/^\d+$/.test(pageId)) throw new Error('Could not extract page ID. Paste a URL in the form pageId=XXXXXX.')
+
+    const url = `${restBase}/content/${pageId}?expand=version,space,ancestors`
+    const res = await withSSLBypass(bypassSSL, () => net.fetch(url, { headers }))
+    if (!res.ok) {
+      const txt = await res.text().catch(() => String(res.status))
+      if (res.status === 404) throw new Error(`Page not found (ID: ${pageId})`)
+      throw new Error(`Confluence ${res.status}: ${txt.slice(0, 200)}`)
+    }
+    const data = await res.json()
+    return {
+      id: data.id,
+      title: data.title,
+      version: data.version?.number ?? 1,
+      spaceKey: data.space?.key ?? '',
+      url: `${base}/pages/${data.id}`,
+    }
+  })
+
+  // ── Confluence Write: create new page ─────────────────────────────────────
+  ipcMain.handle('confluence:create-page', async (_event, config, opts) => {
+    const { baseUrl, authType = 'cloud', email, apiToken, spaceKey, bypassSSL = false } = config
+    if (!baseUrl || !apiToken) throw new Error('baseUrl and apiToken are required.')
+    if (!opts?.title?.trim()) throw new Error('Page title is required.')
+    if (!opts?.storageBody?.trim()) throw new Error('Page content is required.')
+
+    const effectiveSpaceKey = opts.spaceKey || spaceKey
+    if (!effectiveSpaceKey) throw new Error('Space Key is missing. Enter a Space Key in the Confluence settings.')
+
+    const base = normalizeConfluenceBaseUrl(baseUrl)
+    const headers = { ...buildConfluenceAuthHeaders(authType, email, apiToken), 'Content-Type': 'application/json' }
+    const restBase = getRestApiBase(base)
+
+    const body = {
+      type: 'page',
+      title: opts.title.trim(),
+      space: { key: effectiveSpaceKey },
+      body: { storage: { value: opts.storageBody, representation: 'storage' } },
+    }
+    if (opts.parentId) body.ancestors = [{ id: String(opts.parentId) }]
+
+    const res = await withSSLBypass(bypassSSL, () => net.fetch(`${restBase}/content`, {
+      method: 'POST', headers, body: JSON.stringify(body),
+    }))
+    if (!res.ok) {
+      const txt = await res.text().catch(() => String(res.status))
+      if (res.status === 400) throw new Error(`Request error (400): ${txt.slice(0, 300)}`)
+      if (res.status === 403) throw new Error('Permission denied (403). Page creation permission is required.')
+      throw new Error(`Confluence ${res.status}: ${txt.slice(0, 200)}`)
+    }
+    const data = await res.json()
+    return { id: data.id, title: data.title, url: `${base}/pages/${data.id}` }
+  })
+
+  // ── Confluence Write: update existing page ────────────────────────────────
+  ipcMain.handle('confluence:update-page', async (_event, config, opts) => {
+    const { baseUrl, authType = 'cloud', email, apiToken, bypassSSL = false } = config
+    if (!baseUrl || !apiToken) throw new Error('baseUrl and apiToken are required.')
+    if (!opts?.pageId) throw new Error('pageId is required.')
+    if (!opts?.title?.trim()) throw new Error('Page title is required.')
+    if (!opts?.storageBody?.trim()) throw new Error('Page content is required.')
+    if (!opts?.currentVersion) throw new Error('currentVersion is required.')
+
+    const base = normalizeConfluenceBaseUrl(baseUrl)
+    const headers = { ...buildConfluenceAuthHeaders(authType, email, apiToken), 'Content-Type': 'application/json' }
+    const restBase = getRestApiBase(base)
+
+    const body = {
+      type: 'page',
+      title: opts.title.trim(),
+      version: { number: opts.currentVersion + 1 },
+      body: { storage: { value: opts.storageBody, representation: 'storage' } },
+    }
+
+    const res = await withSSLBypass(bypassSSL, () => net.fetch(`${restBase}/content/${opts.pageId}`, {
+      method: 'PUT', headers, body: JSON.stringify(body),
+    }))
+    if (!res.ok) {
+      const txt = await res.text().catch(() => String(res.status))
+      if (res.status === 409) throw new Error('Version conflict (409). The page was modified by someone else. Refresh and try again.')
+      if (res.status === 403) throw new Error('Permission denied (403). Page edit permission is required.')
+      throw new Error(`Confluence ${res.status}: ${txt.slice(0, 200)}`)
+    }
+    const data = await res.json()
+    return { id: data.id, title: data.title, version: data.version?.number, url: `${base}/pages/${data.id}` }
+  })
+
   ipcMain.handle('confluence:rollback', async (_event, files, dirs) => {
     if (!currentVaultPath) throw new Error('No vault is currently open')
     const resolvedVault = path.resolve(currentVaultPath)
@@ -855,7 +1569,7 @@ function registerConfluenceIpcHandlers() {
    */
   ipcMain.handle('confluence:download-attachments', async (_event, config, vaultPath, targetFolder, pageId) => {
     const { baseUrl, authType = 'cloud', email, apiToken, bypassSSL = false } = config
-    const base = baseUrl.replace(/\/+$/, '')
+    const base = normalizeConfluenceBaseUrl(baseUrl)
     const headers = buildConfluenceAuthHeaders(authType, email, apiToken)
     const restBase = getRestApiBase(base)
 
@@ -903,6 +1617,35 @@ function registerConfluenceIpcHandlers() {
         scriptName.includes('/') || scriptName.includes('\\') || scriptName.includes('..')) {
       throw new Error(`Invalid script name: ${scriptName}`)
     }
+    // Validate args: must be array of strings; each item either a known flag or a safe path
+    const safeArgs = Array.isArray(args) ? args : []
+    const ALLOWED_FLAGS = new Set(['--vault', '--dry-run', '--verbose', '--force', '--fix', '--top', '--days', '--threshold'])
+    const NUMERIC_FLAGS = new Set(['--top', '--days', '--threshold'])
+    for (let i = 0; i < safeArgs.length; i++) {
+      const arg = safeArgs[i]
+      if (typeof arg !== 'string') throw new Error('Script args must be strings')
+      if (arg.startsWith('-')) {
+        if (!ALLOWED_FLAGS.has(arg)) throw new Error(`Unknown flag: ${arg}`)
+        // Validate flag values
+        if (NUMERIC_FLAGS.has(arg)) {
+          const val = safeArgs[i + 1]
+          if (typeof val !== 'string' || !/^\d+(\.\d+)?$/.test(val)) {
+            throw new Error(`${arg} requires a numeric value`)
+          }
+          i++  // consume value — so the next iteration does not mistake the numeric value for a flag
+        }
+        if (arg === '--vault') {
+          const val = safeArgs[i + 1]
+          if (typeof val !== 'string') throw new Error('--vault requires a path value')
+          const resolvedVal = path.resolve(val)
+          const resolvedVault = currentVaultPath ? path.resolve(currentVaultPath) : null
+          if (resolvedVault && !resolvedVal.startsWith(resolvedVault)) {
+            throw new Error(`--vault value must be inside the current vault`)
+          }
+          i++  // consume value
+        }
+      }
+    }
 
     const appDir = app.isPackaged
       ? path.join(process.resourcesPath, 'manual', 'scripts')
@@ -916,12 +1659,11 @@ function registerConfluenceIpcHandlers() {
       throw new Error(`Script not found: ${scriptPath}`)
     }
 
-    const safeArgs = (Array.isArray(args) ? args : []).map(String)
     return new Promise((resolve) => {
       const pyCmd = process.platform === 'win32' ? 'python' : 'python3'
-      const proc = spawn(pyCmd, [scriptPath, ...safeArgs], {
+      const proc = spawn(pyCmd, ['-X', 'utf8', scriptPath, ...(args ?? [])], {
         cwd: app.isPackaged ? process.resourcesPath : path.join(__dirname, '..'),
-        env: { ...process.env },
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
       })
       let stdout = ''
       let stderr = ''
@@ -935,7 +1677,7 @@ function registerConfluenceIpcHandlers() {
     })
   })
 
-  // ── tools:run-vault-tool — Run Python scripts from tools/ folder for Edit Agent ──
+  // ── tools:run-vault-tool — run Python scripts in the tools/ folder for the Edit Agent ──
   ipcMain.handle('tools:run-vault-tool', async (_event, scriptName, args) => {
     if (!scriptName || typeof scriptName !== 'string' ||
         scriptName.includes('/') || scriptName.includes('\\') || scriptName.includes('..')) {
@@ -969,7 +1711,7 @@ function registerConfluenceIpcHandlers() {
     })
   })
 
-  // ── gstack:execute — Headless browser binary execution ───────────────────────
+  // ── gstack:execute — run the gstack headless browser binary ──────────────────
   ipcMain.handle('gstack:execute', async (_event, command, args) => {
     const ALLOWED = new Set(['goto', 'text', 'snapshot', 'click', 'fill', 'js'])
     if (!ALLOWED.has(command)) return { success: false, output: '', error: `Unknown command: ${command}` }
@@ -1004,8 +1746,14 @@ function createWindow() {
     minWidth: 1200,
     minHeight: 700,
     title: 'STRATA SYNC',
-    icon: path.join(__dirname, '..', 'ico.png'),
-    frame: false,            // Remove native OS title bar (custom TopBar handles controls)
+    icon: path.join(__dirname, '..', '..', 'ico.png'),  // window titlebar icon
+    frame: true,
+    titleBarStyle: 'hidden',   // Hide native title text, keep window controls
+    titleBarOverlay: {
+      color: '#202020',        // matches --color-bg-secondary dark theme
+      symbolColor: '#9b9a97', // matches --color-text-secondary
+      height: 36,              // matches TopBar h-9
+    },
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -1014,13 +1762,19 @@ function createWindow() {
     },
     autoHideMenuBar: true,
     backgroundColor: '#191919',
-    show: false,  // Show after ready-to-show event — prevents "not responding" during JS parse
+    show: false,  // show after ready-to-show event — prevents 'Not Responding' during JS parsing
   })
 
   // Show window after JS bundle parse and first render complete (Electron recommended pattern)
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
   })
+
+  // Explicitly set taskbar icon on Windows (setAppUserModelId must be called before this)
+  if (process.platform === 'win32') {
+    const iconPath = path.join(__dirname, '..', '..', 'ico.png')
+    if (require('fs').existsSync(iconPath)) mainWindow.setIcon(iconPath)
+  }
 
   // ── Security: Handle CORS for allowed API domains ──
   // Strip Origin header so Chromium does not enforce CORS preflight at all.
@@ -1039,15 +1793,13 @@ function createWindow() {
   // (some API servers return 4xx for OPTIONS, which fails the preflight).
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const url = new URL(details.url)
-    const isAllowed = ALLOWED_API_DOMAINS.some(
-      d => url.hostname === d || url.hostname.endsWith('.' + d)
-    )
+    const isAllowed = ALLOWED_API_DOMAINS.some(d => url.hostname === d)
     if (isAllowed) {
       const responseHeaders = {
         ...details.responseHeaders,
         'access-control-allow-origin': ['*'],
         'access-control-allow-headers': ['*'],
-        'access-control-allow-methods': ['GET, POST, PUT, DELETE, OPTIONS'],
+        'access-control-allow-methods': ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
       }
       if (details.method === 'OPTIONS') {
         callback({ responseHeaders, statusLine: 'HTTP/1.1 204 No Content' })
@@ -1072,23 +1824,24 @@ function createWindow() {
 
   // ── Crash recovery: renderer process gone (GPU crash, OOM, etc.) ───────────
   let rendererCrashCount = 0
-  const CRASH_RESET_MS = 30_000  // crash count reset window: 30 seconds
+  const CRASH_RESET_MS = 30_000  // crash count window of 30 seconds
   let crashResetTimer = null
 
   mainWindow.webContents.on('render-process-gone', (event, details) => {
+    logCrash('render-process-gone', `reason: ${details.reason}, exitCode: ${details.exitCode}`)
     console.error('[main] render-process-gone:', details.reason, 'exitCode:', details.exitCode)
     if (details.reason === 'clean-exit') return
 
     rendererCrashCount++
     console.warn(`[main] Renderer crash count: ${rendererCrashCount}`)
 
-    // Stop auto-restart after 3 crashes within 30s to prevent infinite reload loop
+    // If it crashes 3+ times within 30s, stop reloading to prevent an infinite restart loop
     if (rendererCrashCount >= 3) {
       console.error('[main] Repeated crashes detected — stopping auto-restart. Please restart the app manually.')
       return
     }
 
-    // Reset counter after 30s
+    // Timer: reset counter after 30s
     if (crashResetTimer) clearTimeout(crashResetTimer)
     crashResetTimer = setTimeout(() => { rendererCrashCount = 0 }, CRASH_RESET_MS)
 
@@ -1112,10 +1865,15 @@ function createWindow() {
 
   // ── Unresponsive renderer: log for now (could show dialog if needed) ───────
   mainWindow.on('unresponsive', () => {
-    console.warn('[main] window became unresponsive')
+    logCrash('unresponsive', 'window became unresponsive')
   })
   mainWindow.on('responsive', () => {
     console.log('[main] window responsive again')
+  })
+
+  // GPU process crashes etc. — all Electron child processes
+  app.on('child-process-gone', (_event, details) => {
+    logCrash('child-process-gone', `type: ${details.type}, reason: ${details.reason}, exitCode: ${details.exitCode}`)
   })
 }
 
@@ -1179,10 +1937,10 @@ function startRagApiServer() {
     // Top-level exception guard — prevent unhandled rejections in async handler
     const _handleRequest = async () => {
 
-    // Authentication: require Bearer token on all endpoints
-    const authHeader = req.headers['authorization'] || ''
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
-    if (token !== ragApiToken) {
+    // C1: every RAG HTTP endpoint requires the random token in the x-rag-auth header.
+    // Binding to 127.0.0.1 alone does not block access from other processes on the same machine.
+    const _authed = req.headers['x-rag-auth'] === _ragAuthToken
+    if (!_authed) {
       return send(401, { error: 'unauthorized' })
     }
 
@@ -1195,7 +1953,7 @@ function startRagApiServer() {
       const query = url.searchParams.get('q') || ''
       const topN  = Math.min(parseInt(url.searchParams.get('n') || '5', 10), 20)
       if (!query.trim()) return send(400, { error: 'query required' })
-      const results = await ipcRequest('rag:search', { query, topN }, 15000)
+      const results = await ipcRequest('rag:search', { query, topN }, 28000)
       return results ? send(200, results) : send(504, { error: 'timeout' })
     }
 
@@ -1246,7 +2004,7 @@ function startRagApiServer() {
     if (url.pathname === '/mirofish-save') {
       // Save MiroFish simulation results as a vault MD file
       if (req.method !== 'POST') return send(405, { error: 'POST required' })
-      // If currentVaultPath is null, query the renderer directly (race condition after app start)
+      // If currentVaultPath is null, query the renderer directly (guards against a race right after app start)
       if (!currentVaultPath) {
         const rendererVaultPath = await ipcRequest('rag:get-vault-path', {}, 5000)
         if (rendererVaultPath && typeof rendererVaultPath === 'string') {
@@ -1264,18 +2022,18 @@ function startRagApiServer() {
           req.on('error', reject)
         })
       } catch { return send(400, { error: 'invalid request' }) }
-      let saveBody = {}
-      try { saveBody = JSON.parse(rawSave) } catch { return send(400, { error: 'invalid json' }) }
-      const topic    = (typeof saveBody.topic    === 'string' ? saveBody.topic    : '').slice(0, 200)
-      const report   = (typeof saveBody.report   === 'string' ? saveBody.report   : '').slice(0, 50000)
-      const brief    = (typeof saveBody.brief    === 'string' ? saveBody.brief    : '').slice(0, 5000)
-      const feedArr  = Array.isArray(saveBody.feed) ? saveBody.feed.slice(0, 200) : []
+      let body = {}
+      try { body = JSON.parse(rawSave) } catch { return send(400, { error: 'invalid json' }) }
+      const topic    = (typeof body.topic    === 'string' ? body.topic    : '').slice(0, 200)
+      const report   = (typeof body.report   === 'string' ? body.report   : '').slice(0, 50000)
+      const brief    = (typeof body.brief    === 'string' ? body.brief    : '').slice(0, 5000)
+      const feedArr  = Array.isArray(body.feed) ? body.feed.slice(0, 200) : []
       if (!topic) return send(400, { error: 'topic required' })
 
       const now    = new Date()
       const dateStr = now.toISOString().slice(0, 10)
       const timeStr = now.toTimeString().slice(0, 5).replace(':', '-')
-      const slug   = topic.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 40)
+      const slug   = topic.replace(/[^\uAC00-\uD7A3\u3131-\u314Ea-zA-Z0-9]/g, '_').slice(0, 40)
       const fname  = `MiroFish_${dateStr}_${timeStr}_${slug}.md`
       const folder = path.join(currentVaultPath, 'MiroFish')
       const fpath  = path.join(folder, fname)
@@ -1292,7 +2050,7 @@ function startRagApiServer() {
         `tags: [mirofish, simulation]`,
         `---`,
         ``,
-        `# MiroFish Simulation: ${topic}`,
+        `# 🐟 MiroFish Simulation: ${topic}`,
         ``,
         brief ? `## PM Brief\n${brief}\n` : '',
         `## Analysis Report`,
@@ -1316,7 +2074,7 @@ function startRagApiServer() {
     }
 
     if (url.pathname === '/ask') {
-      // Parse POST body (may include history), fallback to GET params
+      // Parse POST body (may include history), fall back to GET params
       let body = {}
       if (req.method === 'POST') {
         try {
@@ -1348,7 +2106,7 @@ function startRagApiServer() {
         .filter(m => m && typeof m === 'object' && typeof m.data === 'string' && _ALLOWED_MEDIA.includes(m.mediaType))
         .slice(0, 5)
       if (!query) return send(400, { error: 'query required' })
-      // Images: 150s, text-only: 120s — multi-vault sequential RAG + LLM latency
+      // Images: 150s, text: 120s — accounts for sequential multi-vault RAG + LLM latency (raised from 60s)
       const timeoutMs  = images.length > 0 ? 150000 : 120000
       const result = await ipcRequest('rag:ask', { query, directorId, history, images }, timeoutMs)
       return result ? send(200, result) : send(504, { error: 'timeout' })
@@ -1373,14 +2131,6 @@ function startRagApiServer() {
     _ragResolvers.clear()
   }
 
-  server.on('error', (err) => {
-    if (err.code === 'EADDRINUSE') {
-      console.warn(`[RAG API] Port ${RAG_API_PORT} already in use — Slack bot bridge unavailable. Close other instances of STRATA SYNC and restart.`)
-    } else {
-      console.error('[RAG API] Server error:', err)
-    }
-  })
-
   server.listen(RAG_API_PORT, '127.0.0.1', () => {
     console.log(`[RAG API] http://127.0.0.1:${RAG_API_PORT}`)
   })
@@ -1396,9 +2146,9 @@ function startRagApiServer() {
   }
 
   app.whenReady().then(() => {
-    // ── strata-img:// protocol — serve vault images directly from disk ────────
-    // No base64 encoding, no size limits, no MIME guessing in the renderer.
-    // The browser loads images natively via this custom secure scheme.
+    // ── strata-img:// protocol — serve vault images directly from disk ──────
+    // This replaces the data-URL/IPC approach: no base64 encoding, no size limits,
+    // no MIME guessing in the renderer. The browser loads images natively.
     protocol.handle('strata-img', async (request) => {
       try {
         const url = new URL(request.url)
@@ -1411,12 +2161,6 @@ function startRagApiServer() {
         if (!absPath) {
           console.warn('[strata-img] not found:', normalizedName)
           return new Response(null, { status: 404 })
-        }
-
-        // Security: ensure resolved image is inside the current vault
-        if (!currentVaultPath || !isInsideVault(currentVaultPath, absPath)) {
-          console.warn('[strata-img] blocked: path outside vault:', absPath)
-          return new Response(null, { status: 403 })
         }
 
         // Use async read to avoid blocking the main process for large images
@@ -1440,10 +2184,53 @@ function startRagApiServer() {
     })
 
     registerVaultIpcHandlers()
+    registerBackendIpcHandlers()
     registerWindowIpcHandlers()
     registerConfluenceIpcHandlers()
+    startPythonBackend()
     createWindow()
     startRagApiServer()
+
+    // ── Cron Job Scheduler IPC ──────────────────────────────────────────────────
+    // Initialize scheduler async — avoid blocking the main process at startup
+    ;(async () => {
+      try {
+        const settingsPath = path.join(app.getPath('userData'), 'settings.json')
+        let cronConfigs = null
+        try {
+          const raw = await fs.promises.readFile(settingsPath, 'utf-8')
+          const settings = JSON.parse(raw)
+          cronConfigs = settings?.state?.cronConfigs || null
+        } catch { /* first run — no settings file yet */ }
+        cronScheduler.initCronScheduler(
+          cronConfigs,
+          () => slackBotProcess
+        )
+      } catch (err) {
+        console.error('[main] Cron scheduler init failed:', err)
+      }
+    })()
+
+    ipcMain.handle('cron:get-state', () => cronScheduler.getFullState())
+    ipcMain.handle('cron:update-config', async (_event, jobId, patch) => {
+      cronScheduler.updateJobConfig(jobId, patch)
+      return { ok: true }
+    })
+    ipcMain.handle('cron:run-now', async (_event, jobId) => {
+      cronScheduler.executeJob(jobId).catch(err => {
+        console.error(`[cron] Job ${jobId} failed:`, err.message)
+      })
+      return { ok: true }
+    })
+    ipcMain.handle('cron:get-logs', () => cronScheduler.getLogs())
+    ipcMain.handle('cron:get-runs', () => cronScheduler.getRuns())
+    ipcMain.handle('cron:list-log-files', () => cronScheduler.listLogFiles())
+    ipcMain.handle('cron:load-log-file', (_event, date) => cronScheduler.loadLogFile(date))
+    // The renderer (editAgentRunner etc.) injects detailed run logs into the scheduler
+    ipcMain.handle('cron:append-log', (_event, jobId, level, message, extra) => {
+      cronScheduler.addLog(jobId, level, message, extra || {})
+      return { ok: true }
+    })
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -1455,15 +2242,23 @@ function startRagApiServer() {
   })
 
   app.on('before-quit', () => {
+    cronScheduler.shutdown()
+    stopPythonBackend()
     stopSlackBot()
   })
-
-  // ── RAG API token IPC (renderer can fetch the token for authenticated requests) ──
-  ipcMain.handle('rag:get-token', () => ragApiToken)
 
   // ── Slack bot IPC ──────────────────────────────────────────────────────────
   ipcMain.handle('bot:start', (_event, config) => startSlackBot(config))
   ipcMain.handle('bot:stop',  () => { stopSlackBot(); return { ok: true } })
   ipcMain.handle('bot:status', () => ({ running: slackBotProcess !== null }))
   ipcMain.handle('bot:get-logs', () => [...slackBotLogBuffer])
+  ipcMain.handle('bot:read-log-file', async (_event, date) => {
+    if (!date || typeof date !== 'string') return null
+    const logPath = path.join(__dirname, '..', 'bot', 'slackbot_logs', `${date}.log`)
+    try {
+      return await fs.promises.readFile(logPath, 'utf-8')
+    } catch {
+      return null
+    }
+  })
 }

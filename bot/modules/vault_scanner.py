@@ -10,16 +10,17 @@ from pathlib import Path
 
 @dataclass
 class VaultDoc:
-    path: str           # Absolute path
-    fname: str          # Filename
-    stem: str           # Name without extension
-    folder: str         # Parent folder name
+    path: str           # absolute path
+    fname: str          # file name
+    stem: str           # name without extension
+    folder: str         # parent folder name
+    parent_resolved: str = ""  # parent folder absolute path precomputed at scan time (avoids recomputing per search)
     title: str = ""
     tags: list = field(default_factory=list)
     doc_type: str = "reference"
     date_str: str = ""
-    body: str = ""      # Body excluding frontmatter
-    raw: str = ""       # Full original text
+    body: str = ""      # body without frontmatter
+    raw: str = ""       # full raw text
     body_len: int = 0
 
 
@@ -44,9 +45,15 @@ def scan_vault(vault_path: str) -> list[VaultDoc]:
         return docs
 
     for md_file in vault.rglob("*.md"):
-        # Exclude hidden folders like .strata-sync, .obsidian
-        parts = md_file.parts
-        if any(p.startswith(".") for p in parts):
+        # Exclude hidden folders such as .strata-sync and .obsidian.
+        # Judged by the path relative to the vault root — looking at the full absolute path
+        # would filter out every file when the vault lives under a dot directory
+        # (e.g. C:\Users\x\.notes\vault), leaving zero scan results.
+        try:
+            rel_parts = md_file.relative_to(vault).parts
+        except ValueError:
+            rel_parts = md_file.parts
+        if any(p.startswith(".") for p in rel_parts):
             continue
 
         try:
@@ -56,13 +63,16 @@ def scan_vault(vault_path: str) -> list[VaultDoc]:
 
         fm, body = load_frontmatter(raw)
         stem = md_file.stem
-        folder = md_file.parent.name
+        parent = md_file.parent
+        folder = parent.name
 
         doc = VaultDoc(
             path=str(md_file),
             fname=md_file.name,
             stem=stem,
             folder=folder,
+            # Normalize once at scan time so resolve() is not called per document on every search
+            parent_resolved=str(parent.resolve()),
             title=str(fm.get("title", stem)),
             tags=fm.get("tags", []) or [],
             doc_type=str(fm.get("type", "reference")),
@@ -77,9 +87,15 @@ def scan_vault(vault_path: str) -> list[VaultDoc]:
 
 
 def find_active_folders(vault_path: str) -> list[str]:
-    """List of active_YYYYMMDD folders (reverse date order)"""
+    r"""List of active-family folders (newest date first).
+
+    The actual vault naming convention is `active` (current) and `activeYYMMDD` (snapshot).
+    The previous regex `^active_\d{8}$` matched neither, returned an empty list,
+    and search_vault (default active_only=True) searched zero documents.
+    The legacy `active_YYYYMMDD` format is also accepted.
+    """
     vault = Path(vault_path)
-    pattern = re.compile(r"^active_\d{8}$")
+    pattern = re.compile(r"^active(?:_?\d{6,8})?$")
     folders = [
         str(vault / d.name)
         for d in vault.iterdir()
@@ -89,5 +105,5 @@ def find_active_folders(vault_path: str) -> list[str]:
 
 
 def get_wikilinks(text: str) -> list[str]:
-    """Extract [[stem]] or [[stem|display]] from body text → list of stems"""
+    """Extract [[stem]] or [[stem|display]] from the body → list of stems"""
     return re.findall(r"\[\[(.*?)(?:\|.*?)?\]\]", text, re.DOTALL)

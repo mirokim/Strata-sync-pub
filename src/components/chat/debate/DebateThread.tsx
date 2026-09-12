@@ -62,7 +62,7 @@ function MessageBubble({ message }: { message: DiscussionMessage }) {
           className="shrink-0 rounded-full"
           style={{
             width: isJudgeEval ? 4 : 2,
-            backgroundColor: isJudgeEval ? '#f59e0b' : color,
+            backgroundColor: isJudgeEval ? 'var(--color-warning)' : color,
           }}
         />
 
@@ -71,7 +71,7 @@ function MessageBubble({ message }: { message: DiscussionMessage }) {
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span
               className="text-[11px] font-semibold tracking-wide"
-              style={{ color: isJudgeEval ? '#f59e0b' : color }}
+              style={{ color: isJudgeEval ? 'var(--color-warning)' : color }}
             >
               {label}
             </span>

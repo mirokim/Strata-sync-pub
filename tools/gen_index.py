@@ -2,9 +2,9 @@
 """
 gen_index.py — §14.2 _index.md + §14.1 currentSituation.md auto-generation
 
-- _index.md: 전체 active 파일 날짜 역순, 월별 그룹핑
-             상단에 "최근 30일" 섹션 (§18 [4단계])
-- currentSituation.md: 프로젝트 현황 + 최근 30일 섹션 (§18 [1단계])
+- _index.md: every active file in reverse date order, grouped by month
+             with a "last 30 days" section at the top (§18 [step 4])
+- currentSituation.md: project status + last 30 days section (§18 [step 1])
 
 Usage:
   python gen_index.py <active_dir> [--days 30]
@@ -31,7 +31,7 @@ def parse_frontmatter(content: str) -> dict:
 
 
 def collect_files_info(active_dir: Path) -> list[dict]:
-    """active 파일 정보 수집 (날짜 역순 정렬)."""
+    """Collect active file info (sorted in reverse date order)."""
     files_info = []
     for md in active_dir.glob('*.md'):
         # Exclude system files
@@ -63,7 +63,7 @@ def collect_files_info(active_dir: Path) -> list[dict]:
 
 
 def gen_index_md(active_dir: Path, files_info: list[dict], days: int = 30) -> Path:
-    """_index.md 생성."""
+    """Generate _index.md."""
     today = date.today()
     cutoff = (today - timedelta(days=days)).strftime('%Y-%m-%d')
     today_str = today.strftime('%Y-%m-%d')
@@ -130,7 +130,7 @@ def gen_index_md(active_dir: Path, files_info: list[dict], days: int = 30) -> Pa
 
 
 def gen_current_situation(active_dir: Path, files_info: list[dict], days: int = 30) -> Path:
-    """currentSituation.md 생성."""
+    """Generate currentSituation.md."""
     today = date.today()
     today_str = today.strftime('%Y-%m-%d')
     cutoff = (today - timedelta(days=days)).strftime('%Y-%m-%d')
@@ -212,32 +212,32 @@ def gen_current_situation(active_dir: Path, files_info: list[dict], days: int = 
     content = '\n'.join(lines) + '\n'
     out_path = active_dir.parent / 'currentSituation.md'
     out_path.write_text(content, encoding='utf-8')
-    # active 폴더에도 복사 (BFS 탐색용)
+    # Also copy into the active folder (for BFS traversal)
     (active_dir / 'currentSituation.md').write_text(content, encoding='utf-8')
     return out_path
 
 
 def main():
-    parser = argparse.ArgumentParser(description='_index.md + currentSituation.md 생성 (§14)')
+    parser = argparse.ArgumentParser(description='_index.md + currentSituation.md generation (§14)')
     parser.add_argument('active_dir', help='active/ folder')
-    parser.add_argument('--days', type=int, default=30, help='최근 N일 (기본: 30)')
+    parser.add_argument('--days', type=int, default=30, help='Last N days (default: 30)')
     args = parser.parse_args()
 
     active_dir = Path(args.active_dir)
 
     print("Collecting file info...")
     files_info = collect_files_info(active_dir)
-    print(f"  총 {len(files_info)} files")
+    print(f"  {len(files_info)} files total")
 
-    print("\n_index.md 생성 중...")
+    print("\nGenerating _index.md...")
     idx_path = gen_index_md(active_dir, files_info, args.days)
     print(f"  ✓ {idx_path}")
 
-    print("\ncurrentSituation.md 생성 중...")
+    print("\nGenerating currentSituation.md...")
     cs_path = gen_current_situation(active_dir, files_info, args.days)
     print(f"  ✓ {cs_path}")
 
-    print(f"\n=== §14 보조 문서 생성 Complete ===")
+    print(f"\n=== §14 Auxiliary document generation Complete ===")
 
 
 if __name__ == '__main__':

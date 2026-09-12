@@ -1,6 +1,6 @@
 /**
  * MCP Server — registers all tools and resources for Strata Sync.
- * 33 tools: vault CRUD, graph analysis, chat, search, edit agent, debate,
+ * 37 tools: vault CRUD, graph analysis, chat, search, edit agent, debate,
  * python tools, confluence/jira sync, slack bot, usage tracking, settings.
  */
 import https from 'node:https'
@@ -15,16 +15,35 @@ import {
   getDocuments, getNodes, getLinks,
   computePageRank, detectClusters, findBridgeNodes, findImplicitLinks,
 } from './state.js'
-import { chat, chatWithPersona, getUsageSummary, getUsageLog } from './llm/client.js'
+import { chat, chatDetailed, chatWithPersona, getUsageSummary, getUsageLog } from './llm/client.js'
 import { join, resolve, normalize } from 'path'
 
 /** External API call timeout (30 s) — prevents fetch from hanging on slow/down servers */
 const EXT_TIMEOUT_MS = 30_000
 
+/** Use 'python' on Windows, 'python3' elsewhere */
+const PYTHON_CMD = process.platform === 'win32' ? 'python' : 'python3'
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function ok(data: unknown) { return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] } }
 function err(msg: string) { return { content: [{ type: 'text' as const, text: `Error: ${msg}` }], isError: true as const } }
+
+/**
+ * Safe YAML frontmatter serialization.
+ * JSON.stringify output is compatible with YAML double-quoted scalars (\" \\ \n \t \uXXXX).
+ * Building `title: "${title}"` without escaping makes gray-matter throw on a single `"` in the title,
+ * and then that one document fails the whole vault load.
+ */
+function yamlStr(v: unknown): string {
+  return JSON.stringify(v == null ? '' : String(v))
+}
+
+/** Strip characters not allowed in filenames + limit length */
+function sanitizeFilenameBase(title: string): string {
+  const base = title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[.\s]+$/, '').trim().slice(0, 150)
+  return base || 'untitled'
+}
 
 function safeVaultPath(relativePath: string): string | null {
   const vaultPath = getConfig().vaultPath
@@ -53,7 +72,8 @@ const TOOLS = [
 
   // ─── Search ───
   { name: 'search_bm25', description: 'BM25 full-text search across vault documents', inputSchema: { type: 'object' as const, properties: { query: { type: 'string' }, topK: { type: 'number', description: 'Max results (default 10)' } }, required: ['query'] } },
-  { name: 'vector_build', description: 'Build or update the vector embedding index (OpenAI text-embedding-3-small). Run once after vault_reload to enable hybrid search.', inputSchema: { type: 'object' as const, properties: {} } },
+  { name: 'vector_build', description: 'Build or update the vector embedding index. Uses the local BGE-M3 server (http://127.0.0.1:8077, 1024 dims) if it is running, otherwise falls back to Gemini gemini-embedding-001 (3072 dims). Run once after vault_reload to enable hybrid search (BM25 + vector RRF fusion).', inputSchema: { type: 'object' as const, properties: {} } },
+  { name: 'vector_stats', description: 'Get vector index status — provider, dimensions, coverage, and whether it is usable for search', inputSchema: { type: 'object' as const, properties: {} } },
   { name: 'search_tags', description: 'Find documents by tag', inputSchema: { type: 'object' as const, properties: { tag: { type: 'string' } }, required: ['tag'] } },
   { name: 'search_speaker', description: 'Find documents by speaker/persona', inputSchema: { type: 'object' as const, properties: { speaker: { type: 'string' } }, required: ['speaker'] } },
 
@@ -166,10 +186,13 @@ async function handleTool(name: string, args: Args): Promise<ToolResult> {
       return ok(results)
     }
     case 'vector_build': {
-      const stats = getVectorIndexStats()
-      if (!getConfig().apiKeys['gemini']) return err('Gemini API key not configured (apiKeys.gemini)')
       const result = await buildVectorIndex()
-      return ok({ ...result, totalIndexed: stats.indexed + (result.embedded ?? 0), total: stats.total })
+      // Error only when there is no provider at all — partial failures return success with stats
+      if (result.error && result.embedded === 0 && result.indexed === 0) return err(result.error)
+      return ok(result)
+    }
+    case 'vector_stats': {
+      return ok(getVectorIndexStats())
     }
     case 'search_tags': {
       const tag = String(args.tag ?? '').trim().slice(0, 200).toLowerCase()
@@ -260,12 +283,21 @@ async function handleTool(name: string, args: Args): Promise<ToolResult> {
 Follow the instructions exactly and return the full modified document. Maintain markdown formatting.
 ${config.editAgent.refinementManual ? `\nEditing manual:\n${config.editAgent.refinementManual}` : ''}`
 
-      const result = await chat(modelId, systemPrompt, [
+      const { text: result, stopReason } = await chatDetailed(modelId, systemPrompt, [
         { role: 'user', content: `## Original Document\n\n${content}\n\n## Editing Instructions\n\n${instructions}\n\nReturn the full modified document.` },
       ], 'mcp_editAgent')
 
-      saveFile(abs, result)
-      return ok({ path: args.path, message: 'Document refined and saved', preview: result.slice(0, 500) })
+      // Overwriting the original with truncated output would permanently lose the tail of the document — refuse to save
+      if (stopReason === 'max_tokens') {
+        return err(`LLM output was truncated at the max_tokens limit (stop_reason=max_tokens). The original was not overwritten. Split the document or narrow the scope and try again. (generated length ${result.length} chars)`)
+      }
+      if (!result.trim()) {
+        return err('LLM returned an empty response — the original was not overwritten')
+      }
+
+      const saved = saveFile(abs, result)
+      if (!saved.success) return err(`Failed to save file: ${args.path}`)
+      return ok({ path: args.path, message: 'Document refined and saved', stopReason, preview: result.slice(0, 500) })
     }
 
     // ─── Debate ───
@@ -300,7 +332,7 @@ ${config.editAgent.refinementManual ? `\nEditing manual:\n${config.editAgent.ref
       const scriptArgs = [scriptPath, vaultPath || '.', dryRun ? '--dry-run' : '--apply']
       const { execFile } = await import('child_process')
       return new Promise((res) => {
-        execFile('python', scriptArgs, { timeout: 120000 },
+        execFile(PYTHON_CMD, scriptArgs, { timeout: 120000 },
           (error, stdout, stderr) => {
             if (error) res(err(`Crosslink error: ${error.message}\n${stderr}`))
             else res(ok({ stdout: stdout.trim(), stderr: stderr.trim(), applied: !dryRun }))
@@ -320,7 +352,7 @@ ${config.editAgent.refinementManual ? `\nEditing manual:\n${config.editAgent.ref
 
       const { execFile } = await import('child_process')
       return new Promise((res) => {
-        execFile('python', [scriptPath, ...scriptArgs], { timeout: 120000, cwd: vaultPath || undefined },
+        execFile(PYTHON_CMD, [scriptPath, ...scriptArgs], { timeout: 120000, cwd: vaultPath || undefined },
           (error, stdout, stderr) => {
             if (error) res(err(`Python error: ${error.message}\n${stderr}`))
             else res(ok({ stdout: stdout.trim(), stderr: stderr.trim() }))
@@ -351,6 +383,10 @@ ${config.editAgent.refinementManual ? `\nEditing manual:\n${config.editAgent.ref
       type ConfPage = { title: string; body: { storage: { value: string } }; version: { when: string } }
       const PAGE_LIMIT = 100
       let start = 0, synced = 0, hasMore = true
+      // Add a suffix so different pages that normalize to the same filename do not overwrite each other
+      const usedFilenames = new Set<string>()
+      const renamed: { title: string; filename: string }[] = []
+      const failed: string[] = []
 
       while (hasMore) {
         const url = `${cfg.baseUrl}/rest/api/content?spaceKey=${spaceKey}&expand=body.storage,version&limit=${PAGE_LIMIT}&start=${start}&orderby=lastModified desc`
@@ -361,17 +397,28 @@ ${config.editAgent.refinementManual ? `\nEditing manual:\n${config.editAgent.ref
 
         for (const page of pages) {
           if (dateFrom && page.version.when < dateFrom) { hasMore = false; break }
-          const filename = page.title.replace(/[<>:"/\\|?*]/g, '_') + '.md'
-          const content = `---\nsource: confluence\ntitle: "${page.title}"\ndate: "${page.version.when.slice(0, 10)}"\n---\n\n# ${page.title}\n\n${page.body.storage.value.replace(/<[^>]+>/g, '')}`
-          saveFile(join(targetDir, filename), content)
-          synced++
+          const base = sanitizeFilenameBase(page.title)
+          let filename = `${base}.md`
+          let n = 2
+          while (usedFilenames.has(filename.toLowerCase())) { filename = `${base}_${n++}.md` }
+          usedFilenames.add(filename.toLowerCase())
+          if (filename !== `${base}.md`) renamed.push({ title: page.title, filename })
+
+          const content = `---\nsource: confluence\ntitle: ${yamlStr(page.title)}\ndate: ${yamlStr(page.version.when.slice(0, 10))}\n---\n\n# ${page.title}\n\n${page.body.storage.value.replace(/<[^>]+>/g, '')}`
+          const saved = saveFile(join(targetDir, filename), content)
+          if (saved.success) synced++
+          else failed.push(filename)
         }
 
         if (pages.length < PAGE_LIMIT) hasMore = false
         else start += PAGE_LIMIT
       }
 
-      return ok({ synced, targetFolder: cfg.targetFolder })
+      return ok({
+        synced, failed: failed.length, targetFolder: cfg.targetFolder,
+        ...(failed.length > 0 ? { failedFiles: failed.slice(0, 20) } : {}),
+        ...(renamed.length > 0 ? { renamedForCollision: renamed.slice(0, 20), renamedCount: renamed.length } : {}),
+      })
     }
 
     // ─── Jira Sync ───
@@ -392,6 +439,7 @@ ${config.editAgent.refinementManual ? `\nEditing manual:\n${config.editAgent.ref
       type JiraIssue = { key: string; fields: { summary: string; description: string | null; status: { name: string }; assignee: { displayName: string } | null; updated: string } }
       const MAX_RESULTS = 100
       let startAt = 0, synced = 0, total = Infinity
+      const failed: string[] = []
 
       while (startAt < total) {
         const url = `${cfg.baseUrl}/rest/api/2/search?jql=${encodeURIComponent(jql)}&maxResults=${MAX_RESULTS}&startAt=${startAt}&fields=summary,description,status,assignee,updated`
@@ -402,17 +450,22 @@ ${config.editAgent.refinementManual ? `\nEditing manual:\n${config.editAgent.ref
 
         for (const issue of data.issues ?? []) {
           const f = issue.fields
-          const filename = `${issue.key}.md`
-          const content = `---\nsource: jira\ntitle: "${f.summary}"\ndate: "${f.updated.slice(0, 10)}"\nstatus: "${f.status.name}"\n---\n\n# ${issue.key}: ${f.summary}\n\n**Status:** ${f.status.name}\n**Assignee:** ${f.assignee?.displayName ?? 'Unassigned'}\n\n${f.description ?? ''}`
-          saveFile(join(targetDir, filename), content)
-          synced++
+          // Issue keys are unique so they do not collide, but frontmatter must always be escaped
+          const filename = `${sanitizeFilenameBase(issue.key)}.md`
+          const content = `---\nsource: jira\ntitle: ${yamlStr(f.summary)}\ndate: ${yamlStr(f.updated.slice(0, 10))}\nstatus: ${yamlStr(f.status.name)}\n---\n\n# ${issue.key}: ${f.summary}\n\n**Status:** ${f.status.name}\n**Assignee:** ${f.assignee?.displayName ?? 'Unassigned'}\n\n${f.description ?? ''}`
+          const saved = saveFile(join(targetDir, filename), content)
+          if (saved.success) synced++
+          else failed.push(filename)
         }
 
         startAt += data.issues?.length ?? MAX_RESULTS
         if (!data.issues?.length) break
       }
 
-      return ok({ synced, total, targetFolder: cfg.targetFolder })
+      return ok({
+        synced, failed: failed.length, total, targetFolder: cfg.targetFolder,
+        ...(failed.length > 0 ? { failedFiles: failed.slice(0, 20) } : {}),
+      })
     }
 
     // ─── Jira Create Issue ───
@@ -466,7 +519,7 @@ ${config.editAgent.refinementManual ? `\nEditing manual:\n${config.editAgent.ref
       const data = await res.json() as { id: string; key: string }
       const issueKey = data.key
 
-      // ── Auto-assign to active sprint ────────────────────────────────────
+      // ── Auto-assign to active sprint ──────────────────────────────────────
       let sprintId: number | null = null
       try {
         const agileBase = `${jiraBase}/rest/agile/1.0`
@@ -675,7 +728,9 @@ ${config.editAgent.refinementManual ? `\nEditing manual:\n${config.editAgent.ref
           return `<p>${t.replace(/\n/g, '<br />')}</p>`
         }).filter(Boolean)
         let result = parts.join('\n')
-        codeBlocks.forEach((code: string, i: number) => { result = result.replace(`\x00CODE${i}\x00`, code) })
+        // A replacement **function** is required — passing a plain string would let
+        // `$&` / `$1` / `$$` inside code blocks be interpreted as replacement patterns and corrupt the code.
+        codeBlocks.forEach((code: string, i: number) => { result = result.replace(`\x00CODE${i}\x00`, () => code) })
         return result
       }
 
@@ -760,11 +815,11 @@ const GATE_PROMPT = `You are now connected to the **Strata Sync MCP Server**.
 - Vault CRUD, graph analysis, chat, search, Edit Agent, debate, Python tools,
   Confluence/Jira sync, Slack bot, usage tracking, settings — all controllable via MCP tools.
 
-## Available Tools (32)
+## Available Tools (37)
 | Category | Tools |
-|----------|-------|
+|---------|------|
 | Vault CRUD | vault_reload, vault_list, vault_read, vault_write, vault_delete, vault_rename, vault_move, vault_mkdir |
-| Search | search_bm25, search_tags, search_speaker |
+| Search | search_bm25, vector_build, vector_stats, search_tags, search_speaker |
 | Graph Analysis | graph_stats, graph_pagerank, graph_clusters, graph_bridges, graph_implicit_links, graph_neighbors |
 | Chat / LLM | chat, chat_persona |
 | Edit Agent | edit_agent_refine |
@@ -822,8 +877,13 @@ export function createServer(): Server {
     const uri = req.params.uri
     const docId = uri.replace('vault://', '')
     const doc = getDocuments().find(d => d.id === docId)
-    if (!doc) throw new Error(`Document not found: ${docId}`)
-    return { contents: [{ uri, mimeType: 'text/markdown', text: doc.rawContent }] }
+    return {
+      contents: [{
+        uri,
+        mimeType: 'text/markdown',
+        text: doc?.rawContent ?? `Document not found: ${docId}`,
+      }],
+    }
   })
 
   // List prompts — exposes the gate prompt

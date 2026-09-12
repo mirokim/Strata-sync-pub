@@ -1,319 +1,545 @@
-#!/usr/bin/env python3
 """
-audit_and_fix.py — §13.2 Vault auto-correction
+Combined audit & fix script (audit_and_fix.py)  v1.0
+────────────────────────────────────────────────────────
+Function:
+  Detects quality issues in every markdown file under the active/ folder
+  and fixes most of them automatically. Merges check_quality.py + fix_all.py into one.
 
-Auto-fix items:
-  F1. Nested wikilink   [[[stem]] (3-open+2-close), [[[[stem]]]] (4+) → [[stem]]
-  F2. Remove HTML remnants  <br>, <b>, <strong>, <em>, <span>, <div>, etc.
-  F3. Reduce consecutive blank lines  3+ → 2 (outside frontmatter)
-  F4. Supplement empty tags    tags: [] → auto-infer from filename+type
-  F5. Fix broken links  Replace [[X]] with existing stem via prefix matching
+  ▶ --audit-only option: print the report only, no fixes
+  ▶ --fix-only  option: run fixes only, no report
 
-Audit report items (listed without modification):
-  R1. Body under 300 chars (low-content files)
-  R2. Repeated wikilinks  (same stem appearing 3+ times)
-  R3. File size distribution
+Detected / fixed items:
+  ① Nested wikilink  [[stem|[[inner|text]]...]]  → replaced with the inner link
+  ② Triple+ brackets [[[ (excluding date-style [YYYY...)  → reduced to [[
+  ③ Broken wikilink (non-existent file)            → fixed via MANUAL_MAP or slash_map
+  ④ Broken image link ![[image.ext]]              → removed
+  ⑤ Missing frontmatter                          → auto-generated
+  ⑥ Missing required frontmatter fields (date/type/status/tags)
+  ⑦ Leftover HTML tags (<div>, <span>, etc.)      → removed
+  ⑧ 3+ consecutive blank lines                   → reduced to 2 blank lines
 
 Usage:
-  python audit_and_fix.py <active_dir> [--dry-run] [--verbose]
+    python audit_and_fix.py <vault_active_dir> [--vault <vault_root>]
+                             [--audit-only] [--fix-only] [--verbose]
+
+    # Audit only (default)
+    python audit_and_fix.py ./active/
+
+    # Run fixes as well
+    python audit_and_fix.py ./active/ --vault . --fix
+
+    # Specify the vault root to check broken links against the full stem set
+    python audit_and_fix.py ./active/ --vault .
+
+Configuration:
+  Register broken links that cannot be resolved automatically → real stem in the MANUAL_MAP dict below.
+
+Dependencies:
+    pip install PyYAML
 """
 
+import os
 import re
 import sys
-import argparse
-from pathlib import Path
-from collections import Counter
+import yaml
+import datetime
+from collections import Counter, defaultdict
 
-
-# ── §13.3 MANUAL_MAP — Manual registration for unresolvable broken links ──────
-# Format: 'broken_stem': 'real_stem'
-# Example: 'TLS': 'TLS(TimeLineSkill)시스템_588781620',
-#      '2026.01.07 피드백_ID': '[2026.01.07] 피드백_ID',
+# ── Per-project manual configuration ────────────────────────────────────────
+# Broken link whose stem cannot be found automatically → real file stem mapping
+# e.g. "TLS": "TLS(TimeLineSkill)시스템_588781620"
 MANUAL_MAP: dict[str, str] = {
-    # ── Register manually here ──
-    # 'broken_stem': 'real_stem',
+    # "broken_stem": "real_stem",
+    # ── Confluence ID suffix / date bracket format mismatch ────────────────
+    # Date bracket format mismatch: "2026.01.07 ..." → "[2026.01.07] ..."
+    '2026.01.07 프로젝트A 캐릭터팀 이사장님 피드백_652878547': '[2026.01.07] 프로젝트A 캐릭터팀 이사장님 피드백_652878547',
+    # Special-character substitution in filenames: link with quotes → filename with underscores
+    '"안 배우고 바로 제작하는 TLS 스킬 만들기"': '_안 배우고 바로 제작하는 TLS 스킬 만들기__596273256',
+    # ID suffix mismatch (case not detected by short_to_stem)
+    '정례보고 자료_2025': '정례보고 자료_2025_499298623',
+    # Backslash-escaped pattern: [[정례보고 자료\_2025]] form inside markdown tables
+    '정례보고 자료\\_2025': '정례보고 자료_2025_499298623',
 }
 
+# Date inference: parse the date from the filename (YYYY-MM-DD or [YYYY.MM.DD])
+DATE_FROM_FNAME = re.compile(r'[\[\(]?(\d{4})[.\-](\d{2})[.\-](\d{2})[\]\)]?')
 
-# ── Auto-infer tags ───────────────────────────────────────────────
-def infer_tags(stem: str, doc_type: str) -> list[str]:
-    tags = [doc_type]
-    s = stem.lower()
-    kw_map = {
-        'gameplay': ['레시피', 'recipe', '크래프팅', 'craft', 'object', '오브젝트',
-                     '아이템', '스킬', '전투', '퀘스트', '던전', '몬스터', '드롭'],
-        'art':      ['art', '원화', '외주', 'virtuos', 'humidor', 'mingjiang',
-                     '콘셉', '일러스트', '애니메이션', 'anim', '리깅'],
-        'tech':     ['엔진', 'engine', 'tech', '서버', 'server', 'db', '데이터베이스',
-                     '코드', 'code', 'bug', '버그', '성능', 'performance'],
-        'reference': ['리서치', 'research', '분석', '레퍼런스', 'reference',
-                      '벤치마크', '비교', '사례'],
-        'guide':    ['가이드', 'guide', '매뉴얼', 'manual', '설명서', '튜토리얼'],
-        'character': ['캐릭터', 'character', '도감', '스킬트리', '스탯'],
-        'world':    ['세계', '맵', 'map', '지역', '지형', '설정', '세계관'],
-    }
-    for tag, kws in kw_map.items():
-        if tag != doc_type and any(k in s for k in kws):
-            tags.append(tag)
-    return list(dict.fromkeys(tags))
+# ── Regexes ─────────────────────────────────────────────────────────────────
+WIKILINK      = re.compile(r'\[\[(.*?)\]\]', re.DOTALL)
+IMG_LINK      = re.compile(r'!\[\[([^\]]*\.(png|jpg|jpeg|gif|webp|svg|bmp))\]\]', re.I)
+TRIPLE_PAT    = re.compile(r'\[{4,}')  # Check 4+ only (triple is a valid [[+[category]stem pattern)
+NESTED_PAT    = re.compile(r'\[\[([^\[\]]*)\[\[([^\[\]]+?)(?:\|([^\[\]]+?))?\]\]([^\[\]]*)\]\]')
+HTML_TAG      = re.compile(r'</?(?:div|span|p|br|hr|table|tr|td|th|ul|ol|li|'
+                           r'strong|em|b|i|a|img|h[1-6])[^>]*>', re.I)
+TRIPLE_BLANK  = re.compile(r'\n{4,}')
+LINK_DISPLAY  = re.compile(r'!\[\[([^\]]*)\]\]')  # Every ![[]] including broken images
 
+# ── Utilities ───────────────────────────────────────────────────────────────
 
-# ── F1: Fix nested wikilinks ───────────────────────────────────────
-def fix_nested_wikilinks(content: str) -> tuple[str, int]:
-    """[[[stem]] (3열림+2닫힘), [[[[stem]]]] (4중+) → [[stem]] 정규화."""
-    count = 0
-    # 4+ brackets (both sides 3+)
-    new, n = re.subn(r'\[{3,}([^\[\]]+)\]{3,}', r'[[\1]]', content)
-    count += n
-    # 3-open+2-close pattern: [[[stem]] — frequently occurs in markdown table cells
-    new, n = re.subn(r'\[\[\[([^\[\]]+)\]\](?!\])', r'[[\1]]', new)
-    count += n
-    return new, count
+def split_fm(text: str) -> tuple[dict, str, str]:
+    """Returns (frontmatter_dict, frontmatter_raw, body)"""
+    if text.startswith("---"):
+        end = text.find("\n---", 3)
+        if end != -1:
+            fm_raw = text[:end + 4]
+            try:
+                fm = yaml.safe_load(text[3:end]) or {}
+            except Exception:
+                fm = {}
+            return fm, fm_raw, text[end + 4:]
+    return {}, "", text
 
 
-# ── F2: Remove HTML remnants ───────────────────────────────────────────
-HTML_TAGS = re.compile(
-    r'<(br|hr)\s*/?>|'                              # Empty tags
-    r'</(b|strong|em|i|span|div|p|ul|li|a)>|'       # Closing tags
-    r'<(b|strong|em|i|span|div|p|ul|li|a)(\s[^>]*)?>',  # Opening tags
-    re.IGNORECASE
-)
-HTML_COMMENT = re.compile(r'<!--.*?-->', re.DOTALL)
-HTML_ENTITY  = re.compile(r'&(amp|lt|gt|nbsp|quot);')
-ENTITY_MAP   = {'amp': '&', 'lt': '<', 'gt': '>', 'nbsp': ' ', 'quot': '"'}
+def build_stem_maps(search_root: str) -> tuple[set[str], dict[str, str], dict[str, str]]:
+    """
+    all_stems      : set of all vault stems
+    slash_map      : "subpath/stem" → stem  (resolves links containing slashes)
+    short_to_stem  : "stem_without_ID" → "full_stem_with_ID"  (resolves shortened links)
+    """
+    all_stems: set[str] = set()
+    slash_map: dict[str, str] = {}
+    short_to_stem: dict[str, str] = {}
+
+    for root, dirs, files in os.walk(search_root):
+        dirs[:] = [d for d in dirs if not d.startswith('.')]
+        for f in files:
+            if f.endswith(".md"):
+                stem = f[:-3]
+                all_stems.add(stem)
+                # For paths containing slashes
+                rel = os.path.relpath(os.path.join(root, f), search_root)
+                rel_stem = rel.replace("\\", "/")[:-3]
+                slash_map[rel_stem] = stem
+                # Strip the ID suffix (trailing _ + 6+ digits)
+                short = re.sub(r'_\d{6,}$', '', stem)
+                if short != stem:
+                    short_to_stem[short] = stem
+
+    return all_stems, slash_map, short_to_stem
 
 
-def fix_html_remnants(content: str) -> tuple[str, int]:
-    count = 0
-    # Remove comments
-    new, n = HTML_COMMENT.subn('', content); count += n
-    # Remove tags
-    new, n = HTML_TAGS.subn('', new); count += n
-    # Restore HTML entities
-    new2 = HTML_ENTITY.sub(lambda m: ENTITY_MAP.get(m.group(1), m.group(0)), new)
-    if new2 != new:
-        count += 1
-    return new2, count
-
-
-# ── F3: Reduce consecutive blank lines (outside frontmatter only) ──────────────────────
-def fix_blank_lines(content: str) -> tuple[str, int]:
-    """3줄 이상 연속 빈줄 → 2줄."""
-    fm_end = -1
-    if content.startswith('---'):
-        fm_end = content.find('\n---\n', 4)
-    if fm_end != -1:
-        fm   = content[:fm_end + 5]
-        body = content[fm_end + 5:]
+def infer_fm(fname: str) -> dict:
+    """Infer initial frontmatter values from the filename"""
+    fm: dict = {}
+    # Date
+    m = DATE_FROM_FNAME.search(fname)
+    if m:
+        fm["date"] = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
     else:
-        fm, body = '', content
-
-    new_body, n = re.subn(r'\n{4,}', '\n\n\n', body)
-    return fm + new_body, n
-
-
-# ── F4: Supplement empty tags ─────────────────────────────────────────────
-def fix_empty_tags(content: str, stem: str) -> tuple[str, bool]:
-    m = re.search(r'tags:\s*\[([^\]]*)\]', content)
-    if not m or m.group(1).strip():
-        return content, False
-    tm = re.search(r'type:\s*(\S+)', content)
-    doc_type = tm.group(1) if tm else 'spec'
-    tags = infer_tags(stem, doc_type)
-    new = content[:m.start()] + f'tags: [{", ".join(tags)}]' + content[m.end():]
-    return new, True
+        fm["date"] = datetime.date.today().isoformat()
+    # type
+    stem = fname[:-3].lower()
+    if any(w in stem for w in ["회의", "meeting", "피드백", "feedback"]):
+        fm["type"] = "meeting"
+    elif any(w in stem for w in ["spec", "기획", "설계", "design"]):
+        fm["type"] = "spec"
+    elif any(w in stem for w in ["index", "_index"]):
+        fm["type"] = "index"
+    else:
+        fm["type"] = "reference"
+    fm["status"] = "active"
+    fm["tags"] = []
+    return fm
 
 
-# ── F5: Fix broken links (MANUAL_MAP → slash_map → prefix matching) ────
-def fix_broken_links(content: str, all_stems: set, prefix_map: dict) -> tuple[str, int]:
-    """§13.3 기준: MANUAL_MAP → prefix 매칭 순서로 broken link 수정."""
-    fixed = 0
-    media_exts = {'.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp',
-                  '.tiff', '.tif', '.wmf', '.emf', '.mp4', '.mov', '.avi',
-                  '.pdf', '.psd', '.ai'}
+# ── FIX functions ───────────────────────────────────────────────────────────
 
-    def repl(m):
-        nonlocal fixed
-        inner = m.group(1)
-        stem  = inner.split('|')[0].strip()
-        if stem.startswith('[') or stem in all_stems:
+def fix_nested_wikilinks(text: str) -> tuple[str, int]:
+    """Fix nested wikilink [[outer|[[inner|disp]]rest]] → [[inner]] or [[inner|disp]]"""
+    count = 0
+    def replacer(m: re.Match) -> str:
+        nonlocal count
+        # outer_left + [[inner|disp]] + outer_right
+        inner_stem    = m.group(2)
+        inner_display = m.group(3)
+        replacement   = f"[[{inner_stem}|{inner_display}]]" if inner_display else f"[[{inner_stem}]]"
+        count += 1
+        return replacement
+
+    new_text = NESTED_PAT.sub(replacer, text)
+    # Reprocess remaining nested patterns (up to 3 passes)
+    for _ in range(2):
+        newer = NESTED_PAT.sub(replacer, new_text)
+        if newer == new_text:
+            break
+        new_text = newer
+    return new_text, count
+
+
+def fix_triple_brackets(text: str) -> tuple[str, int]:
+    """[[[ → [[ (excluding date-style)"""
+    count = [0]
+    def replacer(m: re.Match) -> str:
+        count[0] += 1
+        return "[["
+    new_text = TRIPLE_PAT.sub(replacer, text)
+    return new_text, count[0]
+
+
+def fix_broken_wikilinks(body: str,
+                         all_stems: set[str],
+                         slash_map: dict[str, str],
+                         short_to_stem: dict[str, str]) -> tuple[str, int]:
+    """Fix broken wikilinks via MANUAL_MAP / slash_map / short_to_stem"""
+    count = 0
+
+    def replacer(m: re.Match) -> str:
+        nonlocal count
+        content = m.group(1)
+        if "[[" in content:          # Nested → skip
             return m.group(0)
-        ext = Path(stem).suffix.lower()
-        if ext in media_exts:
+        pipe_idx = content.find("|")
+        s    = (content[:pipe_idx] if pipe_idx != -1 else content).strip()
+        disp = content[pipe_idx+1:].strip() if pipe_idx != -1 else None
+
+        if not s or s in all_stems:
+            return m.group(0)
+        # Skip image extensions
+        if re.search(r'\.(png|jpg|gif|webp|jpeg|svg|bmp)$', s, re.I):
             return m.group(0)
 
-        display = inner.split('|')[1].strip() if '|' in inner else stem
+        # MANUAL_MAP
+        if s in MANUAL_MAP:
+            real = MANUAL_MAP[s]
+            count += 1
+            return f"[[{real}|{disp}]]" if disp else f"[[{real}]]"
 
-        # Priority 1: MANUAL_MAP
-        if stem in MANUAL_MAP:
-            fixed += 1
-            return f'[[{MANUAL_MAP[stem]}|{display}]]'
+        # slash_map (e.g. "active/filename" → "filename")
+        for key, val in slash_map.items():
+            if key.endswith("/" + s) or key == s:
+                count += 1
+                return f"[[{val}|{disp}]]" if disp else f"[[{val}]]"
 
-        # Priority 2: Prefix matching (§13.2.1 auto-fix parenthesis truncation bug)
-        real = prefix_map.get(stem)
-        if real:
-            fixed += 1
-            return f'[[{real}|{display}]]'
+        # short_to_stem (links without ID)
+        if s in short_to_stem:
+            real = short_to_stem[s]
+            count += 1
+            return f"[[{real}|{disp}]]" if disp else f"[[{real}]]"
 
-        return m.group(0)
+        return m.group(0)  # Cannot fix
 
-    new = re.sub(r'(?<!!)\[\[([^\]]+)\]\]', repl, content)
-    return new, fixed
-
-
-def build_prefix_map(all_stems: set) -> dict:
-    prefix_map = {}
-    for stem in all_stems:
-        clean = re.sub(r'^\d+_', '', stem)
-        if clean and clean != stem and clean not in prefix_map:
-            prefix_map[clean] = stem
-    return prefix_map
+    return WIKILINK.sub(replacer, body), count
 
 
-# ── R1: Audit body text under 300 chars ─────────────────────────────────────
-def has_image_content(content: str) -> bool:
-    """§3.1.1: 이미지 링크(![[...]]) 또는 테이블이 있으면 실질 콘텐츠로 인정."""
-    return bool(re.search(r'!\[\[[^\]]+\]\]', content)) or \
-           bool(re.search(r'^\|.+\|', content, re.MULTILINE))
+def fix_broken_images(text: str, all_stems: set[str], vault_root: str | None = None) -> tuple[str, int]:
+    """Remove image links ![[...]] that point to non-existent files.
+    When vault_root is given, only remove after checking whether the image file actually exists."""
+    # Build the set of actual image filenames (every image in the vault)
+    actual_images: set[str] = set()
+    if vault_root and os.path.isdir(vault_root):
+        for root, dirs, files in os.walk(vault_root):
+            dirs[:] = [d for d in dirs if not d.startswith('.')]
+            for f in files:
+                if re.search(r'\.(png|jpg|jpeg|gif|webp|svg|bmp|tiff?)$', f, re.I):
+                    actual_images.add(f.lower())
+
+    count = [0]
+    def replacer(m: re.Match) -> str:
+        s = m.group(1).split("|")[0].strip()
+        fname = os.path.basename(s)
+        # Keep if the file actually exists in the vault
+        if fname.lower() in actual_images:
+            return m.group(0)
+        count[0] += 1
+        return ""
+    new_text = IMG_LINK.sub(replacer, text)
+    return new_text, count[0]
 
 
-def audit_thin_docs(content: str) -> int:
-    """Return body text length. Returns -1 for image/table files (excluded)."""
-    if has_image_content(content):
-        return -1   # Image/table file → excluded from under-300 warning
-    fm_end = content.find('\n---\n', 4) if content.startswith('---') else -1
-    body   = content[fm_end + 5:] if fm_end != -1 else content
-    text   = re.sub(r'\[\[([^\]]+)\]\]', lambda m: (m.group(1).split('|')[-1]), body)
-    text   = re.sub(r'[#>\-\*`\|]', ' ', text)
-    return len(text.strip())
+def fix_html_tags(text: str) -> tuple[str, int]:
+    """Remove leftover HTML tags"""
+    count = [0]
+    def replacer(m: re.Match) -> str:
+        count[0] += 1
+        return ""
+    return HTML_TAG.sub(replacer, text), count[0]
 
 
-# ── R2: Repeated wikilinks ────────────────────────────────────────────
-def audit_repeated_links(content: str, threshold: int = 3) -> list[str]:
-    links  = re.findall(r'(?<!!)\[\[([^\]]+)\]\]', content)
-    stems  = [l.split('|')[0].strip() for l in links]
-    counts = Counter(stems)
-    return [s for s, c in counts.items() if c >= threshold]
+def fix_triple_blank(text: str) -> tuple[str, int]:
+    """4+ consecutive blank lines → reduced to 2"""
+    count = [0]
+    def replacer(m: re.Match) -> str:
+        count[0] += 1
+        return "\n\n"
+    return TRIPLE_BLANK.sub(replacer, text), count[0]
 
 
-# ── Main ─────────────────────────────────────────────────────────
-def run(active_dir: Path, dry_run: bool = False, verbose: bool = False) -> dict:
-    all_stems  = {md.stem for md in active_dir.glob('*.md')}
-    prefix_map = build_prefix_map(all_stems)
+def fix_frontmatter(text: str, fname: str) -> tuple[str, bool]:
+    """Auto-generate frontmatter if missing"""
+    if text.startswith("---"):
+        return text, False
+    fm = infer_fm(fname)
+    fm_lines = ["---"]
+    for k, v in fm.items():
+        if isinstance(v, list):
+            fm_lines.append(f"{k}: {v}")
+        else:
+            fm_lines.append(f"{k}: {v}")
+    fm_lines.append("---")
+    fm_lines.append("")
+    return "\n".join(fm_lines) + text, True
 
-    stats = {
-        'nested_fixed':   0,
-        'html_fixed':     0,
-        'blank_fixed':    0,
-        'tags_fixed':     0,
-        'links_fixed':    0,
-        'files_changed':  0,
-        'thin_docs':      [],
-        'repeated_links': {},
-        'size_dist':      Counter(),
+
+# ── AUDIT function ──────────────────────────────────────────────────────────
+
+def audit(active_dir: str, all_stems: set[str], verbose: bool = False) -> dict:
+    """Return the audit result as a dict"""
+    md_files = sorted(f for f in os.listdir(active_dir) if f.endswith(".md"))
+    total = len(md_files)
+
+    issues: dict[str, list] = {
+        "nested":        [],   # (stem, snippet)
+        "triple":        [],   # (stem, count)
+        "broken_link":   [],   # (stem, [link, ...])
+        "broken_img":    [],   # stem
+        "no_fm":         [],   # stem
+        "fm_missing_f":  [],   # (stem, field)
+        "html_tags":     [],   # (stem, count)
+        "triple_blank":  [],   # stem
+        "no_link":       [],   # stem
+        "tiny":          [],   # stem
     }
 
-    for md in sorted(active_dir.glob('*.md')):
-        try:
-            content = md.read_text(encoding='utf-8', errors='replace')
-        except Exception:
-            continue
+    for fname in md_files:
+        path = os.path.join(active_dir, fname)
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        stem = fname[:-3]
+        fm, _, body = split_fm(text)
 
-        original = content
-        changed  = False
+        # ① Nested wikilink
+        for m in NESTED_PAT.finditer(body):
+            issues["nested"].append((stem, m.group()[:80]))
 
-        # F1
-        content, n = fix_nested_wikilinks(content)
-        stats['nested_fixed'] += n; changed = changed or bool(n)
+        # ② Triple brackets
+        cnt = len(TRIPLE_PAT.findall(text))
+        if cnt:
+            issues["triple"].append((stem, cnt))
 
-        # F2
-        content, n = fix_html_remnants(content)
-        stats['html_fixed'] += n; changed = changed or bool(n)
+        # ③ Broken wikilink
+        broken = []
+        for m in WIKILINK.finditer(body):
+            s = m.group(1).split("|")[0].strip()
+            if "[[" in s:
+                continue
+            if s and s not in all_stems:
+                if not re.search(r'\.(png|jpg|gif|webp|jpeg|svg|bmp)$', s, re.I):
+                    broken.append(s)
+        if broken:
+            issues["broken_link"].append((stem, list(dict.fromkeys(broken))[:5]))
 
-        # F3
-        content, n = fix_blank_lines(content)
-        stats['blank_fixed'] += n; changed = changed or bool(n)
+        # ④ Broken image
+        if IMG_LINK.search(text):
+            issues["broken_img"].append(stem)
 
-        # F4
-        content, ok = fix_empty_tags(content, md.stem)
-        stats['tags_fixed'] += ok; changed = changed or ok
+        # ⑤ Missing frontmatter
+        if not text.startswith("---"):
+            issues["no_fm"].append(stem)
+        else:
+            # ⑥ Required fields
+            for field in ("date", "type", "status", "tags"):
+                if field not in fm:
+                    issues["fm_missing_f"].append((stem, field))
 
-        # F5
-        content, n = fix_broken_links(content, all_stems, prefix_map)
-        stats['links_fixed'] += n; changed = changed or bool(n)
+        # ⑦ Leftover HTML
+        cnt_html = len(HTML_TAG.findall(text))
+        if cnt_html:
+            issues["html_tags"].append((stem, cnt_html))
 
-        if changed:
-            stats['files_changed'] += 1
-            if not dry_run:
-                md.write_text(content, encoding='utf-8')
+        # ⑧ Consecutive blank lines
+        if TRIPLE_BLANK.search(text):
+            issues["triple_blank"].append(stem)
+
+        # ⑨ Files with no links
+        if not WIKILINK.search(body):
+            issues["no_link"].append(stem)
+
+        # ⑩ Tiny files
+        if len(body) < 300:
+            issues["tiny"].append(stem)
+
+    return {"total": total, "issues": issues}
+
+
+def print_report(result: dict, verbose: bool = False) -> None:
+    total = result["total"]
+    issues = result["issues"]
+
+    def pct(n: int) -> str:
+        return f"{n}/{total} ({n/total*100:.1f}%)" if total else "0/0"
+
+    def show(label: str, items: list, key_fmt=None, warn_if_any: bool = True) -> None:
+        status = "WARN" if (items and warn_if_any) else ("INFO" if items else "PASS")
+        print(f"[{status}] {label}: {pct(len(items))}")
+        if verbose:
+            for item in items[:10]:
+                if key_fmt:
+                    print(f"       - {key_fmt(item)}")
+                else:
+                    print(f"       - {item}")
+            if len(items) > 10:
+                print(f"       ... and {len(items)-10} more")
+        else:
+            for item in items[:3]:
+                if key_fmt:
+                    print(f"       - {key_fmt(item)}")
+                else:
+                    print(f"       - {item}")
+            if len(items) > 3:
+                print(f"       ... and {len(items)-3} more")
+        print()
+
+    print(f"\n{'='*60}")
+    print(f" Audit report  (target: {total} files)")
+    print(f"{'='*60}\n")
+
+    show("① Nested wikilink (inject bug artifact)",
+         issues["nested"], key_fmt=lambda x: f"{x[0][:40]}: {x[1]}")
+    show("② Triple+ brackets (non-date)",
+         issues["triple"], key_fmt=lambda x: f"{x[0][:55]}: {x[1]}")
+    show("③ Non-existent wikilink",
+         issues["broken_link"],
+         key_fmt=lambda x: f"{x[0][:40]}: {', '.join(x[1])}")
+    show("④ Broken image link (![[]])",
+         issues["broken_img"], warn_if_any=True)
+    show("⑤ Frontmatter entirely missing",
+         issues["no_fm"])
+    show("⑥ Missing required frontmatter field",
+         issues["fm_missing_f"],
+         key_fmt=lambda x: f"{x[0][:50]}  ← '{x[1]}' missing")
+    show("⑦ Leftover HTML tags",
+         issues["html_tags"],
+         key_fmt=lambda x: f"{x[0][:55]}: {x[1]}", warn_if_any=True)
+    show("⑧ Excessive consecutive blank lines (4+)",
+         issues["triple_blank"], warn_if_any=False)
+    show("⑨ Files with no links",
+         issues["no_link"])
+    show("⑩ Tiny files under 300 chars",
+         issues["tiny"], warn_if_any=False)
+
+    total_fix = sum(len(issues[k]) for k in
+                    ["nested","triple","broken_link","broken_img","no_fm","html_tags","triple_blank"])
+    print(f"{'='*60}")
+    print(f" Auto-fixable issues: {total_fix}")
+    print(f" (run with --fix to fix most of them automatically)")
+    print(f"{'='*60}\n")
+
+
+# ── Main ────────────────────────────────────────────────────────────────────
+
+def run(active_dir: str,
+        vault_root: str | None = None,
+        do_fix: bool = False,
+        audit_only: bool = False,
+        verbose: bool = False) -> None:
+
+    search_root = vault_root or active_dir
+    all_stems, slash_map, short_to_stem = build_stem_maps(search_root)
+
+    # Audit
+    result = audit(active_dir, all_stems, verbose=verbose)
+
+    if not audit_only:
+        print_report(result, verbose=verbose)
+
+    if not do_fix:
+        return
+
+    # Run fixes
+    md_files = sorted(f for f in os.listdir(active_dir) if f.endswith(".md"))
+    fix_counts: dict[str, int] = Counter()
+    updated_files = 0
+
+    for fname in md_files:
+        path = os.path.join(active_dir, fname)
+        with open(path, encoding="utf-8") as f:
+            original = f.read()
+
+        text = original
+        fm, fm_raw, body = split_fm(text)
+
+        # FIX-1: Nested wikilink
+        new_body, n = fix_nested_wikilinks(body)
+        fix_counts["nested"] += n
+
+        # FIX-2: Triple brackets
+        new_body, n = fix_triple_brackets(new_body)
+        fix_counts["triple"] += n
+
+        # FIX-3: Broken wikilink
+        new_body, n = fix_broken_wikilinks(new_body, all_stems, slash_map, short_to_stem)
+        fix_counts["broken_link"] += n
+
+        # FIX-4: Broken images
+        new_body, n = fix_broken_images(new_body, all_stems, vault_root=search_root)
+        fix_counts["broken_img"] += n
+
+        # FIX-5: HTML tags
+        new_body, n = fix_html_tags(new_body)
+        fix_counts["html_tags"] += n
+
+        # FIX-6: Consecutive blank lines
+        new_body, n = fix_triple_blank(new_body)
+        fix_counts["triple_blank"] += n
+
+        text = fm_raw + new_body
+
+        # FIX-7: Frontmatter generation
+        text, created = fix_frontmatter(text, fname)
+        if created:
+            fix_counts["no_fm"] += 1
+
+        if text != original:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+            updated_files += 1
             if verbose:
-                print(f"  Modified: {md.name[:60]}")
+                print(f"  [FIX] {fname[:60]}")
 
-        # Audit (separate from fixes)
-        body_len = audit_thin_docs(content)
-        if body_len != -1 and body_len < 300:   # -1 means image/table file → excluded
-            stats['thin_docs'].append(md.name)
+    print(f"\n{'='*60}")
+    print(f" Fix results")
+    print(f"{'='*60}")
+    print(f" Updated files: {updated_files}")
+    for key, cnt in sorted(fix_counts.items(), key=lambda x: -x[1]):
+        label_map = {
+            "nested":       "Nested wikilinks fixed",
+            "triple":       "Triple brackets fixed",
+            "broken_link":  "Broken links fixed",
+            "broken_img":   "Broken images removed",
+            "html_tags":    "HTML tags removed",
+            "triple_blank": "Consecutive blank lines reduced",
+            "no_fm":        "Frontmatter generated",
+        }
+        if cnt:
+            print(f"  - {label_map.get(key, key)}: {cnt}")
+    print(f"{'='*60}\n")
 
-        repeated = audit_repeated_links(content)
-        if repeated:
-            stats['repeated_links'][md.name] = repeated
-
-        # File size distribution
-        sz = md.stat().st_size
-        if sz < 2000:    stats['size_dist']['<2KB'] += 1
-        elif sz < 10000: stats['size_dist']['2–10KB'] += 1
-        elif sz < 50000: stats['size_dist']['10–50KB'] += 1
-        else:            stats['size_dist']['>50KB'] += 1
-
-    return stats
-
-
-def print_report(stats: dict, dry_run: bool):
-    print(f"\n{'='*55}")
-    print(f"§13.2 audit_and_fix Complete{'  [DRY-RUN]' if dry_run else ''}")
-    print(f"{'='*55}")
-    print(f"  F1 중첩 wikilink Modified: {stats['nested_fixed']}건")
-    print(f"  F2 HTML 잔재 제거:     {stats['html_fixed']}건")
-    print(f"  F3 연속 빈줄 축소:     {stats['blank_fixed']}건")
-    print(f"  F4 빈 tags 보완:       {stats['tags_fixed']} files")
-    print(f"  F5 깨진 링크 Modified:     {stats['links_fixed']}건")
-    print(f"  Total changed files:          {stats['files_changed']}개")
-
-    print(f"\n── Audit report ───────────────────────────────────")
-    thin = stats['thin_docs']
-    print(f"  R1 본문 300자 미만:    {len(thin)}개")
-    if thin:
-        for f in thin[:10]:
-            print(f"     · {f[:60]}")
-        if len(thin) > 10:
-            print(f"     ... 외 {len(thin)-10}개")
-
-    rep = stats['repeated_links']
-    print(f"  R2 반복 wikilink(3+): {len(rep)} files")
-    for fname, stems in list(rep.items())[:5]:
-        print(f"     · {fname[:50]}: {stems[:3]}")
-
-    print(f"\n── File size distribution ──────────────────────────────")
-    for label, cnt in sorted(stats['size_dist'].items()):
-        print(f"  {label:>8}: {cnt:4}개")
+    # Re-audit after fixes
+    print("[Re-audit] Remaining issues after fixes:")
+    result2 = audit(active_dir, all_stems, verbose=verbose)
+    print_report(result2, verbose=verbose)
 
 
-def main():
-    parser = argparse.ArgumentParser(description='§13.2 Vault 자동 교정')
-    parser.add_argument('active_dir', help='active/ folder path')
-    parser.add_argument('--dry-run', action='store_true', help='Preview without modifying files')
-    parser.add_argument('--verbose', '-v', action='store_true')
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="Obsidian vault audit and auto-fix tool"
+    )
+    parser.add_argument("active_dir", help="active/ folder path")
+    parser.add_argument("--vault", default=None,
+                        help="vault root path (collects all stems for broken link checks)")
+    parser.add_argument("--fix", action="store_true",
+                        help="Run automatic fixes for issues")
+    parser.add_argument("--audit-only", action="store_true",
+                        help="Print the report only (no fixes)")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Verbose output (up to 10 issues per file)")
     args = parser.parse_args()
 
-    active_dir = Path(args.active_dir)
-    if not active_dir.is_dir():
-        print(f"Error: {active_dir} not found")
-        sys.exit(1)
-
-    print(f"§13.2 audit_and_fix 시작 ({'DRY-RUN' if args.dry_run else '실제 수정'})...")
-    stats = run(active_dir, dry_run=args.dry_run, verbose=args.verbose)
-    print_report(stats, args.dry_run)
-
-
-if __name__ == '__main__':
-    main()
+    run(
+        active_dir  = args.active_dir,
+        vault_root  = args.vault,
+        do_fix      = args.fix,
+        audit_only  = args.audit_only,
+        verbose     = args.verbose,
+    )
