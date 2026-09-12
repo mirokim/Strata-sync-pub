@@ -258,6 +258,13 @@ export default function Graph3D({ width, height }: Props) {
 
     const scene = new THREE.Scene()
     sceneRef.current = scene
+    // Lit scene: a hemisphere fill plus a key light so the instanced spheres shade like spheres
+    // instead of flat discs; light fog pushes far clusters back so the layout reads in depth.
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x2a2a35, 1.15))
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.4)
+    keyLight.position.set(1, 1.2, 1.6)
+    scene.add(keyLight)
+    scene.fog = new THREE.Fog(0x000000, 700, 2600)
 
     const camera = new THREE.PerspectiveCamera(60, width / height, 1, 5000)
     camera.position.set(0, 0, Math.max(300, Math.sqrt(nodes.length) * 30))
@@ -310,16 +317,17 @@ export default function Graph3D({ width, height }: Props) {
     const { degreeMap: degMap, maxDegree: maxDeg3D } = useGraphStore.getState()
 
     // ── Shared geometries ────────────────────────────────────────────────────
-    // 8×6 segments: 57 vertices vs 195 at 16×12 — indistinguishable at graph scale
-    const sphereGeo = new THREE.SphereGeometry(NODE_RADIUS, 8, 6)
+    // One shared geometry for every instance, so the extra segments cost nothing per node
+    const sphereGeo = new THREE.SphereGeometry(NODE_RADIUS, 20, 14)
     const octaGeo = new THREE.OctahedronGeometry(NODE_RADIUS * 1.25)
 
     const sphereNodes = nodes.filter(n => !n.isImage)
     const octaNodes = nodes.filter(n => !!n.isImage)
 
     // ── InstancedMesh: one draw call per geometry type ───────────────────────
-    const sphereMat = new THREE.MeshBasicMaterial()
-    const octaMat = new THREE.MeshBasicMaterial()
+    // Lambert responds to the lights above and still takes per-instance colours (instanceColor)
+    const sphereMat = new THREE.MeshLambertMaterial({ emissive: 0xffffff, emissiveIntensity: 0.12 })
+    const octaMat = new THREE.MeshLambertMaterial({ emissive: 0xffffff, emissiveIntensity: 0.12 })
     const sphereInstanced = new THREE.InstancedMesh(sphereGeo, sphereMat, Math.max(1, sphereNodes.length))
     const octaInstanced = new THREE.InstancedMesh(octaGeo, octaMat, Math.max(1, octaNodes.length))
     sphereInstanced.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
@@ -352,21 +360,23 @@ export default function Graph3D({ width, height }: Props) {
       iMesh.setMatrixAt(idx, dummy.matrix)
       iMesh.setColorAt(idx, baseColor)
 
-      // CSS2DObject label — only created when node labels are enabled to save memory
-      // (1000 divs × text-shadow = significant DOM footprint when not needed)
+      // CSS2DObject label — the document title, created for every node so the label toggle
+      // works without rebuilding the graph; visibility is driven by the effect below.
       const labelContainer = new THREE.Object3D()
-      const showLabels = useSettingsStore.getState().showNodeLabels
-      if (showLabels) {
+      {
         const labelDiv = document.createElement('div')
-        labelDiv.textContent = node.label.length > 16 ? node.label.slice(0, 15) + '…' : node.label
-        labelDiv.style.fontSize = '11px'
-        labelDiv.style.fontWeight = 'normal'
+        labelDiv.textContent = node.label.length > 28 ? node.label.slice(0, 27) + '…' : node.label
+        labelDiv.title = node.label
+        // Hubs get slightly larger type so the important documents stand out at a glance
+        labelDiv.style.fontSize = deg >= Math.max(3, maxDeg3D * 0.5) ? '13px' : deg >= 2 ? '11.5px' : '10.5px'
+        labelDiv.style.fontWeight = deg >= Math.max(3, maxDeg3D * 0.5) ? '600' : 'normal'
         labelDiv.style.color = '#e3e2de'
         labelDiv.style.pointerEvents = 'none'
         labelDiv.style.whiteSpace = 'nowrap'
         labelDiv.style.textShadow = '0 0 6px #000, 0 0 4px #000, 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000'
         labelDiv.style.userSelect = 'none'
         labelDiv.style.letterSpacing = '0.01em'
+        labelDiv.style.opacity = useSettingsStore.getState().showNodeLabels ? '' : '0'
         const labelObj = new CSS2DObject(labelDiv)
         labelObj.position.set(0, -NODE_RADIUS - 6, 0)
         labelContainer.add(labelObj)
@@ -535,7 +545,8 @@ export default function Graph3D({ width, height }: Props) {
         }
 
         renderer.render(scene, camera)
-        if (showNodeLabelsRef.current) {
+        // Labels are DOM elements positioned per frame; also needed for the hover label
+        if (showNodeLabelsRef.current || lastHoveredRef.current) {
           css2dRenderer.render(scene, camera)
         }
         renderBudgetRef.current--
@@ -549,7 +560,9 @@ export default function Graph3D({ width, height }: Props) {
     animate()
     setGraphLayoutReady(true)
 
-    const autoFitTimer = setTimeout(fitCameraToNodes, 1500)
+    // The force layout keeps spreading for several seconds on a large vault: re-fit the camera a
+    // few times while the user has not taken control (autoRotate is switched off on interaction).
+    const autoFitTimers = [1500, 5000, 12000].map(ms => setTimeout(() => { if (controls.autoRotate) fitCameraToNodes() }, ms))
 
     // ── Canvas-direct pointer listeners ─────────────────────────────────────
     // Attaching directly to the WebGL canvas element guarantees events fire
@@ -575,7 +588,7 @@ export default function Graph3D({ width, height }: Props) {
       renderer.domElement.removeEventListener('click',        onClick)
 
       graphCallbacks.resetCamera = null
-      clearTimeout(autoFitTimer)
+      autoFitTimers.forEach(clearTimeout)
       cancelAnimationFrame(rafRef.current)
       prevHoverStateRef.current = null
       controls.removeEventListener('start', onInteractStart)

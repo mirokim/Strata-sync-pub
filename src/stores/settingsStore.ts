@@ -293,6 +293,8 @@ interface SettingsState {
   editorDefaultLocked: boolean
   /** Paragraph rendering quality: high = full markdown+wikilinks, medium = markdown only, fast = plain text */
   paragraphRenderQuality: ParagraphRenderQuality
+  /** One-time migration flag: the forced 'fast' quality of earlier builds has been reset. */
+  renderQualityRestored: boolean
   /** Whether node labels are visible in the graph */
   showNodeLabels: boolean
   /** Allowed tag names for AI tag suggestion */
@@ -431,7 +433,8 @@ export const useSettingsStore = create<SettingsState>()(
       disabledPersonaIds: [],
       editorDefaultLocked: false,
       paragraphRenderQuality: 'high' as ParagraphRenderQuality,
-      showNodeLabels: false,
+      renderQualityRestored: true,
+      showNodeLabels: true,
       tagPresets: [],
       tagColors: {},
       folderColors: {},
@@ -611,6 +614,7 @@ export const useSettingsStore = create<SettingsState>()(
         disabledPersonaIds: state.disabledPersonaIds,
         editorDefaultLocked: state.editorDefaultLocked,
         paragraphRenderQuality: state.paragraphRenderQuality,
+        renderQualityRestored: state.renderQualityRestored,
         showNodeLabels: state.showNodeLabels,
         tagPresets: state.tagPresets,
         tagColors: state.tagColors,
@@ -685,6 +689,10 @@ export const useSettingsStore = create<SettingsState>()(
           editAgentConfig: stored.editAgentConfig
             ? { ...DEFAULT_EDIT_AGENT_CONFIG, ...stored.editAgentConfig }
             : current.editAgentConfig,
+          // Until 0.5.1 the loading overlay forced 'fast' (2D, no labels) on every first load and
+          // persisted it, so a stored 'fast' is almost never a choice. Restore the 3D default
+          // once; people who want fast mode pick it again in General settings.
+          ...(stored.renderQualityRestored ? {} : { paragraphRenderQuality: 'high' as ParagraphRenderQuality, showNodeLabels: true, renderQualityRestored: true }),
         }
       },
     }

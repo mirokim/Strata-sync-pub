@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useGraphStore } from '@/stores/graphStore'
-import { useSettingsStore } from '@/stores/settingsStore'
 
 const SATELLITES = [0, 60, 120, 180, 240, 300].map((deg, i) => {
   const rad = (deg * Math.PI) / 180
@@ -14,21 +13,11 @@ export default function LoadingOverlay() {
     vaults, activeVaultId, vaultDocsCache, bgLoadingInfo,
   } = useVaultStore()
   const graphLayoutReady = useGraphStore(s => s.graphLayoutReady)
-  const { setParagraphRenderQuality } = useSettingsStore()
 
   // Background loading (bgLoadingInfo) does not block the overlay — UI clicks allowed
   const shouldShow = isLoading
     || (vaultPath !== null && !vaultReady)
   const isBgOnly = !shouldShow && bgLoadingInfo !== null
-
-  // Auto-select 'fast' quality on first vault load only — do not clobber user preference on subsequent loads
-  const hasAutoSetQuality = useRef(false)
-  useEffect(() => {
-    if (!shouldShow && !hasAutoSetQuality.current) {
-      hasAutoSetQuality.current = true
-      setParagraphRenderQuality('fast')
-    }
-  }, [shouldShow, setParagraphRenderQuality])
 
   const [visible, setVisible] = useState(shouldShow)
   const [fading, setFading] = useState(false)
