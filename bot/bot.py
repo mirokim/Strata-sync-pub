@@ -406,7 +406,7 @@ class SlackBotRunner:
         from modules.persona_config import resolve_persona
         from modules.rag_simple import search_vault, build_rag_context, apply_hotness_rerank, record_doc_access
         from modules.graph_expand import expand_via_wikilinks
-        from modules.rag_electron import search_via_electron, get_model_for_tag, ask_via_electron, get_images_via_electron, mirofish_via_electron, get_electron_settings, get_api_key_from_settings, save_mirofish_to_vault, is_electron_alive
+        from modules.rag_electron import search_via_electron, get_model_for_tag, ask_via_electron, get_images_via_electron, mirofish_via_electron, get_electron_settings, get_api_key_from_settings, save_mirofish_to_vault, is_electron_alive, propose_via_electron
         from modules.slack_utils import extract_slack_files, download_slack_file
         from modules.multi_agent_rag import build_multi_agent_context
         from modules.web_search import search_web, build_web_context
@@ -663,7 +663,7 @@ class SlackBotRunner:
                                 "type": "mrkdwn",
                                 "text": (
                                     "*⌨️  Slash commands*\n"
-                                    "`/ask question`  `/remember`  `/status`  `/help`\n\n"
+                                    "`/ask question`  `/remember`  `/propose title | body`  `/status`  `/help`\n\n"
                                     "*⚡  Global shortcut*\n"
                                     "`ask_sandbox`  — ask a question via popup from any channel"
                                 ),
@@ -1530,6 +1530,29 @@ class SlackBotRunner:
             except Exception as e:
                 logger.error(f"[/remember] Failed: {e}")
                 respond(text=f"❌ Error while saving memory: {e}")
+
+        @app.command("/propose")
+        def handle_slash_propose(ack, respond, command, logger):
+            """/propose <title> | <body> — record a proposal in the vault's _agent/ folder."""
+            ack()
+            text = (command.get("text") or "").strip()
+            if "|" in text:
+                title, body = [part.strip() for part in text.split("|", 1)]
+            else:
+                title, body = text[:60].strip(), text
+            if not title or not body:
+                respond(text="Usage: `/propose <title> | <body>` — records a proposal the team can promote in Strata Sync.")
+                return
+            user_name = command.get("user_name") or command.get("user_id") or "slack"
+            try:
+                result = propose_via_electron(title, body, source=f"slack:{user_name}")
+            except Exception as e:  # HTTP error with detail
+                respond(text=f"❌ Could not record the proposal: {e}")
+                return
+            if not result or not result.get("ok"):
+                respond(text="❌ Strata Sync is not running, so the proposal could not be recorded.")
+                return
+            respond(text=f"📝 Proposal recorded as `{result.get('path')}` — promote it in Strata Sync when you agree with it.")
 
         @app.command("/status")
         def handle_slash_status(ack, respond, logger):

@@ -28,6 +28,8 @@ migrations_dir = "migrations"
 MAX_FILE_BYTES = "10485760"
 # Zone used to date the nightly report file name.
 REPORT_TIMEZONE = "Asia/Seoul"
+REVIEW_MODEL = "claude-opus-5"
+REVIEW_FOLDERS = ""
 
 # The nightly batch parses every document and runs Louvain; give it CPU headroom (paid plans).
 [limits]
@@ -53,3 +55,19 @@ index_name = "strata-vault-vectors"
 queue = "strata-vault-events"
 max_batch_size = 50
 max_batch_timeout = 5
+
+# ── Director reviews on save (optional). Needs the queue and the API key secret:
+#   npx wrangler queues create strata-review-jobs
+#   npx wrangler secret put ANTHROPIC_API_KEY
+# Reviews are one LLM pass per director (5) plus a synthesis, once per document version, with a
+# 6-hour cooldown per path. REVIEW_FOLDERS limits which folders are reviewed (default: all folders
+# not starting with `_` or `.`).
+[[queues.producers]]
+binding = "REVIEW_QUEUE"
+queue = "strata-review-jobs"
+
+[[queues.consumers]]
+queue = "strata-review-jobs"
+max_batch_size = 5
+max_batch_timeout = 30
+max_retries = 3

@@ -13,6 +13,8 @@ import { D1MetaStore, R2BlobStore } from './stores.js'
 import { getManifest, getFile, putFile, deleteFile, parseIfMatch, type SyncDeps } from './sync.js'
 import { runNightly, semanticSearch, type NightlyDeps, type VectorStore, type VectorQuery } from './nightly.js'
 import { applyR2Events, type R2EventMessage } from './r2events.js'
+import { reviewDocument, shouldEnqueueReview, type ReviewJob, type LlmCall } from './review.js'
+import Anthropic from '@anthropic-ai/sdk'
 
 export interface Env {
   VAULT: R2Bucket
@@ -24,7 +26,16 @@ export interface Env {
   VECTORS?: VectorizeIndex
   /** IANA zone for report file names (default Asia/Seoul). */
   REPORT_TIMEZONE?: string
+  /** Optional — save-triggered director reviews. Needs the queue producer binding and the API key secret. */
+  REVIEW_QUEUE?: Queue<ReviewJob>
+  ANTHROPIC_API_KEY?: string
+  /** Model for director reviews (default claude-opus-5). */
+  REVIEW_MODEL?: string
+  /** Comma-separated vault folders eligible for review; empty = every non-underscore folder. */
+  REVIEW_FOLDERS?: string
 }
+
+const DEFAULT_REVIEW_MODEL = 'claude-opus-5'
 
 const EMBED_MODEL = '@cf/baai/bge-m3'
 
@@ -51,7 +62,7 @@ function bearer(req: Request): string | null {
 }
 
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
+  async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url)
 
     if (url.pathname === '/health') return json(200, { ok: true, service: 'strata-sync-cloud' })
@@ -87,13 +98,21 @@ export default {
           const declared = Number(req.headers.get('content-length'))
           if (Number.isFinite(declared) && declared > deps.maxFileBytes) return json(413, { error: `file larger than ${deps.maxFileBytes} bytes` })
           const body = new Uint8Array(await req.arrayBuffer())
-          return toResponse(await putFile(deps, {
+          const result = await putFile(deps, {
             path, body,
             ifMatch: parseIfMatch(req.headers.get('if-match')),
             createOnly: req.headers.get('if-none-match') === '*',
             mtime: Number(req.headers.get('x-mtime')),
             author,
-          }))
+          })
+          // A new version of a design document → queue a director review (fire-and-forget)
+          if ((result.status === 200 || result.status === 201) && env.REVIEW_QUEUE && result.body) {
+            const row = result.body as { path: string; etag: string; deleted: boolean; size: number; author: string }
+            if (shouldEnqueueReview(row, reviewFolders(env))) {
+              ctx.waitUntil(env.REVIEW_QUEUE.send({ path: row.path, etag: row.etag }).catch(e => console.error('[review] enqueue failed', e)))
+            }
+          }
+          return toResponse(result)
         }
         if (req.method === 'DELETE') return toResponse(await deleteFile(deps, path, parseIfMatch(req.headers.get('if-match')), author))
         return json(405, { error: 'method not allowed' })
@@ -113,13 +132,66 @@ export default {
     ))
   },
 
-  /** R2 event notifications (Queue consumer) — index files written outside the API. */
-  async queue(batch: MessageBatch<R2EventMessage>, env: Env): Promise<void> {
-    const result = await applyR2Events(baseDeps(env), batch.messages.map(m => m.body), msg => console.log(msg))
+  /**
+   * Queue consumer. Two queues share this Worker:
+   *   strata-vault-events  — R2 event notifications: index files written outside the API
+   *   strata-review-jobs   — director reviews for freshly saved documents
+   */
+  async queue(batch: MessageBatch<R2EventMessage | ReviewJob>, env: Env): Promise<void> {
+    if (batch.queue.includes('review')) {
+      const llm = anthropicLlm(env)
+      if (!llm) { console.warn('[review] ANTHROPIC_API_KEY not set — dropping review jobs'); for (const m of batch.messages) m.ack(); return }
+      const deps = { ...baseDeps(env), llm, log: (msg: string) => console.log(msg), reviewFolders: reviewFolders(env) }
+      for (const m of batch.messages) {
+        try {
+          const outcome = await reviewDocument(deps, m.body as ReviewJob)
+          console.log('[review]', (m.body as ReviewJob).path, JSON.stringify(outcome))
+          m.ack()
+        } catch (e) {
+          console.error('[review] failed', (m.body as ReviewJob).path, e)
+          m.retry({ delaySeconds: 300 })
+        }
+      }
+      return
+    }
+    const events = batch.messages.map(m => m.body as R2EventMessage)
+    const result = await applyR2Events(baseDeps(env), events, msg => console.log(msg))
     console.log('[r2events]', JSON.stringify(result))
+    // External writes are reviewed too — the bridge indexed them under author 'external'
+    if (env.REVIEW_QUEUE) {
+      for (const ev of events) {
+        if (ev.action === 'DeleteObject' || ev.action === 'LifecycleDeletion') continue
+        const key = ev.object?.key ?? ''
+        if (shouldEnqueueReview({ path: key, deleted: false, size: ev.object?.size ?? 0, author: 'external' }, reviewFolders(env))) {
+          await env.REVIEW_QUEUE.send({ path: key }).catch(e => console.error('[review] enqueue failed', e))
+        }
+      }
+    }
     for (const m of batch.messages) m.ack()
   },
-} satisfies ExportedHandler<Env, R2EventMessage>
+} satisfies ExportedHandler<Env, R2EventMessage | ReviewJob>
+
+function reviewFolders(env: Env): string[] {
+  return (env.REVIEW_FOLDERS ?? '').split(',').map(s => s.trim()).filter(Boolean)
+}
+
+/** Director-review LLM via the Anthropic SDK; null when the key secret is missing. */
+function anthropicLlm(env: Env): LlmCall | null {
+  if (!env.ANTHROPIC_API_KEY) return null
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 2 })
+  const model = env.REVIEW_MODEL || DEFAULT_REVIEW_MODEL
+  return async ({ system, user, maxTokens, effort }) => {
+    const res = await client.messages.create({
+      model,
+      max_tokens: maxTokens,
+      system,
+      output_config: { effort },
+      messages: [{ role: 'user', content: user }],
+    })
+    if (res.stop_reason === 'refusal') return '_(the model declined to review this section)_'
+    return res.content.filter(b => b.type === 'text').map(b => b.text).join('\n')
+  }
+}
 
 function baseDeps(env: Env): SyncDeps {
   return {

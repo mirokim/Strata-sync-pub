@@ -5,6 +5,7 @@ const crypto = require('crypto')
 const { spawn } = require('child_process')
 const cronScheduler = require('./cronScheduler.cjs')
 const teamSync = require('./sync/manager.cjs')
+const proposals = require('./proposals.cjs')
 
 // ── C1: RAG HTTP server auth token (generated once per process) ───────────
 // Bound to 127.0.0.1, but other local processes can still reach it, so a random token is required.
@@ -2006,6 +2007,41 @@ function startRagApiServer() {
       return send(200, _mirofishProgress)
     }
 
+    if (url.pathname === '/propose') {
+      // Bots record ideas/decisions as agent proposals in _agent/ (never straight into the vault).
+      // Body: { title, body, tags?, links?, source? } → { ok, path, title }
+      if (req.method !== 'POST') return send(405, { error: 'POST required' })
+      if (!currentVaultPath) {
+        const rendererVaultPath = await ipcRequest('rag:get-vault-path', {}, 5000)
+        if (rendererVaultPath && typeof rendererVaultPath === 'string') currentVaultPath = rendererVaultPath
+      }
+      if (!currentVaultPath) return send(503, { error: 'vault not loaded' })
+      let rawPropose = ''
+      try {
+        rawPropose = await new Promise((resolve, reject) => {
+          const chunks = []; let len = 0
+          req.on('data', c => { len += c.length; if (len > 1048576) { req.destroy(); reject(new Error('too large')) } chunks.push(c) })
+          req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+          req.on('error', reject)
+        })
+      } catch { return send(400, { error: 'invalid request' }) }
+      let proposeBody = {}
+      try { proposeBody = JSON.parse(rawPropose || '{}') } catch { return send(400, { error: 'invalid JSON' }) }
+      const title = typeof proposeBody.title === 'string' ? proposeBody.title.trim() : ''
+      const text = typeof proposeBody.body === 'string' ? proposeBody.body.trim() : ''
+      if (!title || !text) return send(400, { error: 'title and body required' })
+      try {
+        const written = proposals.writeProposal(currentVaultPath, {
+          title, body: text,
+          tags: Array.isArray(proposeBody.tags) ? proposeBody.tags.map(String) : [],
+          links: Array.isArray(proposeBody.links) ? proposeBody.links.map(String) : [],
+          source: typeof proposeBody.source === 'string' ? proposeBody.source.slice(0, 80) : 'bot',
+        })
+        return send(200, { ok: true, path: written.relPath, title: written.title })
+      } catch (e) {
+        return send(500, { error: e.message || String(e) })
+      }
+    }
     if (url.pathname === '/mirofish-save') {
       // Save MiroFish simulation results as a vault MD file
       if (req.method !== 'POST') return send(405, { error: 'POST required' })

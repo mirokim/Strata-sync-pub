@@ -286,6 +286,32 @@ def mirofish_via_electron(
 RAG_MIROFISH_SAVE_URL = RAG_API_BASE + "/mirofish-save"
 
 
+def propose_via_electron(title: str, body: str, source: str = "slack", tags: list[str] | None = None) -> dict | None:
+    """
+    Record an idea or decision as an agent PROPOSAL in the vault's _agent/ folder via the
+    Electron RAG API. Proposals rank low in search and wait for a person to promote them.
+    Returns {ok, path, title} on success, None when Electron is not running.
+    """
+    payload = {"title": title, "body": body, "source": source, "tags": tags or []}
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    try:
+        req = urllib.request.Request(
+            f"{RAG_API_BASE}/propose",
+            data=data,
+            headers=_auth_headers({"Content-Type": "application/json"}),
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10.0) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+            return result if isinstance(result, dict) else None
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {e.code}: {detail[:200]}")
+    except (socket.timeout, urllib.error.URLError) as e:
+        logger.warning("[rag_electron] /propose unavailable: %s", getattr(e, "reason", e))
+        return None
+
+
 def save_mirofish_to_vault(
     topic: str,
     report: str,
