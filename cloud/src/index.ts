@@ -10,7 +10,7 @@
  * Every /v1 route requires `Authorization: Bearer <TEAM_TOKEN>`.
  */
 import { D1MetaStore, R2BlobStore } from './stores.js'
-import { getManifest, getFile, putFile, deleteFile, parseIfMatch, type FileRow, type SyncDeps } from './sync.js'
+import { getManifest, getFile, putFile, deleteFile, parseIfMatch, normalizeVaultPath, type FileRow, type SyncDeps } from './sync.js'
 import { runNightly, batchStatus, semanticSearch, type NightlyDeps, type VectorStore, type VectorQuery } from './nightly.js'
 import { applyR2Events, type R2EventMessage } from './r2events.js'
 import { reactToSave, shouldEnqueueReaction, type ReactionJob, type LlmCall } from './reactions.js'
@@ -22,6 +22,7 @@ import { buildProposal } from '../../mcp/src/proposals.js'
 import OAuthProvider from '@cloudflare/workers-oauth-provider'
 import { handleAuth, SCOPE, type AuthEnv, type Identity } from './auth.js'
 import { readMembers, saveMemberDefinitions, validateMembers, TEMPLATES, type MembersConfig } from './members.js'
+import { listVersions, readVersion, diffLines } from './history.js'
 
 export interface Env extends AuthEnv {
   VAULT: R2Bucket
@@ -292,6 +293,24 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
     }
     if (url.pathname === '/v1/batch' && req.method === 'GET') {
       return json(200, await batchStatus(deps))
+    }
+    if (url.pathname === '/v1/history' && req.method === 'GET') {
+      const path = normalizeVaultPath(url.searchParams.get('path'))
+      if (!path) return json(400, { error: 'path required' })
+      const etag = url.searchParams.get('etag')
+      if (!etag) {
+        const row = await deps.meta.get(path)
+        const versions = (await listVersions(deps.blobs, path)).map(v => ({ etag: v.etag, at: v.at, author: v.author, size: v.size }))
+        return json(200, { path, current: row && !row.deleted ? { etag: row.etag, at: row.updatedAt, author: row.author, size: row.size } : null, versions })
+      }
+      const older = await readVersion(deps.blobs, path, etag)
+      if (!older) return json(404, { error: 'version not found' })
+      if (url.searchParams.get('diff') !== '1') {
+        return new Response(older.bytes as BodyInit, { status: 200, headers: { 'content-type': 'text/markdown; charset=utf-8', 'ETag': `"${older.version.etag}"`, 'X-Author': encodeURIComponent(older.version.author), 'X-At': String(older.version.at) } })
+      }
+      const nowBytes = await deps.blobs.get(path)
+      const { text, stats } = diffLines(new TextDecoder().decode(older.bytes), nowBytes ? new TextDecoder().decode(nowBytes) : '')
+      return json(200, { path, from: { etag: older.version.etag, at: older.version.at, author: older.version.author }, text, stats })
     }
     if (url.pathname === '/v1/members' && req.method === 'GET') {
       return json(200, { config: await readMembers(deps), templates: TEMPLATES, reactionsEnabled: Boolean(env.REACTION_QUEUE && env.ANTHROPIC_API_KEY) })

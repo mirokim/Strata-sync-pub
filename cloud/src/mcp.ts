@@ -18,6 +18,8 @@ import { loadVaultView, invalidateVaultView } from './vaultIndex.js'
 import { SNAPSHOT_KEY } from './nightly.js'
 import { readMembers, recordRoutineRun, dueRoutines, findMember, renderMemberPrompt, renderMemoryNote, memberNotePath, memberNoteName, type Member } from './members.js'
 import type { SearchHit } from './nightly.js'
+import { recall, fusedSearch } from './recall.js'
+import { listVersions, readVersion, previousVersion, diffLines } from './history.js'
 
 export interface McpDeps extends SyncDeps {
   /** Semantic search when Vectorize is configured; otherwise BM25 only. */
@@ -29,13 +31,13 @@ export interface McpDeps extends SyncDeps {
 
 const enc = new TextEncoder()
 const dec = new TextDecoder()
-/** bge-m3 cosine below this is noise (the app's own team tier uses ~0.43). */
-const SEMANTIC_MIN_SCORE = 0.45
 
 const TOOLS = [
   { name: 'vault_list', description: 'List documents in the team vault (path, title, tags, modified). Optional folder prefix filter.', inputSchema: { type: 'object' as const, properties: { folder: { type: 'string', description: 'Only paths under this folder' }, limit: { type: 'number', description: 'Max entries (default 200)' } } } },
   { name: 'vault_read', description: 'Read a document by vault path (e.g. "active/Combat System.md").', inputSchema: { type: 'object' as const, properties: { path: { type: 'string' } }, required: ['path'] } },
-  { name: 'vault_search', description: 'Search the vault. Uses the semantic index when available and BM25 keyword search always; returns paths with scores and a snippet.', inputSchema: { type: 'object' as const, properties: { query: { type: 'string' }, topK: { type: 'number', description: 'default 8' } }, required: ['query'] } },
+  { name: 'vault_search', description: 'Search the vault. Uses the semantic index when available and BM25 keyword search always; returns paths with scores and a snippet. For "what do we know about X" prefer vault_recall.', inputSchema: { type: 'object' as const, properties: { query: { type: 'string' }, topK: { type: 'number', description: 'default 8' } }, required: ['query'] } },
+  { name: 'vault_recall', description: 'What the team knows about a topic, as one bundle: the matching documents (excerpts), the documents linked around them, what the AI members remember about it, and what members said when those documents were saved. Use this before answering any question about the team\'s work; cite the paths it lists.', inputSchema: { type: 'object' as const, properties: { query: { type: 'string' }, budget: { type: 'number', description: 'Characters of document text to include (default 16000, max 60000)' }, seeds: { type: 'number', description: 'Matching documents (default 5)' }, neighbours: { type: 'number', description: 'Linked documents around them (default 8)' }, format: { type: 'string', enum: ['markdown', 'json'], description: 'default markdown' } }, required: ['query'] } },
+  { name: 'vault_history', description: 'How a document changed: its archived versions (who saved, when) and a line diff — by default between the previous version and the current one, or from a given version etag to now. Use it to answer "when did we change our mind about X" or to see what a save actually altered.', inputSchema: { type: 'object' as const, properties: { path: { type: 'string' }, etag: { type: 'string', description: 'Compare this archived version with the current one (default: the previous version)' }, limit: { type: 'number', description: 'Versions to list (default 10)' }, diff: { type: 'boolean', description: 'Include the diff (default true)' } }, required: ['path'] } },
   { name: 'graph_lint', description: 'Structural lint of the whole team vault: phantom-hot (missing documents linked from many places), bridge-spof (single points of failure), orphan, stale-hub, near-duplicate, cluster-drift. Run before creating or editing documents.', inputSchema: { type: 'object' as const, properties: { rules: { type: 'array', items: { type: 'string', enum: [...ALL_RULES] } }, minSeverity: { type: 'string', enum: ['error', 'warn', 'info'] }, limitPerRule: { type: 'number' }, format: { type: 'string', enum: ['json', 'markdown'] } } } },
   { name: 'graph_suggest_links', description: 'Documents a text should link to, ranked by relevance (BM25 over the vault; proposals excluded).', inputSchema: { type: 'object' as const, properties: { text: { type: 'string' }, topK: { type: 'number', description: 'default 5' } }, required: ['text'] } },
   { name: 'vault_propose', description: 'Record an idea, decision or note as an agent PROPOSAL in _agent/ — never directly into the vault. A person promotes it in the app or with vault_promote. Use whenever the user asks to remember/record/write something down.', inputSchema: { type: 'object' as const, properties: { title: { type: 'string' }, body: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } }, links: { type: 'array', items: { type: 'string' }, description: 'Titles of existing documents to wikilink under "## Related"' }, source: { type: 'string', description: 'Who is proposing (default "agent")' } }, required: ['title', 'body'] } },
@@ -81,21 +83,37 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       if (!query) return fail('query required')
       const topK = Math.min(Math.max(Number(args.topK) || 8, 1), 30)
       const view = await loadVaultView(deps)
-      const bm25 = view.bm25().search(query, topK)
-      // Semantic hits are chunk-level: keep one entry per document (its best chunk) and drop
-      // weak matches, otherwise a half-built index outvotes an exact BM25 title hit.
-      const raw = deps.semanticSearch ? await deps.semanticSearch(query, topK * 3).catch(() => []) : []
-      const seen = new Set<string>()
-      const semantic = raw.filter(h => h.score >= SEMANTIC_MIN_SCORE && !seen.has(h.path) && seen.add(h.path)).slice(0, topK)
-      // Rank fusion: rank-based so the two score scales do not fight
-      const rank = new Map<string, number>()
-      bm25.forEach((h, i) => rank.set(h.path, (rank.get(h.path) ?? 0) + 1 / (60 + i + 1)))
-      semantic.forEach((h, i) => rank.set(h.path, (rank.get(h.path) ?? 0) + 1 / (60 + i + 1)))
-      const results = [...rank.entries()].sort((a, b) => b[1] - a[1]).slice(0, topK).map(([path, score]) => {
-        const d = view.docs.get(path)
-        return { path, title: d?.title ?? path, score: Number(score.toFixed(4)), snippet: d ? d.body.replace(/\s+/g, ' ').slice(0, 240) : '', proposal: d && isProposalPath(d.folderPath) ? true : undefined }
+      const { hits, semantic } = await fusedSearch(deps, view, query, topK)
+      const results = hits.map(h => {
+        const d = view.docs.get(h.path)
+        return { path: h.path, title: h.title, score: h.score, snippet: d ? d.body.replace(/\s+/g, ' ').slice(0, 240) : '', proposal: d && isProposalPath(d.folderPath) ? true : undefined }
       })
-      return text({ query, semantic: semantic.length > 0, results })
+      return text({ query, semantic, results })
+    }
+    case 'vault_recall': {
+      const query = String(args.query ?? '').trim()
+      if (!query) return fail('query required')
+      const result = await recall(deps, { query, budget: Number(args.budget) || undefined, seeds: Number(args.seeds) || undefined, neighbours: args.neighbours === undefined ? undefined : Number(args.neighbours) })
+      if (args.format === 'json') { const { markdown: _m, ...rest } = result; return text(rest) }
+      return text(result.markdown)
+    }
+    case 'vault_history': {
+      const path = normalizeVaultPath(String(args.path ?? ''))
+      if (!path) return fail('path required')
+      const row = await deps.meta.get(path)
+      const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 50)
+      const versions = await listVersions(deps.blobs, path)
+      const listed = versions.slice(0, limit).map(v => ({ etag: v.etag, at: new Date(v.at).toISOString(), author: v.author, size: v.size }))
+      const current = row && !row.deleted ? { etag: row.etag, at: new Date(row.updatedAt).toISOString(), author: row.author, size: row.size } : null
+      if (args.diff === false) return text({ path, current, versions: listed })
+      const wanted = String(args.etag ?? '').trim()
+      const older = wanted ? await readVersion(deps.blobs, path, wanted) : (current ? await previousVersion(deps.blobs, path, current.etag) : null)
+      if (wanted && !older) return fail(`no archived version ${wanted} for ${path}`)
+      const nowBytes = current ? await deps.blobs.get(path) : null
+      const diff = older && nowBytes
+        ? { from: { etag: older.version.etag, at: new Date(older.version.at).toISOString(), author: older.version.author }, to: current, ...diffLines(dec.decode(older.bytes), dec.decode(nowBytes)) }
+        : null
+      return text({ path, current, versions: listed, diff: diff ?? (current ? 'no earlier version archived' : 'document is deleted') })
     }
     case 'graph_lint': {
       const view = await loadVaultView(deps)

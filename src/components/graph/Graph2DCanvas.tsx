@@ -4,6 +4,7 @@ import { useUIStore } from '@/stores/uiStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useGraphSimulation, type SimNode, type SimLink } from '@/hooks/useGraphSimulation'
 import { buildNodeColorMap, getNodeColor, lightenColor, degreeScaleFactor, degreeSize, DEGREE_LIGHT_MAX } from '@/lib/nodeColors'
+import { useActivityHeat } from '@/hooks/useActivityHeat'
 import { LABEL_MIN_GAP, GRAPH_VIEW_PADDING } from '@/lib/constants'
 import type { GraphNode } from '@/types'
 import NodeTooltip from './NodeTooltip'
@@ -29,9 +30,10 @@ export default function Graph2DCanvas({ width, height }: Props) {
   const tagColors = useSettingsStore(s => s.tagColors)
   const folderColors = useSettingsStore(s => s.folderColors)
 
+  const heat = useActivityHeat()
   const nodeColorMap = useMemo(
-    () => buildNodeColorMap(nodes, nodeColorMode, tagColors, folderColors),
-    [nodes, nodeColorMode, tagColors, folderColors]
+    () => buildNodeColorMap(nodes, nodeColorMode, tagColors, folderColors, heat),
+    [nodes, nodeColorMode, tagColors, folderColors, heat]
   )
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -129,7 +131,7 @@ export default function Graph2DCanvas({ width, height }: Props) {
       const baseNr = physicsRef.current.nodeRadius
       const sf = degreeScaleFactor(deg, maxDeg)
       const nr = baseNr * degreeSize(sf)
-      const lightFactor = isSelected ? 0 : (1 - sf) * DEGREE_LIGHT_MAX
+      const lightFactor = isSelected || colorMode === 'heat' ? 0 : (1 - sf) * DEGREE_LIGHT_MAX
       ctx.globalAlpha = isSelected ? 1 : 0.9
       ctx.fillStyle = lightFactor > 0.01 ? lightenColor(color, lightFactor) : color
 

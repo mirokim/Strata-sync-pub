@@ -14,6 +14,7 @@ import { useGraphSimulation3D, type SimNode3D, type SimLink3D } from '@/hooks/us
 import { graphCallbacks } from '@/lib/graphEvents'
 import { SPEAKER_CONFIG } from '@/lib/speakerConfig'
 import { buildNodeColorMap, getNodeColor, lightenColor, degreeScaleFactor, degreeSize, DEGREE_LIGHT_MAX } from '@/lib/nodeColors'
+import { useActivityHeat } from '@/hooks/useActivityHeat'
 import type { GraphLink } from '@/types'
 import NodeTooltip from './NodeTooltip'
 
@@ -122,9 +123,10 @@ export default function Graph3D({ width, height }: Props) {
   const tagColors = useSettingsStore(s => s.tagColors)
   const folderColors = useSettingsStore(s => s.folderColors)
 
+  const heat = useActivityHeat()
   const nodeColorMap = useMemo(
-    () => buildNodeColorMap(nodes, nodeColorMode, tagColors, folderColors),
-    [nodes, nodeColorMode, tagColors, folderColors]
+    () => buildNodeColorMap(nodes, nodeColorMode, tagColors, folderColors, heat),
+    [nodes, nodeColorMode, tagColors, folderColors, heat]
   )
   const selectedNodeIdRef = useRef(selectedNodeId)
   selectedNodeIdRef.current = selectedNodeId
@@ -141,7 +143,7 @@ export default function Graph3D({ width, height }: Props) {
       const data = dataMap.get(node.id)
       if (!data) return
       const baseColor = getNodeColor(node, nodeColorMode, nodeColorMap)
-      const lightFactor = (1 - data.degreeScale) * DEGREE_LIGHT_MAX
+      const lightFactor = nodeColorMode === 'heat' ? 0 : (1 - data.degreeScale) * DEGREE_LIGHT_MAX
       data.baseColor.set(lightFactor > 0.01 ? lightenColor(baseColor, lightFactor) : baseColor)
       data.iMesh.setColorAt(data.idx, data.baseColor)
       if (data.iMesh === sphereInstancedRef.current) sphereDirty = true
@@ -351,7 +353,7 @@ export default function Graph3D({ width, height }: Props) {
       const sf = degreeScaleFactor(deg, maxDeg3D)
       const baseScale = nodeRadiusRef.current / 7
       const scaledRadius = baseScale * degreeSize(sf)
-      const lightFactor = (1 - sf) * DEGREE_LIGHT_MAX
+      const lightFactor = nodeColorMode === 'heat' ? 0 : (1 - sf) * DEGREE_LIGHT_MAX
       const baseColor = new THREE.Color(lightFactor > 0.01 ? lightenColor(color, lightFactor) : color)
 
       dummy.position.set(0, 0, 0)

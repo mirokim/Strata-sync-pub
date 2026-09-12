@@ -10,6 +10,10 @@
 
 import type { GraphNode, NodeColorMode } from '@/types'
 import { SPEAKER_CONFIG } from '@/lib/speakerConfig'
+import { heatColor } from '@/lib/brain'
+
+/** Colour of a node nobody touched recently, in 'heat' mode. */
+export const HEAT_COLD_COLOR = heatColor(0)
 
 // Visually distinct palette (HSL-spaced, dark-theme friendly)
 const AUTO_PALETTE = [
@@ -119,6 +123,9 @@ export function getNodeColor(
   if (mode === 'document') {
     return colorMap.get(node.docId) ?? speakerHex(node)
   }
+  if (mode === 'heat') {
+    return colorMap.get(node.docId) ?? HEAT_COLD_COLOR
+  }
   if (mode === 'auto') {
     // Cascade: tag (user-assigned) > folder > topic > speaker fallback
     const firstTag = node.tags?.[0]
@@ -156,8 +163,15 @@ export function buildNodeColorMap(
   nodes: GraphNode[],
   mode: NodeColorMode,
   userTagColors?: Record<string, string>,
-  userFolderColors?: Record<string, string>
+  userFolderColors?: Record<string, string>,
+  /** 'heat' mode: 0..1 activity per document id (see activityHeat in lib/brain.ts). */
+  heat?: Map<string, number>
 ): Map<string, string> {
+  if (mode === 'heat') {
+    const map = new Map<string, string>()
+    for (const n of nodes) map.set(n.docId, heatColor(heat?.get(n.docId) ?? 0))
+    return map
+  }
   if (mode === 'document') {
     const docIds = nodes.map(n => n.docId)
     return buildColorMap(docIds)

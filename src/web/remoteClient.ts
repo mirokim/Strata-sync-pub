@@ -56,6 +56,9 @@ export interface Member {
   routines: Routine[]
 }
 export interface MembersConfig { version: 1; members: Member[] }
+export interface HistoryVersion { etag: string; at: number; author: string; size: number }
+export interface HistoryResponse { path: string; current: HistoryVersion | null; versions: HistoryVersion[] }
+export interface HistoryDiff { path: string; from: { etag: string; at: number; author: string }; text: string; stats: { added: number; removed: number; unchanged: number } }
 export interface MembersResponse { config: MembersConfig; templates: Record<string, Omit<Member, 'id'>>; reactionsEnabled: boolean }
 
 export class RemoteError extends Error {
@@ -184,6 +187,18 @@ export class RemoteClient {
   async runBatch(): Promise<BatchRun> {
     const res = await this.request('/v1/lint/run', { method: 'POST' })
     if (!res.ok) throw new RemoteError(res.status, `batch run failed (${res.status})`)
+    return res.json()
+  }
+
+  async history(path: string): Promise<HistoryResponse> {
+    const res = await this.request(`/v1/history?path=${encodeURIComponent(path)}`)
+    if (!res.ok) throw new RemoteError(res.status, `history failed (${res.status})`)
+    return res.json()
+  }
+
+  async historyDiff(path: string, etag: string): Promise<HistoryDiff> {
+    const res = await this.request(`/v1/history?path=${encodeURIComponent(path)}&etag=${encodeURIComponent(etag)}&diff=1`)
+    if (!res.ok) throw new RemoteError(res.status, `history diff failed (${res.status})`)
     return res.json()
   }
 

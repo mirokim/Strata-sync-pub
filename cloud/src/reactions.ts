@@ -12,6 +12,7 @@
 import { putFile, type FileRow, type SyncDeps } from './sync.js'
 import { parseVaultDoc } from '../../mcp/src/lint/vaultDoc.js'
 import { readMembers, inScope, memberNotePath, memberNoteName, remarkPathFor, type Member, type MembersConfig } from './members.js'
+import { previousVersion, diffLines } from './history.js'
 
 export const REACTION_STATE_KEY = '_system/reactions.json'
 export const REACTION_AUTHOR = 'strata-bot'
@@ -22,6 +23,7 @@ export const REACTION_MIN_CHARS = 400
 /** Longest document body handed to a member. */
 export const REACTION_MAX_CHARS = 12_000
 const MEMORY_MAX_CHARS = 4_000
+const DIFF_MAX_CHARS = 6_000
 
 export interface ReactionJob { path: string; etag?: string }
 
@@ -93,8 +95,8 @@ async function writeReactionState(deps: SyncDeps, state: ReactionState): Promise
 function memberSystem(m: Member): string {
   return [
     `You are ${m.name}, an AI member of this team. Your role: ${m.role}`,
-    'A teammate just saved a document in your scope. You will be given your own memory note (what you have said and asked before) and the document.',
-    'Write a short remark for the author, who will read it tomorrow morning. Be specific — quote or name the passages you mean. No praise, no summary of the document.',
+    'A teammate just saved a document in your scope. You will be given your own memory note (what you have said and asked before), what this save changed (a line diff against the previous version, when there is one) and the document.',
+    'Write a short remark for the author, who will read it tomorrow morning. React to what changed, not to the whole document; use the rest of it as context. Be specific — quote or name the passages you mean. No praise, no summary of the document.',
     'Answer in the language the document is written in.',
     'Format exactly (omit a section when you have nothing for it):',
     '### What this changes',
@@ -137,11 +139,17 @@ export async function reactToSave(deps: ReactionDeps, job: ReactionJob): Promise
   const members = config.members.filter(m => m.enabled && m.reactsOnSave && inScope(m, { path, tags: doc.tags }))
   if (members.length === 0) return { status: 'skipped', reason: 'no member has this document in scope' }
 
+  // What this save changed — the previous version was archived by putFile before the overwrite
+  const before = await previousVersion(deps.blobs, path, row.etag).catch(() => null)
+  const change = before
+    ? `## What this save changed (since ${new Date(before.version.at).toISOString().slice(0, 16).replace('T', ' ')} UTC by ${before.version.author || 'unknown'})\n\`\`\`diff\n${clip(diffLines(dec.decode(before.bytes), dec.decode(bytes)).text, DIFF_MAX_CHARS)}\n\`\`\``
+    : '## What this save changed\n(first version of this document)'
+
   const remarks: string[] = []
   for (const m of members) {
     const noteBytes = await deps.blobs.get(memberNotePath(m))
     const memory = noteBytes ? clip(dec.decode(noteBytes), MEMORY_MAX_CHARS) : '(empty)'
-    const user = `## Your memory note\n${memory}\n\n## Document: ${doc.title}\nPath: ${path}\nSaved by: ${row.author || 'unknown'}\n\n---\n\n${clip(doc.body, REACTION_MAX_CHARS)}`
+    const user = `## Your memory note\n${memory}\n\n${change}\n\n## Document: ${doc.title}\nPath: ${path}\nSaved by: ${row.author || 'unknown'}\n\n---\n\n${clip(doc.body, REACTION_MAX_CHARS)}`
     const text = (await deps.llm({ system: memberSystem(m), user, maxTokens: 900, effort: 'medium' })).trim()
     const remarkPath = remarkPathFor(m, path)
     const markdown = renderRemark({ member: m, doc: { title: doc.title, filename: doc.filename, path, author: row.author, etag: row.etag }, text, now })

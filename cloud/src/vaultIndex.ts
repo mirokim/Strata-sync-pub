@@ -7,6 +7,7 @@
  * text"; this is that, without any of the Electron-side caches.
  */
 import { parseVaultDoc, type ParsedVaultDoc } from '../../mcp/src/lint/vaultDoc.js'
+import { buildLintGraph, type LintGraph } from '../../mcp/src/lint/graph.js'
 import { listLiveRows } from './nightly.js'
 import type { FileRow, SyncDeps } from './sync.js'
 
@@ -14,14 +15,33 @@ export interface VaultView {
   head: number
   docs: Map<string, ParsedVaultDoc>
   rows: Map<string, FileRow>
+  /** Raw text per document path (what the snapshot stores). */
+  contents: Map<string, string>
   /** BM25 over `docs`, built on first use and shared by every search on this view. */
   bm25(): Bm25
+  /** Resolved link graph over `docs`, built on first use. */
+  graph(): LintGraph
 }
 
 let _cache: { view: VaultView; builtAt: number } | null = null
 const CACHE_TTL_MS = 30_000
 
+/**
+ * One R2 object holding every document's text, keyed by content hash. A cold isolate reads it
+ * with a single request and then fetches only the documents whose hash moved since — reading
+ * the vault file by file would exceed the per-invocation subrequest limit past ~1000 documents.
+ * Rewritten whenever a load had to fetch more than SNAPSHOT_REWRITE_AFTER documents, and by the
+ * nightly batch.
+ */
+export const VAULT_SNAPSHOT_KEY = '_system/vault-snapshot.json'
+const SNAPSHOT_REWRITE_AFTER = 40
+/** Hard cap on per-load R2 reads; documents beyond it wait for the next load (the snapshot catches up). */
+const MAX_READS_PER_LOAD = 800
+
+interface VaultSnapshot { version: 1; head: number; docs: { path: string; etag: string; content: string }[] }
+
 const dec = new TextDecoder()
+const enc = new TextEncoder()
 
 /** Current documents. Reuses the isolate cache while the sequence head is unchanged and fresh. */
 export async function loadVaultView(deps: SyncDeps, force = false): Promise<VaultView> {
@@ -32,32 +52,58 @@ export async function loadVaultView(deps: SyncDeps, force = false): Promise<Vaul
   const rows = await listLiveRows(deps.meta)
   const docs = new Map<string, ParsedVaultDoc>()
   const rowMap = new Map<string, FileRow>()
+  const contents = new Map<string, string>()          // path → text, for the snapshot
   const toRead: FileRow[] = []
+
+  // Base to reuse from: this isolate's previous view, else the stored snapshot
+  let snapshot: Map<string, { etag: string; content: string }> | null = null
+  if (!_cache) {
+    const raw = await deps.blobs.get(VAULT_SNAPSHOT_KEY)
+    if (raw) {
+      try {
+        const parsed = JSON.parse(dec.decode(raw)) as VaultSnapshot
+        if (parsed.version === 1 && Array.isArray(parsed.docs)) snapshot = new Map(parsed.docs.map(d => [d.path, { etag: d.etag, content: d.content }]))
+      } catch { snapshot = null }
+    }
+  }
   for (const row of rows) {
     rowMap.set(row.path, row)
     if (!row.path.toLowerCase().endsWith('.md')) continue
     // Reuse the previously parsed document when the content hash is unchanged
     const prev = _cache?.view.rows.get(row.path)
     const prevDoc = _cache?.view.docs.get(row.path)
-    if (prev && prevDoc && prev.etag === row.etag) { docs.set(row.path, prevDoc); continue }
+    if (prev && prevDoc && prev.etag === row.etag) { docs.set(row.path, prevDoc); contents.set(row.path, _cache!.view.contents.get(row.path) ?? ''); continue }
+    const snap = snapshot?.get(row.path)
+    if (snap && snap.etag === row.etag) { docs.set(row.path, parseVaultDoc(row.path, snap.content, row.mtime)); contents.set(row.path, snap.content); continue }
     toRead.push(row)
   }
   // R2 reads in parallel batches — a cold isolate on a large vault would otherwise take seconds
   const BATCH = 25
-  for (let i = 0; i < toRead.length; i += BATCH) {
-    const part = await Promise.all(toRead.slice(i, i + BATCH).map(async row => {
+  const reads = toRead.slice(0, MAX_READS_PER_LOAD)
+  for (let i = 0; i < reads.length; i += BATCH) {
+    const part = await Promise.all(reads.slice(i, i + BATCH).map(async row => {
       const bytes = await deps.blobs.get(row.path)
-      return bytes ? [row, parseVaultDoc(row.path, dec.decode(bytes), row.mtime)] as const : null
+      return bytes ? [row, dec.decode(bytes)] as const : null
     }))
-    for (const entry of part) if (entry) docs.set(entry[0].path, entry[1])
+    for (const entry of part) if (entry) { docs.set(entry[0].path, parseVaultDoc(entry[0].path, entry[1], entry[0].mtime)); contents.set(entry[0].path, entry[1]) }
   }
   let index: Bm25 | null = null
-  const view: VaultView = { head, docs, rows: rowMap, bm25: () => (index ??= new Bm25(docs)) }
+  let graph: LintGraph | null = null
+  const view: VaultView = { head, docs, rows: rowMap, contents, bm25: () => (index ??= new Bm25(docs)), graph: () => (graph ??= buildLintGraph([...docs.values()])) }
+  // Persist when this load did real work, so the next cold isolate does not repeat it
+  if (reads.length >= SNAPSHOT_REWRITE_AFTER || (reads.length > 0 && !snapshot && !_cache)) {
+    await writeVaultSnapshot(deps, view).catch(e => console.error('[vault-view] snapshot write failed', e))
+  }
   _cache = { view, builtAt: now }
   return view
 }
 
 export function invalidateVaultView(): void { _cache = null }
+
+export async function writeVaultSnapshot(deps: SyncDeps, view: VaultView): Promise<void> {
+  const body: VaultSnapshot = { version: 1, head: view.head, docs: [...view.contents.entries()].map(([path, content]) => ({ path, etag: view.rows.get(path)?.etag ?? '', content })) }
+  await deps.blobs.put(VAULT_SNAPSHOT_KEY, enc.encode(JSON.stringify(body)))
+}
 
 // ── Tokeniser + BM25 ─────────────────────────────────────────────────────────
 

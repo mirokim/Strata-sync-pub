@@ -17,7 +17,7 @@ import { history, defaultKeymap, historyKeymap } from '@codemirror/commands'
 import { syntaxHighlighting } from '@codemirror/language'
 import { markdown } from '@codemirror/lang-markdown'
 import matter from 'gray-matter'
-import { ArrowLeft, Save, CheckCircle, AlertCircle, X, Lock, Unlock, Pencil, Wand2, RotateCcw, Loader2 } from 'lucide-react'
+import { ArrowLeft, Save, CheckCircle, AlertCircle, X, Lock, Unlock, Pencil, Wand2, RotateCcw, Loader2, Brain } from 'lucide-react'
 import { useUIStore } from '@/stores/uiStore'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useSettingsStore } from '@/stores/settingsStore'
@@ -34,6 +34,7 @@ import { conflictName } from '@/lib/conflictCopy'
 import { loadWebConfig } from '@/web/config'
 import { showToast } from '@/stores/toastStore'
 import ProposalBanner from './ProposalBanner'
+import BrainPanel from './BrainPanel'
 import type { LoadedDocument } from '@/types'
 import { markdownHighlight, vaultTheme } from '@/lib/editor/codemirrorTheme'
 import { buildWikiLinkPlugin, buildHighlightPlugin, buildCommentPlugin } from '@/lib/editor/wikiLinkPlugin'
@@ -149,7 +150,7 @@ function SuggestDropdown({ docs, selectedIdx, rect, onSelect }: SuggestDropdownP
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function MarkdownEditor() {
-  const { editingDocId, closeEditor, openInEditor } = useUIStore()
+  const { editingDocId, closeEditor, openInEditor, brainPanelOpen, toggleBrainPanel } = useUIStore()
   const { loadedDocuments, setLoadedDocuments, vaultPath } = useVaultStore()
   const vaultFolders = useVaultStore(s => s.vaultFolders)
   const tagPresets = useSettingsStore(s => s.tagPresets)
@@ -915,6 +916,15 @@ export default function MarkdownEditor() {
         })()}
 
         <button
+          onClick={toggleBrainPanel}
+          data-testid="brain-toggle"
+          aria-pressed={brainPanelOpen}
+          style={{ display: 'flex', alignItems: 'center', background: 'transparent', border: 'none', color: brainPanelOpen ? 'var(--color-accent)' : 'var(--color-text-muted)', cursor: 'pointer', padding: '3px', borderRadius: 4, transition: 'color 0.1s' }}
+          title={brainPanelOpen ? 'Hide what the vault knows around this document' : 'Show what the vault knows around this document'}
+        >
+          <Brain size={13} />
+        </button>
+        <button
           onClick={closeEditor}
           style={{ display: 'flex', alignItems: 'center', background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', padding: '3px', borderRadius: 4, transition: 'color 0.1s' }}
           onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-primary)')}
@@ -1063,8 +1073,11 @@ export default function MarkdownEditor() {
         </div>
       )}
 
-      {/* ── CodeMirror editor ── */}
-      <div ref={editorMountRef} style={{ flex: 1, minHeight: 0 }} />
+      {/* ── CodeMirror editor + what the vault knows around this document ── */}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+        <div ref={editorMountRef} style={{ flex: 1, minWidth: 0, minHeight: 0 }} />
+        {brainPanelOpen && doc && <BrainPanel doc={doc} />}
+      </div>
 
       {/* ── WikiLink autocomplete dropdown (React portal → document.body) ── */}
       {wikiSuggest && filteredDocs.length > 0 && (

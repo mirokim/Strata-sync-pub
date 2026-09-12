@@ -27,6 +27,7 @@ const COLOR_MODES: { mode: NodeColorMode; label: string }[] = [
   { mode: 'folder',   label: 'Folder' },
   { mode: 'tag',      label: 'Tag' },
   { mode: 'topic',    label: 'Topic' },
+  { mode: 'heat',     label: 'Activity' },
 ]
 
 

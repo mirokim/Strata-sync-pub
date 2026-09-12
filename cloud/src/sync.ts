@@ -10,6 +10,8 @@
  * against in-memory fakes and the Cloudflare adapter (index.ts) stays thin.
  */
 
+import { archiveVersion, keepsHistory } from './history.js'
+
 export interface FileRow {
   path: string
   etag: string
@@ -37,6 +39,8 @@ export interface BlobStore {
   get(path: string): Promise<Uint8Array | null>
   put(path: string, body: Uint8Array): Promise<void>
   delete(path: string): Promise<void>
+  /** Keys under a prefix (all of them — callers keep prefixes narrow). */
+  list(prefix: string): Promise<{ key: string; size: number }[]>
 }
 
 export interface SyncDeps {
@@ -143,6 +147,11 @@ export async function putFile(deps: SyncDeps, input: PutInput): Promise<SyncResu
     return { status: 204, headers: { 'ETag': `"${etag}"`, 'X-Seq': String(live.seq) } }
   }
 
+  // The replaced version goes to history first so "what did we believe before" stays answerable
+  if (live && keepsHistory(path)) {
+    const old = await deps.blobs.get(path)
+    if (old) await archiveVersion(deps.blobs, live, old).catch(e => console.error('[history] archive failed', path, e))
+  }
   await deps.blobs.put(path, input.body)
   const row = await deps.meta.upsert({
     path, etag, size: input.body.byteLength, mtime: Math.floor(input.mtime),
@@ -158,6 +167,10 @@ export async function deleteFile(deps: SyncDeps, rawPath: string | null, ifMatch
   if (!current || current.deleted) return { status: 404, body: { error: 'not found' } }
   if (ifMatch !== undefined && current.etag !== ifMatch) return { status: 409, body: { error: 'etag mismatch', current } }
 
+  if (keepsHistory(path)) {
+    const old = await deps.blobs.get(path)
+    if (old) await archiveVersion(deps.blobs, current, old).catch(e => console.error('[history] archive failed', path, e))
+  }
   await deps.blobs.delete(path)
   const row = await deps.meta.upsert({
     path, etag: current.etag, size: 0, mtime: current.mtime, author: author.slice(0, 80),

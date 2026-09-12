@@ -253,7 +253,7 @@ export type ThemeId = 'dark' | 'oled' | 'white'
 export type GraphMode = '3d' | '2d'
 export type CenterTab = 'graph' | 'document' | 'editor' | 'settings' | 'slack-logs'
 export type AppState = 'launch' | 'main'
-export type NodeColorMode = 'document' | 'auto' | 'speaker' | 'folder' | 'tag' | 'topic'
+export type NodeColorMode = 'document' | 'auto' | 'speaker' | 'folder' | 'tag' | 'topic' | 'heat'
 
 /** Alias for LoadedDocument — used by mock data and sandbox-derived components */
 export type MockDocument = LoadedDocument

@@ -23,6 +23,7 @@ export class MemoryBlobs implements BlobStore {
   async get(path: string) { return this.objects.get(path) ?? null }
   async put(path: string, body: Uint8Array) { this.objects.set(path, new Uint8Array(body)) }
   async delete(path: string) { this.objects.delete(path) }
+  async list(prefix: string) { return [...this.objects.entries()].filter(([k]) => k.startsWith(prefix)).map(([key, b]) => ({ key, size: b.byteLength })) }
 }
 
 export const enc = (s: string) => new TextEncoder().encode(s)

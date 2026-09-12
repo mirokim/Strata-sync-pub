@@ -6,6 +6,7 @@
 import { useRef, useEffect, useCallback } from 'react'
 import { useGraphStore } from '@/stores/graphStore'
 import { buildNodeColorMap } from '@/lib/nodeColors'
+import { useActivityHeat } from '@/hooks/useActivityHeat'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
 import type { NodeColorMode } from '@/types'
@@ -55,7 +56,8 @@ export default function GraphMinimap() {
   const tagColors       = useSettingsStore(s => s.tagColors)
   const folderColors    = useSettingsStore(s => s.folderColors)
 
-  const colorMap = buildNodeColorMap(nodes, nodeColorMode, tagColors, folderColors)
+  const heat = useActivityHeat()
+  const colorMap = buildNodeColorMap(nodes, nodeColorMode, tagColors, folderColors, heat)
 
   // Draw whenever positions or selection changes
   useEffect(() => {

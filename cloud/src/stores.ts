@@ -72,4 +72,15 @@ export class R2BlobStore implements BlobStore {
   async delete(path: string): Promise<void> {
     await this.bucket.delete(path)
   }
+
+  async list(prefix: string): Promise<{ key: string; size: number }[]> {
+    const out: { key: string; size: number }[] = []
+    let cursor: string | undefined
+    do {
+      const page = await this.bucket.list({ prefix, cursor, limit: 1000 })
+      for (const o of page.objects) out.push({ key: o.key, size: o.size })
+      cursor = page.truncated ? page.cursor : undefined
+    } while (cursor)
+    return out
+  }
 }

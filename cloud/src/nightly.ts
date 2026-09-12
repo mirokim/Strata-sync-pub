@@ -13,6 +13,7 @@
 import { runLint, reportToMarkdown, type LintReport, type LintSnapshot } from '../../mcp/src/lint/index.js'
 import { parseVaultDoc, type ParsedVaultDoc } from '../../mcp/src/lint/vaultDoc.js'
 import { putFile, deleteFile, type FileRow, type SyncDeps } from './sync.js'
+import { loadVaultView, writeVaultSnapshot } from './vaultIndex.js'
 
 export const SNAPSHOT_KEY = '_system/lint-snapshot.json'
 export const EMBED_INDEX_KEY = '_system/embed-index.json'
@@ -158,7 +159,9 @@ export async function runNightly(deps: NightlyDeps, trigger: 'cron' | 'manual' =
   const wallStart = Date.now()
   const log = deps.log ?? (() => {})
   const rows = await listLiveRows(deps.meta)
-  const docs = await loadVaultDocs(deps, rows)
+  const view = await loadVaultView(deps, true)
+  const docs = view.docs
+  await writeVaultSnapshot(deps, view).catch(e => log(`[nightly] snapshot write failed: ${e}`))
   log(`[nightly] ${docs.size} documents`)
 
   // ── Lint ─────────────────────────────────────────────────────────────────

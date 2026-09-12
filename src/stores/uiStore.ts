@@ -31,8 +31,11 @@ interface UIState {
   agentPanelWidth: number
   /** Whether Ctrl+K command palette is open */
   commandPaletteOpen: boolean
+  /** Whether the editor shows the "around this document" panel (remarks, links, history) */
+  brainPanelOpen: boolean
 
   setAppState: (s: AppState) => void
+  toggleBrainPanel: () => void
   setCenterTab: (t: CenterTab) => void
   setSelectedDoc: (id: string | null) => void
   setTheme: (t: ThemeId) => void
@@ -76,8 +79,10 @@ export const useUIStore = create<UIState>()(
       rightPanelWidth: 680,
       agentPanelWidth: 340,
       commandPaletteOpen: false,
+      brainPanelOpen: true,
 
       setAppState: (appState) => set({ appState }),
+      toggleBrainPanel: () => set(s => ({ brainPanelOpen: !s.brainPanelOpen })),
       setCenterTab: (centerTab) => set({ centerTab }),
       setSelectedDoc: (selectedDocId) => set({ selectedDocId }),
       setTheme: (theme) => set({ theme }),
@@ -116,6 +121,7 @@ export const useUIStore = create<UIState>()(
         leftPanelWidth: state.leftPanelWidth,
         rightPanelWidth: state.rightPanelWidth,
         agentPanelWidth: state.agentPanelWidth,
+        brainPanelOpen: state.brainPanelOpen,
       }),
     }
   )

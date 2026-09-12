@@ -7,6 +7,7 @@ import { useGraphSimulation, type SimNode, type SimLink } from '@/hooks/useGraph
 import { SPEAKER_CONFIG } from '@/lib/speakerConfig'
 import { LABEL_MIN_GAP, GRAPH_VIEW_PADDING } from '@/lib/constants'
 import { buildNodeColorMap, getNodeColor, lightenColor, degreeScaleFactor, degreeSize, DEGREE_LIGHT_MAX } from '@/lib/nodeColors'
+import { useActivityHeat } from '@/hooks/useActivityHeat'
 import type { GraphNode, GraphLink } from '@/types'
 import NodeTooltip from './NodeTooltip'
 
@@ -42,9 +43,10 @@ export default function Graph2D({ width, height }: Props) {
   const tagColors = useSettingsStore(s => s.tagColors)
   const folderColors = useSettingsStore(s => s.folderColors)
 
+  const heat = useActivityHeat()
   const nodeColorMap = useMemo(
-    () => buildNodeColorMap(nodes, nodeColorMode, tagColors, folderColors),
-    [nodes, nodeColorMode, tagColors, folderColors]
+    () => buildNodeColorMap(nodes, nodeColorMode, tagColors, folderColors, heat),
+    [nodes, nodeColorMode, tagColors, folderColors, heat]
   )
 
   // degreeMap, maxDegree, adjacencyByIndex — precomputed in graphStore.setLinks()
@@ -644,7 +646,7 @@ export default function Graph2D({ width, height }: Props) {
               const deg = degreeMap.get(node.id) ?? 0
               const sf = degreeScaleFactor(deg, maxDegree)
               const nr = physics.nodeRadius * degreeSize(sf)
-              const lightFactor = isSelected ? 0 : (1 - sf) * DEGREE_LIGHT_MAX
+              const lightFactor = isSelected || nodeColorMode === 'heat' ? 0 : (1 - sf) * DEGREE_LIGHT_MAX
               const color = lightFactor > 0.01 ? lightenColor(baseColor, lightFactor) : baseColor
 
               const sharedProps = {
