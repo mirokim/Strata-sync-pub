@@ -259,12 +259,12 @@ describe('callTool', () => {
     expect((await callTool(mdeps, 'vault_write', { path: 'notes/.draft.md', content: 'v' })).isError).toBe(true)
   })
 
-  it('vault_write and vault_promote report written rows through onWrite (review queue hook)', async () => {
+  it('vault_write and vault_promote report written rows through onWrite (reaction queue hook)', async () => {
     const written: string[] = []
     const hooked: McpDeps = { ...mdeps, onWrite: row => written.push(`${row.path}@${row.seq}`) }
     await callTool(hooked, 'vault_write', { path: 'active/Hooked.md', content: 'v1' })
     await callTool(hooked, 'vault_write', { path: 'active/Hooked.md', content: 'v1' }) // unchanged → no hook
-    const a = parse(await callTool(hooked, 'vault_propose', { title: 'Promote me', body: 'body' })) // proposals are not reviewed
+    const a = parse(await callTool(hooked, 'vault_propose', { title: 'Promote me', body: 'body' })) // proposals get no reactions
     await callTool(hooked, 'vault_promote', { path: a.path, destFolder: 'active' })
     expect(written.map(w => w.split('@')[0])).toEqual(['active/Hooked.md', 'active/promote-me.md'])
   })
@@ -299,7 +299,7 @@ describe('handleMcpRequest', () => {
 
     const list = await (await handleMcpRequest(rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' }), deps)).json() as { result: { tools: { name: string }[] } }
     expect(list.result.tools.map(t => t.name).sort()).toEqual([
-      'graph_lint', 'graph_suggest_links', 'jobs_list', 'jobs_report', 'vault_changes', 'vault_list', 'vault_promote', 'vault_proposals', 'vault_propose', 'vault_read', 'vault_search', 'vault_write',
+      'graph_lint', 'graph_suggest_links', 'member_remember', 'member_report', 'members_list', 'vault_changes', 'vault_list', 'vault_promote', 'vault_proposals', 'vault_propose', 'vault_read', 'vault_search', 'vault_write',
     ])
 
     const call = await (await handleMcpRequest(rpc({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'vault_read', arguments: { path: 'active/Stamina.md' } } }), deps)).json() as { result: { content: { text: string }[] } }
@@ -385,20 +385,20 @@ describe('routes', () => {
     expect((await call('/v1/propose', { method: 'POST', headers: { 'content-type': 'application/json' }, body: 'garbage' })).status).toBe(400)
   })
 
-  it('MCP writes into reviewable folders are queued for director review like PUT /v1/file', async () => {
+  it('MCP writes into eligible folders are queued for member reactions like PUT /v1/file', async () => {
     const sent: { path: string; etag: string }[] = []
-    const envQ = { ...env, REVIEW_QUEUE: { send: async (m: { path: string; etag: string }) => { sent.push(m) } } } as unknown as Env
+    const envQ = { ...env, REACTION_QUEUE: { send: async (m: { path: string; etag: string }) => { sent.push(m) } } } as unknown as Env
     const waited: Promise<unknown>[] = []
     const ctxQ = { waitUntil: (p: Promise<unknown>) => { waited.push(p) }, passThroughOnException() {}, props: {} } as unknown as ExecutionContext
     const mcp = (name: string, args: unknown) => route(new Request('https://w/mcp', {
       method: 'POST', headers: { ...auth, 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
     }), envQ, ctxQ, deps)
-    await mcp('vault_write', { path: 'active/Reviewed.md', content: '# Reviewed\n\n' + 'A design paragraph long enough to be worth a review. '.repeat(12) })
-    await mcp('vault_write', { path: '_agent/not-reviewed.md', content: 'x' })
+    await mcp('vault_write', { path: 'active/Reacted.md', content: '# Reacted\n\n' + 'A design paragraph long enough to be worth a remark. '.repeat(12) })
+    await mcp('vault_write', { path: '_agent/no-reaction.md', content: 'x' })
     await Promise.all(waited)
-    expect(sent.map(m => m.path)).toEqual(['active/Reviewed.md'])
-    expect(sent[0].etag).toBe(meta.rows.get('active/Reviewed.md')!.etag)
+    expect(sent.map(m => m.path)).toEqual(['active/Reacted.md'])
+    expect(sent[0].etag).toBe(meta.rows.get('active/Reacted.md')!.etag)
   })
 
   it('GET /v1/batch reports index coverage and the run log', async () => {
@@ -406,15 +406,16 @@ describe('routes', () => {
     expect(res).toEqual({ totalDocs: 3, embeddedDocs: 0, pendingDocs: 3, runs: [] })
   })
 
-  it('GET/PUT /v1/reviewers round-trips the configuration and rejects bad ones', async () => {
-    const before = await (await call('/v1/reviewers')).json() as { config: { synthesizer: string }; presets: Record<string, unknown> }
-    expect(before.config.synthesizer).toBe('editor')
-    expect(Object.keys(before.presets)).toContain('legal')
-    const legal = (before.presets as Record<string, { context: string }>).legal
-    const ok = await call('/v1/reviewers', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(legal) })
+  it('GET/PUT /v1/members round-trips the configuration and rejects bad ones', async () => {
+    const before = await (await call('/v1/members')).json() as { config: { members: { id: string }[] }; templates: Record<string, { name: string }>; reactionsEnabled: boolean }
+    expect(before.config.members.map(m => m.id)).toEqual(['librarian'])
+    expect(Object.keys(before.templates)).toContain('designer')
+    expect(before.reactionsEnabled).toBe(false)
+    const designer = { id: 'designer', ...before.templates.designer }
+    const ok = await call('/v1/members', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: 1, members: [...before.config.members, designer] }) })
     expect(ok.status).toBe(200)
-    expect(((await (await call('/v1/reviewers')).json()) as { config: { context: string } }).config.context).toBe(legal.context)
-    const bad = await call('/v1/reviewers', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...legal, synthesizer: 'ghost' }) })
+    expect(((await (await call('/v1/members')).json()) as { config: { members: unknown[] } }).config.members).toHaveLength(2)
+    const bad = await call('/v1/members', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: 1, members: [{ ...designer, id: 'Bad Id' }] }) })
     expect(bad.status).toBe(400)
   })
 

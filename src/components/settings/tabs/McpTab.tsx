@@ -34,7 +34,7 @@ const TOOLS: [string, string][] = [
   ['vault_promote', 'Promote a proposal into the vault — after a person approves it'],
   ['vault_write', 'Create or replace a document directly (only when explicitly asked)'],
   ['vault_changes', 'What changed since a date — authors, titles, deletions'],
-  ['jobs_list · jobs_report', 'The standing jobs (Settings → Jobs) and the run log; the `jobs` prompt runs the due ones'],
+  ['members_list · member_remember · member_report', 'The AI members (Settings → AI Members), their memory notes and routine runs; the `member` prompt takes one on'],
 ]
 
 function CopyButton({ text, id }: { text: string; id: string }) {

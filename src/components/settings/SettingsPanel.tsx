@@ -39,8 +39,7 @@ import ConfluencePublishTab from './tabs/ConfluencePublishTab'
 import CronJobTab from './tabs/CronJobTab'
 import ServerTab from './tabs/ServerTab'
 import McpTab from './tabs/McpTab'
-import ReviewersTab from './tabs/ReviewersTab'
-import JobsTab from './tabs/JobsTab'
+import MembersTab from './tabs/MembersTab'
 import { isWebMode } from '@/web/config'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -49,7 +48,7 @@ type SettingsTab =
   | 'stats' | 'trash'
   | 'general' | 'ai' | 'search' | 'vector-embed' | 'personas' | 'debate' | 'shortcuts' | 'project' | 'tags'
   | 'confluence' | 'confluence-publish' | 'slack-bot' | 'jira' | 'jira-dispatch' | 'vault-manager' | 'mirofish'
-  | 'edit-agent' | 'cron-jobs' | 'usage' | 'team-sync' | 'server' | 'mcp' | 'reviewers' | 'jobs'
+  | 'edit-agent' | 'cron-jobs' | 'usage' | 'team-sync' | 'server' | 'mcp' | 'members'
   | 'about'
 
 type NavItem = { id: SettingsTab; icon: React.ElementType; label: string }
@@ -81,8 +80,7 @@ const NAV: NavGroup[] = [
       { id: 'stats',         icon: BarChart2, label: 'Statistics' },
       { id: 'server',        icon: Cloud,     label: 'Server' },
       { id: 'mcp',           icon: Plug,      label: 'MCP' },
-      { id: 'reviewers',     icon: Users,     label: 'Reviewers' },
-      { id: 'jobs',          icon: Bot,       label: 'Jobs' },
+      { id: 'members',       icon: Users,     label: 'AI Members' },
       { id: 'vault-manager', icon: HardDrive, label: 'Vault Manager' },
       { id: 'team-sync',     icon: Cloud,     label: 'Team Sync' },
       { id: 'trash',         icon: Trash2,    label: 'Trash' },
@@ -114,7 +112,7 @@ const ELECTRON_ONLY: ReadonlySet<SettingsTab> = new Set<SettingsTab>([
 ])
 
 /** Tabs that talk to the team server through the browser adapter. */
-const WEB_ONLY: ReadonlySet<SettingsTab> = new Set<SettingsTab>(['server', 'reviewers', 'jobs'])
+const WEB_ONLY: ReadonlySet<SettingsTab> = new Set<SettingsTab>(['server', 'members'])
 
 export function visibleNav(web = isWebMode()): NavGroup[] {
   return NAV
@@ -148,8 +146,7 @@ function renderTabContent(tab: SettingsTab) {
     case 'team-sync':     return <TeamSyncTab />
     case 'server':        return <ServerTab />
     case 'mcp':           return <McpTab />
-    case 'reviewers':     return <ReviewersTab />
-    case 'jobs':          return <JobsTab />
+    case 'members':       return <MembersTab />
     case 'mirofish':   return <MirofishTab />
     case 'cron-jobs':  return <CronJobTab />
     case 'usage':      return <UsageTab />

@@ -316,7 +316,7 @@ npm run build:web && npx vite preview --mode web # 브라우저에서 http://127
 ```bash
 claude mcp add --transport http strata https://<worker>/mcp --header "Authorization: Bearer <팀 토큰>"
 ```
-툴: `vault_list`, `vault_read`, `vault_search`(BM25 + 시맨틱 RRF), `graph_lint`, `graph_suggest_links`, `vault_propose`, `vault_proposals`, `vault_promote`, `vault_write`. 쓰기는 데스크톱에서 저장한 것과 똑같이 디렉터 리뷰 큐에 들어갑니다.
+툴: `vault_list`, `vault_read`, `vault_search`(BM25 + 시맨틱 RRF), `graph_lint`, `graph_suggest_links`, `vault_propose`, `vault_proposals`, `vault_promote`, `vault_write`, `vault_changes`, `members_list`, `member_remember`, `member_report`; 프롬프트 `member`. 쓰기는 앱에서 저장한 것과 똑같이 AI 팀원 반응을 일으킵니다.
 
 **봇** — Slack/Telegram 봇의 `/propose`는 데스크톱 앱이 꺼져 있어도 `STRATA_SERVER_URL`·`STRATA_TEAM_TOKEN`이 있으면 Worker의 `POST /v1/propose`로 기록합니다(`bot/.env.example`). 봇의 `/ask` RAG는 아직 로컬 볼트(데스크톱 앱)가 필요합니다.
 
@@ -363,19 +363,25 @@ npx wrangler vectorize create strata-vault-vectors --dimensions=1024 --metric=co
 npx wrangler deploy
 ```
 
-## 에이전트 제안과 디렉터 리뷰
+## 에이전트 제안과 AI 팀원
 
 ### 에이전트는 볼트에 직접 쓰지 않는다 — `_agent/` 제안
 Claude Code나 슬랙봇이 "기록해 둘게" 하면 문서는 `_agent/YYYY-MM-DD-제목.md`에 **제안**으로 들어갑니다. 프론트매터에 `proposed_by: agent`가 붙고, 검색 점수는 절반, 린트는 이 폴더를 무시합니다. 사람이 앱에서 문서를 열면 위에 배너가 떠서 **승격**(프론트매터 정리 + 원하는 폴더로 이동) 또는 **폐기**를 고릅니다. 승격 전까지는 팀 지식이 아닙니다.
 
 MCP 툴: `vault_propose`(제안 쓰기, 관련 문서 위키링크 포함), `graph_suggest_links`(링크할 문서 추천), `vault_proposals`(대기 목록), `vault_promote`(승격). 슬랙: `/propose 제목 | 본문`.
 
-### 저장하면 디렉터 다섯 명이 읽는다 — `_reviews/`
-기획 문서가 서버에 저장되면(앱 동기화든 Obsidian 직접 저장이든) Worker Queue가 리뷰 작업을 받습니다. 총괄·아트·기획·레벨·프로그래밍 디렉터 페르소나가 문서를 **각자** 읽고 리스크/질문/다음 할 일을 내고, 총괄이 의견 충돌과 공통 우려, 필요한 결정을 종합합니다. 결과는 `_reviews/<폴더>/<문서명>.md`로 볼트에 들어가 다음 pull에 모두에게 도착합니다 — 아무도 버튼을 누르지 않아도 다음날 아침 회의 전에 리뷰가 있습니다.
+### AI 팀원 — 역할·범위·루틴·자기 기억 (Settings → AI Members)
+팀에 없는 역할을 AI에게 맡깁니다. 팀원 하나는 **역할**(한두 문장 — 무엇을 신경 쓰고 어떻게 생각하는지), **범위**(폴더·태그), **루틴**(매일/매주 답해야 할 질문과 지시), 그리고 **자기 기억 노트** `_members/<이름> (memory).md`로 이뤄집니다. 기본으로 사서(Librarian)가 들어 있고 — 최근 결정들이 서로 모순되는 곳, 이름만 다른 같은 아이디어, 계속 미루는 질문, 이번 주 배운 것 — 디자이너·에디터·리서처·PM·세계관 연속성 템플릿을 추가하거나 직접 씁니다.
 
-비용 통제: 같은 내용은 한 번만, 경로당 6시간 쿨다운(쿨다운 중 저장은 끝나고 리뷰), 400자 미만·`_`/`.` 폴더·충돌 사본·봇 저장은 제외, 문서당 12,000자 캡. `REVIEW_FOLDERS`로 대상 폴더를 좁힐 수 있고, 모델은 `REVIEW_MODEL`(기본 `claude-opus-5`; 비용을 낮추려면 `claude-sonnet-5`). 켜기:
+팀원은 두 가지 방식으로 일합니다.
+- **MCP 클라이언트에서 그 사람이 된다** — Claude Code에서 `/mcp__strata__member name=Librarian`. 서버가 역할·기억 노트·지금 돌 루틴을 프롬프트로 내려주고, 클라이언트가 볼트를 읽고 `_agent/`에 제안을 쓰고 `member_report`로 결과를 남깁니다. 아침마다 스케줄러로 돌려도 됩니다: `claude -p "/mcp__strata__member name=Librarian" --allowedTools "mcp__strata__*"`. 서버에 API 키가 필요 없습니다.
+- **저장에 반응한다** (선택) — 범위 안의 문서가 서버에 저장되면 Worker Queue가 팀원별로 한 번씩 LLM을 호출해 `_members/<이름>/<문서 경로>`에 짧은 소견을 남깁니다: 무엇이 바뀌는지, 자기 기억·다른 문서와 어디서 충돌하는지, 질문 하나. 다음 pull에 모두에게 도착합니다.
+
+팀원이 직접 쓰는 문서는 자기 기억 노트뿐입니다(`member_remember`). 나머지는 전부 제안이고, 사람이 승격합니다.
+
+반응 비용 통제: 같은 내용은 한 번만, 경로당 6시간 쿨다운, 400자 미만·`_`/`.` 폴더·충돌 사본·봇 저장은 제외, 문서당 12,000자 캡. `REACTION_FOLDERS`로 대상 폴더를 좁힐 수 있고, 모델은 `REACTION_MODEL`(기본 `claude-opus-5`). 켜기:
 ```bash
-npx wrangler queues create strata-review-jobs
+npx wrangler queues create strata-reactions
 npx wrangler secret put ANTHROPIC_API_KEY
 npx wrangler deploy
 ```
@@ -867,7 +873,7 @@ npm run build:web && npx vite preview --mode web # connect the browser to http:/
 ```bash
 claude mcp add --transport http strata https://<worker>/mcp --header "Authorization: Bearer <team token>"
 ```
-Tools: `vault_list`, `vault_read`, `vault_search` (BM25 + semantic, RRF), `graph_lint`, `graph_suggest_links`, `vault_propose`, `vault_proposals`, `vault_promote`, `vault_write`. Writes are queued for director review exactly like saves from the desktop app.
+Tools: `vault_list`, `vault_read`, `vault_search` (BM25 + semantic, RRF), `graph_lint`, `graph_suggest_links`, `vault_propose`, `vault_proposals`, `vault_promote`, `vault_write`, `vault_changes`, `members_list`, `member_remember`, `member_report`; prompt `member`. Writes trigger member reactions exactly like saves from the app.
 
 **Bots** — the Slack/Telegram `/propose` command records to the Worker's `POST /v1/propose` when the desktop app is not running and `STRATA_SERVER_URL` / `STRATA_TEAM_TOKEN` are set (`bot/.env.example`). The bots' `/ask` RAG still needs a local vault (the desktop app).
 
@@ -914,19 +920,25 @@ npx wrangler vectorize create strata-vault-vectors --dimensions=1024 --metric=co
 npx wrangler deploy
 ```
 
-## Agent proposals and director reviews
+## Agent proposals and AI members
 
 ### Agents never write into the vault — `_agent/` proposals
 When Claude Code or the Slack bot "records" something, it lands in `_agent/YYYY-MM-DD-title.md` as a **proposal**: `proposed_by: agent` in the frontmatter, half weight in search, ignored by the lint. Opening it in the app shows a banner to **promote** (strip the bookkeeping, move to a folder of your choice) or **discard**. Until promoted it is not team knowledge.
 
 MCP tools: `vault_propose` (write a proposal with wikilinks to related documents), `graph_suggest_links` (what it should link to), `vault_proposals` (pending list), `vault_promote`. Slack: `/propose title | body`.
 
-### Save a document, five directors read it — `_reviews/`
-When a design document reaches the server (app sync or a direct Obsidian save), a Worker Queue job runs five director personas — chief, art, design, level, programming — **independently** over the document (risks, questions, one next step), then the chief synthesises disagreements, shared concerns and the decision needed. The result is written to `_reviews/<folder>/<document>.md` and arrives on every machine with the next pull — a review is waiting before the morning stand-up without anyone pressing a button.
+### AI members — a role, a scope, routines, a memory of its own (Settings → AI Members)
+Give a role nobody on the team holds to an AI. A member is a **role** (one or two sentences: what it cares about, how it thinks), a **scope** (folders, tags), **routines** (questions to answer daily or weekly, with instructions), and its own **memory note** `_members/<Name> (memory).md`. Every vault starts with a Librarian — where recent decisions contradict each other, which ideas are the same idea under different names, what keeps being deferred, what we learned this week — and there are Designer, Editor, Researcher, Product lead and Continuity templates, or write your own.
 
-Cost controls: one review per content version, a 6-hour cooldown per path (a save inside the window is reviewed when it ends), no reviews for files under 400 characters, `_`/`.` folders, conflict copies or bot writes, 12,000-character cap per document. `REVIEW_FOLDERS` narrows the scope; `REVIEW_MODEL` picks the model (default `claude-opus-5`; `claude-sonnet-5` to spend less). Enable with:
+A member works in two ways.
+- **Taken on from an MCP client** — in Claude Code, `/mcp__strata__member name=Librarian`. The server hands down the role, the memory note and the routines that are due; the client reads the vault, writes proposals into `_agent/`, and records the run with `member_report`. Wake it every morning from a scheduler: `claude -p "/mcp__strata__member name=Librarian" --allowedTools "mcp__strata__*"`. No API key on the server.
+- **Reacting to saves** (optional) — when a document in scope reaches the server, a Worker Queue job makes one LLM call per member and leaves a short remark at `_members/<Name>/<document path>`: what this changes, what it collides with in the member's memory or other documents, one question. It arrives on every machine with the next pull.
+
+The only document a member writes itself is its memory note (`member_remember`). Everything else is a proposal a person promotes.
+
+Reaction cost controls: one reaction per content version, a 6-hour cooldown per path, nothing for files under 400 characters, `_`/`.` folders, conflict copies or bot writes, 12,000-character cap per document. `REACTION_FOLDERS` narrows the scope; `REACTION_MODEL` picks the model (default `claude-opus-5`). Enable with:
 ```bash
-npx wrangler queues create strata-review-jobs
+npx wrangler queues create strata-reactions
 npx wrangler secret put ANTHROPIC_API_KEY
 npx wrangler deploy
 ```

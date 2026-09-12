@@ -13,7 +13,7 @@ import { D1MetaStore, R2BlobStore } from './stores.js'
 import { getManifest, getFile, putFile, deleteFile, parseIfMatch, type FileRow, type SyncDeps } from './sync.js'
 import { runNightly, batchStatus, semanticSearch, type NightlyDeps, type VectorStore, type VectorQuery } from './nightly.js'
 import { applyR2Events, type R2EventMessage } from './r2events.js'
-import { reviewDocument, shouldEnqueueReview, type ReviewJob, type LlmCall } from './review.js'
+import { reactToSave, shouldEnqueueReaction, type ReactionJob, type LlmCall } from './reactions.js'
 import Anthropic from '@anthropic-ai/sdk'
 import { preflight, withCors } from './cors.js'
 import { handleMcpRequest } from './mcp.js'
@@ -21,8 +21,7 @@ import { invalidateVaultView } from './vaultIndex.js'
 import { buildProposal } from '../../mcp/src/proposals.js'
 import OAuthProvider from '@cloudflare/workers-oauth-provider'
 import { handleAuth, SCOPE, type AuthEnv, type Identity } from './auth.js'
-import { readReviewers, writeReviewers, validateReviewers, normalizeReviewers, PRESETS, type ReviewerConfig } from './reviewers.js'
-import { readJobs, saveJobDefinitions, validateJobs, type JobsConfig } from './jobs.js'
+import { readMembers, saveMemberDefinitions, validateMembers, TEMPLATES, type MembersConfig } from './members.js'
 
 export interface Env extends AuthEnv {
   VAULT: R2Bucket
@@ -34,20 +33,20 @@ export interface Env extends AuthEnv {
   VECTORS?: VectorizeIndex
   /** IANA zone for report file names (default Asia/Seoul). */
   REPORT_TIMEZONE?: string
-  /** Optional — save-triggered director reviews. Needs the queue producer binding and the API key secret. */
-  REVIEW_QUEUE?: Queue<ReviewJob>
+  /** Optional — AI members react to saves in their scope. Needs the queue producer binding and the API key secret. */
+  REACTION_QUEUE?: Queue<ReactionJob>
   ANTHROPIC_API_KEY?: string
-  /** Model for director reviews (default claude-opus-5). */
-  REVIEW_MODEL?: string
-  /** Comma-separated vault folders eligible for review; empty = every non-underscore folder. */
-  REVIEW_FOLDERS?: string
+  /** Model for member reactions (default claude-opus-5). */
+  REACTION_MODEL?: string
+  /** Comma-separated vault folders eligible for reactions; empty = every non-underscore folder. */
+  REACTION_FOLDERS?: string
   /** Documents (re)embedded per nightly run; the rest wait for the next run (default 150). */
   EMBED_MAX_DOCS?: string
   /** Browser origins allowed to call the API (comma-separated, or `*`). Empty = no browser access. */
   ALLOWED_ORIGINS?: string
 }
 
-const DEFAULT_REVIEW_MODEL = 'claude-opus-5'
+const DEFAULT_REACTION_MODEL = 'claude-opus-5'
 
 const EMBED_MODEL = '@cf/baai/bge-m3'
 
@@ -135,17 +134,17 @@ export default {
   /**
    * Queue consumer. Two queues share this Worker:
    *   strata-vault-events  — R2 event notifications: index files written outside the API
-   *   strata-review-jobs   — director reviews for freshly saved documents
+   *   strata-reactions     — AI member reactions to freshly saved documents
    */
-  async queue(batch: MessageBatch<R2EventMessage | ReviewJob>, env: Env): Promise<void> {
-    if (batch.queue.includes('review')) {
+  async queue(batch: MessageBatch<R2EventMessage | ReactionJob>, env: Env): Promise<void> {
+    if (batch.queue.includes('reaction')) {
       const llm = anthropicLlm(env)
-      if (!llm) { console.warn('[review] ANTHROPIC_API_KEY not set — dropping review jobs'); for (const m of batch.messages) m.ack(); return }
-      const deps = { ...baseDeps(env), llm, log: (msg: string) => console.log(msg), reviewFolders: reviewFolders(env) }
+      if (!llm) { console.warn('[reactions] ANTHROPIC_API_KEY not set — dropping reaction jobs'); for (const m of batch.messages) m.ack(); return }
+      const deps = { ...baseDeps(env), llm, log: (msg: string) => console.log(msg), reactFolders: reactionFolders(env) }
       for (const m of batch.messages) {
         try {
-          const outcome = await reviewDocument(deps, m.body as ReviewJob)
-          console.log('[review]', (m.body as ReviewJob).path, JSON.stringify(outcome))
+          const outcome = await reactToSave(deps, m.body as ReactionJob)
+          console.log('[reactions]', (m.body as ReactionJob).path, JSON.stringify(outcome))
           if (outcome.status === 'deferred') {
             // Inside the cooldown: come back when it ends (Queues cap a retry delay at 12 hours)
             m.retry({ delaySeconds: Math.min(Math.ceil(outcome.retryAfterMs / 1000) + 5, 12 * 3600) })
@@ -153,7 +152,7 @@ export default {
             m.ack()
           }
         } catch (e) {
-          console.error('[review] failed', (m.body as ReviewJob).path, e)
+          console.error('[reactions] failed', (m.body as ReactionJob).path, e)
           m.retry({ delaySeconds: 300 })
         }
       }
@@ -162,29 +161,29 @@ export default {
     const events = batch.messages.map(m => m.body as R2EventMessage)
     const result = await applyR2Events(baseDeps(env), events, msg => console.log(msg))
     console.log('[r2events]', JSON.stringify(result))
-    // External writes are reviewed too — the bridge indexed them under author 'external'
-    if (env.REVIEW_QUEUE) {
+    // External writes get reactions too — the bridge indexed them under author 'external'
+    if (env.REACTION_QUEUE) {
       for (const ev of events) {
         if (ev.action === 'DeleteObject' || ev.action === 'LifecycleDeletion') continue
         const key = ev.object?.key ?? ''
-        if (shouldEnqueueReview({ path: key, deleted: false, size: ev.object?.size ?? 0, author: 'external' }, reviewFolders(env))) {
-          await env.REVIEW_QUEUE.send({ path: key }).catch(e => console.error('[review] enqueue failed', e))
+        if (shouldEnqueueReaction({ path: key, deleted: false, size: ev.object?.size ?? 0, author: 'external' }, reactionFolders(env))) {
+          await env.REACTION_QUEUE.send({ path: key }).catch(e => console.error('[reactions] enqueue failed', e))
         }
       }
     }
     for (const m of batch.messages) m.ack()
   },
-} satisfies ExportedHandler<Env, R2EventMessage | ReviewJob>
+} satisfies ExportedHandler<Env, R2EventMessage | ReactionJob>
 
-function reviewFolders(env: Env): string[] {
-  return (env.REVIEW_FOLDERS ?? '').split(',').map(s => s.trim()).filter(Boolean)
+function reactionFolders(env: Env): string[] {
+  return (env.REACTION_FOLDERS ?? '').split(',').map(s => s.trim()).filter(Boolean)
 }
 
-/** Director-review LLM via the Anthropic SDK; null when the key secret is missing. */
+/** Member-reaction LLM via the Anthropic SDK; null when the key secret is missing. */
 function anthropicLlm(env: Env): LlmCall | null {
   if (!env.ANTHROPIC_API_KEY) return null
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 2 })
-  const model = env.REVIEW_MODEL || DEFAULT_REVIEW_MODEL
+  const model = env.REACTION_MODEL || DEFAULT_REACTION_MODEL
   return async ({ system, user, maxTokens, effort }) => {
     const res = await client.messages.create({
       model,
@@ -193,7 +192,7 @@ function anthropicLlm(env: Env): LlmCall | null {
       output_config: { effort },
       messages: [{ role: 'user', content: user }],
     })
-    if (res.stop_reason === 'refusal') return '_(the model declined to review this section)_'
+    if (res.stop_reason === 'refusal') return '_(the model declined to comment on this document)_'
     return res.content.filter(b => b.type === 'text').map(b => b.text).join('\n')
   }
 }
@@ -232,7 +231,7 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
       return handleMcpRequest(req, {
         ...deps, semanticSearch: semantic,
         author: author || 'mcp',
-        onWrite: row => enqueueReview(env, ctx, row),
+        onWrite: row => enqueueReaction(env, ctx, row),
       })
     }
 
@@ -294,24 +293,14 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
     if (url.pathname === '/v1/batch' && req.method === 'GET') {
       return json(200, await batchStatus(deps))
     }
-    if (url.pathname === '/v1/reviewers' && req.method === 'GET') {
-      return json(200, { config: await readReviewers(deps), presets: Object.fromEntries(Object.entries(PRESETS).map(([k, v]) => [k, v])) })
+    if (url.pathname === '/v1/members' && req.method === 'GET') {
+      return json(200, { config: await readMembers(deps), templates: TEMPLATES, reactionsEnabled: Boolean(env.REACTION_QUEUE && env.ANTHROPIC_API_KEY) })
     }
-    if (url.pathname === '/v1/jobs' && req.method === 'GET') {
-      return json(200, await readJobs(deps))
-    }
-    if (url.pathname === '/v1/jobs' && req.method === 'PUT') {
+    if (url.pathname === '/v1/members' && req.method === 'PUT') {
       const body = await req.json().catch(() => null)
-      const error = validateJobs(body)
+      const error = validateMembers(body)
       if (error) return json(400, { error })
-      return json(200, await saveJobDefinitions(deps, body as JobsConfig))
-    }
-    if (url.pathname === '/v1/reviewers' && req.method === 'PUT') {
-      const body = await req.json().catch(() => null)
-      const error = validateReviewers(body)
-      if (error) return json(400, { error })
-      await writeReviewers(deps, normalizeReviewers(body as ReviewerConfig))
-      return json(200, { config: await readReviewers(deps) })
+      return json(200, { config: await saveMemberDefinitions(deps, body as MembersConfig) })
     }
     if (url.pathname === '/v1/manifest' && req.method === 'GET') {
       const since = Number(url.searchParams.get('since') ?? '0')
@@ -331,8 +320,8 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
           mtime: Number(req.headers.get('x-mtime')),
           author,
         })
-        // A new version of a design document → queue a director review (fire-and-forget)
-        if ((result.status === 200 || result.status === 201) && result.body) enqueueReview(env, ctx, result.body as FileRow)
+        // A new version of a document → queue member reactions (fire-and-forget)
+        if ((result.status === 200 || result.status === 201) && result.body) enqueueReaction(env, ctx, result.body as FileRow)
         return toResponse(result)
       }
       if (req.method === 'DELETE') return toResponse(await deleteFile(deps, path, parseIfMatch(req.headers.get('if-match')), author))
@@ -345,10 +334,10 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
   }
 }
 
-/** Queue a director review for a freshly written document when the queue exists and the folder qualifies. */
-function enqueueReview(env: Env, ctx: ExecutionContext, row: FileRow): void {
-  if (!env.REVIEW_QUEUE || !shouldEnqueueReview(row, reviewFolders(env))) return
-  ctx.waitUntil(env.REVIEW_QUEUE.send({ path: row.path, etag: row.etag }).catch(e => console.error('[review] enqueue failed', e)))
+/** Queue member reactions for a freshly written document when the queue exists and the folder qualifies. */
+function enqueueReaction(env: Env, ctx: ExecutionContext, row: FileRow): void {
+  if (!env.REACTION_QUEUE || !shouldEnqueueReaction(row, reactionFolders(env))) return
+  ctx.waitUntil(env.REACTION_QUEUE.send({ path: row.path, etag: row.etag }).catch(e => console.error('[reactions] enqueue failed', e)))
 }
 
 function baseDeps(env: Env): SyncDeps {

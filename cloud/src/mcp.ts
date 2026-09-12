@@ -16,14 +16,14 @@ import { buildProposal, isProposalPath, stripProposalFrontmatter, promotedPath, 
 import { deleteFile, getFile, putFile, normalizeVaultPath, type FileRow, type SyncDeps } from './sync.js'
 import { loadVaultView, invalidateVaultView } from './vaultIndex.js'
 import { SNAPSHOT_KEY } from './nightly.js'
-import { readJobs, recordJobRun, dueJobs, renderJobsPrompt } from './jobs.js'
+import { readMembers, recordRoutineRun, dueRoutines, findMember, renderMemberPrompt, renderMemoryNote, memberNotePath, memberNoteName, type Member } from './members.js'
 import type { SearchHit } from './nightly.js'
 
 export interface McpDeps extends SyncDeps {
   /** Semantic search when Vectorize is configured; otherwise BM25 only. */
   semanticSearch?: (query: string, topK: number) => Promise<SearchHit[]>
   author?: string
-  /** Called after a document is created/replaced (vault_write, vault_promote) — the router queues director reviews here. */
+  /** Called after a document is created/replaced (vault_write, vault_promote) — the router queues member reactions here. */
   onWrite?: (row: FileRow) => void
 }
 
@@ -43,8 +43,9 @@ const TOOLS = [
   { name: 'vault_promote', description: 'Promote a proposal into the vault (strip proposal frontmatter, move out of _agent/). Only when the user explicitly approves it.', inputSchema: { type: 'object' as const, properties: { path: { type: 'string' }, destFolder: { type: 'string', description: 'Destination folder (default vault root)' } }, required: ['path'] } },
   { name: 'vault_write', description: 'Write a document directly (create or replace). Prefer vault_propose for anything the team has not approved; use this only when the user explicitly asks to edit an existing document.', inputSchema: { type: 'object' as const, properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } },
   { name: 'vault_changes', description: 'Documents created, changed or deleted since a point in time (ISO date or ms since epoch), newest first, with author and title. Use it to see what moved before reviewing premises or writing a digest.', inputSchema: { type: 'object' as const, properties: { since: { type: 'string', description: 'ISO 8601 date/time, or ms since epoch' }, limit: { type: 'number', description: 'default 100, max 500' } }, required: ['since'] } },
-  { name: 'jobs_list', description: 'The team\'s standing agent jobs (Settings → Jobs): id, title, cadence, instructions, last run. Pass due=true to get only the ones due now.', inputSchema: { type: 'object' as const, properties: { due: { type: 'boolean' } } } },
-  { name: 'jobs_report', description: 'Record that a job was run: a short summary and the proposal paths created. Call once per job after finishing it.', inputSchema: { type: 'object' as const, properties: { id: { type: 'string' }, summary: { type: 'string' }, proposals: { type: 'array', items: { type: 'string' } } }, required: ['id', 'summary'] } },
+  { name: 'members_list', description: 'The team\'s AI members (Settings → AI Members): id, name, role, scope, routines with cadence and last run, memory note path. Use the `member` prompt to act as one.', inputSchema: { type: 'object' as const, properties: { due: { type: 'boolean', description: 'Only members with a routine due now' } } } },
+  { name: 'member_remember', description: 'Append to an AI member\'s own memory note (_members/<Name> (memory).md) — a position taken, a question asked, what a routine found. The only document a member writes directly. Creates the note on first use.', inputSchema: { type: 'object' as const, properties: { member: { type: 'string', description: 'Member id or name' }, text: { type: 'string', description: 'Markdown to append (dated automatically)' } }, required: ['member', 'text'] } },
+  { name: 'member_report', description: 'Record that a member routine was run: a short summary and the proposal paths created. Call once per routine after finishing it, even when nothing was proposed.', inputSchema: { type: 'object' as const, properties: { member: { type: 'string', description: 'Member id or name' }, routine: { type: 'string', description: 'Routine id' }, summary: { type: 'string' }, proposals: { type: 'array', items: { type: 'string' } } }, required: ['member', 'routine', 'summary'] } },
 ]
 
 type Args = Record<string, unknown>
@@ -178,27 +179,63 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
         .map(r => ({ path: r.path, title: view.docs.get(r.path)?.title ?? r.path.replace(/^.*\//, '').replace(/\.md$/i, ''), author: r.author, at: new Date(r.updatedAt).toISOString(), deleted: r.deleted, proposal: isProposalPath(r.path) || undefined }))
       return text({ since: new Date(since).toISOString(), count: changed.length, changes: changed })
     }
-    case 'jobs_list': {
-      const config = await readJobs(deps)
-      const jobs = args.due === true ? dueJobs(config, Date.now()) : config.jobs
-      return text({ jobs: jobs.map(j => ({ id: j.id, title: j.title, cadence: j.cadence, enabled: j.enabled, instructions: j.instructions, lastRun: j.runs.length ? j.runs[j.runs.length - 1] : null })) })
+    case 'members_list': {
+      const config = await readMembers(deps)
+      const now = Date.now()
+      const members = config.members.filter(m => m.enabled && (args.due !== true || dueRoutines(m, now).length > 0))
+      return text({ members: members.map(m => ({ id: m.id, name: m.name, role: m.role, scope: m.scope, reactsOnSave: m.reactsOnSave, memory: memberNotePath(m), routines: m.routines.filter(r => r.enabled).map(r => ({ id: r.id, title: r.title, cadence: r.cadence, due: dueRoutines(m, now).some(d => d.id === r.id), lastRun: r.runs.length ? r.runs[r.runs.length - 1] : null })) })) })
     }
-    case 'jobs_report': {
-      const id = String(args.id ?? '').trim()
+    case 'member_remember': {
+      const config = await readMembers(deps)
+      const member = findMember(config, String(args.member ?? ''))
+      if (!member) return fail(`unknown member: ${String(args.member ?? '')}`)
+      const body = String(args.text ?? '').trim().slice(0, 8_000)
+      if (!body) return fail('text is required')
+      const entry = await appendToMemory(deps, member, body, author)
+      return text({ path: memberNotePath(member), appended: entry.length, link: `[[${memberNoteName(member)}]]` })
+    }
+    case 'member_report': {
+      const config = await readMembers(deps)
+      const member = findMember(config, String(args.member ?? ''))
+      if (!member) return fail(`unknown member: ${String(args.member ?? '')}`)
+      const routineId = String(args.routine ?? '').trim()
       const summary = String(args.summary ?? '').trim().slice(0, 1000)
-      if (!id || !summary) return fail('id and summary are required')
+      if (!routineId || !summary) return fail('routine and summary are required')
       const proposals = Array.isArray(args.proposals) ? (args.proposals as unknown[]).map(String).slice(0, 50) : []
-      const job = await recordJobRun(deps, id, { at: Date.now(), by: author, summary, proposals })
-      if (!job) return fail(`unknown job: ${id}`)
-      return text({ recorded: id, runs: job.runs.length, at: new Date(job.runs[job.runs.length - 1].at).toISOString() })
+      const routine = await recordRoutineRun(deps, member.id, routineId, { at: Date.now(), by: author, summary, proposals })
+      if (!routine) return fail(`unknown routine for ${member.name}: ${routineId}`)
+      return text({ recorded: `${member.id}/${routineId}`, runs: routine.runs.length, at: new Date(routine.runs[routine.runs.length - 1].at).toISOString() })
     }
     default:
       return fail(`unknown tool: ${name}`)
   }
 }
 
+/**
+ * Append a dated entry to a member's memory note. The note is the one vault document a member
+ * owns; an If-Match on the current ETag keeps two clients from clobbering each other's entries.
+ */
+async function appendToMemory(deps: McpDeps, member: Member, body: string, by: string): Promise<string> {
+  const path = memberNotePath(member)
+  const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ')
+  const entry = `\n## ${stamp} UTC · via ${by}\n\n${body}\n`
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const row = await deps.meta.get(path)
+    const live = row && !row.deleted ? row : null
+    const bytes = live ? await deps.blobs.get(path) : null
+    const base = bytes ? dec.decode(bytes) : renderMemoryNote(member)
+    const put = await putFile(deps, {
+      path, body: enc.encode(base.replace(/\s+$/, '') + '\n' + entry), mtime: Date.now(), author: `${member.id} (${by})`,
+      ...(live ? { ifMatch: live.etag } : { createOnly: true }),
+    })
+    if (put.status === 200 || put.status === 201) { invalidateVaultView(); return entry }
+    if (put.status !== 409) throw new Error(`memory note write failed (${put.status})`)
+  }
+  throw new Error('memory note changed under us three times; try again')
+}
+
 const PROMPTS = [
-  { name: 'jobs', description: 'Run the team\'s standing Strata Sync jobs that are due (draft missing documents, warn about changed premises, weekly digest…). Writes proposals only.', arguments: [{ name: 'all', description: 'Set to "true" to run every enabled job regardless of cadence', required: false }] },
+  { name: 'member', description: 'Act as one of the team\'s AI members (Settings → AI Members): take on its role and memory, run its routines that are due, answer in that voice. Writes only its own memory note and proposals.', arguments: [{ name: 'name', description: 'Member name or id (default: the first enabled member)', required: false }, { name: 'all', description: 'Set to "true" to run every enabled routine regardless of cadence', required: false }] },
 ]
 
 /** Build a fresh MCP server + stateless transport per request and hand the request to it. */
@@ -209,13 +246,19 @@ export async function handleMcpRequest(req: Request, deps: McpDeps): Promise<Res
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }))
   server.setRequestHandler(ListPromptsRequestSchema, async () => ({ prompts: PROMPTS }))
   server.setRequestHandler(GetPromptRequestSchema, async request => {
-    if (request.params.name !== 'jobs') throw new Error(`unknown prompt: ${request.params.name}`)
-    const config = await readJobs(deps)
+    if (request.params.name !== 'member') throw new Error(`unknown prompt: ${request.params.name}`)
+    const config = await readMembers(deps)
+    const wanted = String(request.params.arguments?.name ?? '').trim()
+    const member = wanted ? findMember(config, wanted) : config.members.find(m => m.enabled)
+    if (!member) throw new Error(wanted ? `unknown member: ${wanted}` : 'no AI members are configured (Settings → AI Members)')
     const force = String(request.params.arguments?.all ?? '') === 'true'
-    const jobs = dueJobs(config, Date.now(), force)
+    const now = Date.now()
+    const routines = dueRoutines(member, now, force)
+    const note = await getFile(deps, memberNotePath(member))
+    const memory = note.status === 200 && note.bytes ? dec.decode(note.bytes) : null
     return {
-      description: `${jobs.length} job${jobs.length === 1 ? '' : 's'} due`,
-      messages: [{ role: 'user', content: { type: 'text', text: renderJobsPrompt(jobs, Date.now(), deps.author ?? '') } }],
+      description: `${member.name} — ${routines.length} routine${routines.length === 1 ? '' : 's'} due`,
+      messages: [{ role: 'user', content: { type: 'text', text: renderMemberPrompt(member, routines, memory, now, deps.author ?? '') } }],
     }
   })
   server.setRequestHandler(CallToolRequestSchema, async request => {

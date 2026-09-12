@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+The product is a shared brain for a team, not a wiki maintenance tool: one vault everyone writes
+into, a graph over it, and AI members who read it through a role of their own.
+
+### Added
+- **AI members** (Settings → AI Members) replace Reviewers and Jobs. A member is a role, a scope
+  (folders, tags), routines on a cadence, and its own memory note `_members/<Name> (memory).md`.
+  A Librarian ships by default; Designer, Editor, Researcher, Product lead and Continuity are
+  templates. `GET/PUT /v1/members`; MCP prompt `member` (`name`, `all`) hands a client the role,
+  the memory and the due routines; tools `members_list`, `member_remember` (append to the memory
+  note — the only document a member writes directly), `member_report`.
+- **Reactions on save** (`cloud/src/reactions.ts`) — one LLM call per member whose scope covers
+  the saved document, remark at `_members/<Name>/<document path>` linked to the document and the
+  memory note. Queue `strata-reactions`, `REACTION_MODEL` / `REACTION_FOLDERS`.
+- Real seed data (`scripts/seed_vault.py`, stdlib only): Python PEPs + Rust RFCs as a decision
+  corpus, a Korean Wikipedia crawl as an encyclopedia corpus; `wipe` clears a server.
+- Settings → Server shows the nightly batch log (embedding progress per run); `GET /v1/batch`.
+- Settings → MCP: connection snippets for Claude Code / Cursor / Claude Desktop and the tool list.
+- 3D graph again: lit instanced spheres with a title label on every node.
+
+### Removed
+- Director reviews (`_reviews/`, five fixed personas), the Reviewers and Jobs tabs, the in-app
+  STRATA BOT chat, the AI provider settings and the edit agent from the GUI — every AI client
+  now talks to the vault over MCP with its own model and key.
+
+### Changed
+- Graph overlay controls (minimap, layout buttons, search) sit inside the file tree and status bar.
+- Settings → About describes the product as it is now.
+
 ## 0.5.0 — 2026-09-12
 
 The web release: the same app in a browser, hosted on Vercel, with the Cloudflare Worker as
@@ -32,7 +62,7 @@ delivery target.
 - External vault changes (fs.watch, desktop sync pulls) were only applied while Settings →
   General was open — the listener lived in that tab. It now lives in `useVaultWatcher`, mounted
   once in App.
-- Documents written through MCP tools skipped the director-review queue.
+- Documents written through MCP tools skipped the save-reaction queue.
 
 ## 0.4.0 — 2026-09-12
 
