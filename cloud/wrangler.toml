@@ -26,6 +26,12 @@ migrations_dir = "migrations"
 [vars]
 # Largest single file accepted by PUT /v1/file (bytes). Images in design vaults rarely exceed this.
 MAX_FILE_BYTES = "10485760"
+# Zone used to date the nightly report file name.
+REPORT_TIMEZONE = "Asia/Seoul"
+
+# The nightly batch parses every document and runs Louvain; give it CPU headroom (paid plans).
+[limits]
+cpu_ms = 300000
 
 # ── Nightly batch: lint report + embeddings. 19:00 UTC = 04:00 Asia/Seoul. ──
 [triggers]

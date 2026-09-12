@@ -144,9 +144,9 @@ export function computePageRank(graph: LintGraph, damping = 0.85): Map<string, n
 // ── Formatting ───────────────────────────────────────────────────────────────
 
 /** Markdown suitable for dropping into the vault (`_reports/lint-YYYY-MM-DD.md`). Titles become wikilinks. */
-export function reportToMarkdown(report: LintReport, opts: { title?: string } = {}): string {
+export function reportToMarkdown(report: LintReport, opts: { title?: string; date?: string } = {}): string {
   const lines: string[] = []
-  lines.push(`# ${opts.title ?? 'Vault lint'} — ${report.generatedAt.slice(0, 10)}`)
+  lines.push(`# ${opts.title ?? 'Vault lint'} — ${opts.date ?? report.generatedAt.slice(0, 10)}`)
   lines.push('')
   lines.push(`${report.docCount} documents · ${report.linkCount} links · ${report.phantomCount} unresolved link targets · ${report.communityCount} clusters`)
   lines.push('')

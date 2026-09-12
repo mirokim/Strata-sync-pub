@@ -22,6 +22,8 @@ export interface Env {
   /** Optional — set by the [ai] and [[vectorize]] bindings; embeddings are skipped without them. */
   AI?: Ai
   VECTORS?: VectorizeIndex
+  /** IANA zone for report file names (default Asia/Seoul). */
+  REPORT_TIMEZONE?: string
 }
 
 const EMBED_MODEL = '@cf/baai/bge-m3'
@@ -128,7 +130,7 @@ function baseDeps(env: Env): SyncDeps {
 }
 
 function nightlyDeps(env: Env): NightlyDeps {
-  const deps: NightlyDeps = { ...baseDeps(env), log: msg => console.log(msg) }
+  const deps: NightlyDeps = { ...baseDeps(env), log: msg => console.log(msg), timeZone: env.REPORT_TIMEZONE || 'Asia/Seoul' }
   if (env.AI && env.VECTORS) {
     deps.embed = embedder(env.AI)
     deps.vectors = vectorStore(env.VECTORS)

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { runNightly, chunkDocument, chunkId, semanticSearch, SNAPSHOT_KEY, EMBED_INDEX_KEY, type NightlyDeps, type VectorItem } from '../src/nightly.js'
+import { runNightly, chunkDocument, chunkId, semanticSearch, localDate, pruneOldReports, SNAPSHOT_KEY, EMBED_INDEX_KEY, type NightlyDeps, type VectorItem } from '../src/nightly.js'
 import { applyR2Events } from '../src/r2events.js'
 import { putFile, deleteFile, type SyncDeps } from '../src/sync.js'
 import { parseVaultDoc, parseFrontmatter, docIdFromPath } from '../../mcp/src/lint/vaultDoc.js'
@@ -85,14 +85,15 @@ describe('runNightly', () => {
 
     const r1 = await runNightly(deps)
     expect(r1.docs).toBe(4)
-    expect(r1.lint.reportPath).toBe('_reports/lint-2026-09-13.md')
+    expect(r1.lint.reportPath).toBe('_reports/lint-2026-09-14.md')   // 19:00 UTC is already the 14th in Seoul
     expect(r1.lint.errors).toBeGreaterThanOrEqual(1)          // Enemy AI Spec phantom
     expect(r1.lint.skipped).toEqual(['near-duplicate', 'cluster-drift'])
 
     // report is a real vault file with a D1 row, authored by the bot
-    const row = await meta.get('_reports/lint-2026-09-13.md')
+    const row = await meta.get('_reports/lint-2026-09-14.md')
     expect(row?.author).toBe('strata-bot')
-    expect(dec(blobs.objects.get('_reports/lint-2026-09-13.md')!)).toContain('[[Enemy AI Spec]]')
+    expect(dec(blobs.objects.get('_reports/lint-2026-09-14.md')!)).toContain('[[Enemy AI Spec]]')
+    expect(dec(blobs.objects.get('_reports/lint-2026-09-14.md')!)).toContain('— 2026-09-14')
     // server bookkeeping is in R2 only
     expect(blobs.objects.has(SNAPSHOT_KEY)).toBe(true)
     expect(await meta.get(SNAPSHOT_KEY)).toBeNull()
@@ -138,7 +139,7 @@ describe('runNightly', () => {
     const r = await runNightly({ meta, blobs, maxFileBytes: 1024, now: () => NOW })
     expect(r.embeddings.skipped).toBe(true)
     expect(blobs.objects.has(EMBED_INDEX_KEY)).toBe(false)
-    expect(await meta.get('_reports/lint-2026-09-13.md')).not.toBeNull()
+    expect(await meta.get('_reports/lint-2026-09-14.md')).not.toBeNull()
   })
 })
 
@@ -191,5 +192,36 @@ describe('applyR2Events', () => {
     ])
     expect(d).toEqual({ indexed: 0, tombstoned: 1, skipped: 1 })
     expect((await meta.get('active/FromObsidian.md'))?.deleted).toBe(true)
+  })
+})
+
+describe('report housekeeping', () => {
+  it('dates reports in the configured zone', () => {
+    expect(localDate(NOW, 'Asia/Seoul')).toBe('2026-09-14')
+    expect(localDate(NOW, 'UTC')).toBe('2026-09-13')
+    expect(localDate(NOW, 'Not/AZone')).toBe('2026-09-13')   // falls back to UTC
+  })
+
+  it('prunes reports older than the retention window and leaves everything else', async () => {
+    await seed('_reports/lint-2026-06-01.md', 'old')
+    await seed('_reports/lint-2026-09-10.md', 'recent')
+    await seed('_reports/not-a-lint-file.md', 'other')
+    await seed('Doc.md', 'doc')
+    const rows = (await meta.listSince(0, 100)).filter(r => !r.deleted)
+    expect(await pruneOldReports(deps as SyncDeps, rows, NOW)).toBe(1)
+    expect((await meta.get('_reports/lint-2026-06-01.md'))?.deleted).toBe(true)
+    expect((await meta.get('_reports/lint-2026-09-10.md'))?.deleted).toBe(false)
+    expect((await meta.get('_reports/not-a-lint-file.md'))?.deleted).toBe(false)
+  })
+
+  it('drops vectors of a document that became graph_weight: skip', async () => {
+    const body = 'long enough body to be embedded as a chunk for sure.'
+    const a = await seed('A.md', ['# A', '', body].join('\n'))
+    await runNightly(deps)
+    expect(vectors.items.size).toBe(1)
+    await putFile(deps as SyncDeps, { path: 'A.md', body: enc(['---', 'graph_weight: skip', '---', '# A', '', body].join('\n')), mtime: NOW, author: 'ann', ifMatch: (a.body as { etag: string }).etag })
+    const r = await runNightly(deps)
+    expect(vectors.items.size).toBe(0)
+    expect(r.embeddings.chunksDeleted).toBe(1)
   })
 })

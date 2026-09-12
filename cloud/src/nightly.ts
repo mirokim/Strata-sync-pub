@@ -12,12 +12,14 @@
  */
 import { runLint, reportToMarkdown, type LintReport, type LintSnapshot } from '../../mcp/src/lint/index.js'
 import { parseVaultDoc, type ParsedVaultDoc } from '../../mcp/src/lint/vaultDoc.js'
-import { putFile, type FileRow, type SyncDeps } from './sync.js'
+import { putFile, deleteFile, type FileRow, type SyncDeps } from './sync.js'
 
 export const SNAPSHOT_KEY = '_system/lint-snapshot.json'
 export const EMBED_INDEX_KEY = '_system/embed-index.json'
 export const REPORT_FOLDER = '_reports'
 export const BOT_AUTHOR = 'strata-bot'
+/** Reports older than this are tombstoned each night so the folder does not grow forever. */
+export const REPORT_RETENTION_DAYS = 30
 
 /** Section text cap — bge-m3 handles 8k tokens; this keeps one chunk well inside that. */
 const CHUNK_MAX_CHARS = 4500
@@ -36,11 +38,13 @@ export interface NightlyDeps extends SyncDeps {
   embed?: (texts: string[]) => Promise<number[][]>
   vectors?: VectorStore
   log?: (msg: string) => void
+  /** IANA zone used to date the report file name (default Asia/Seoul — the cron fires at 04:00 there). */
+  timeZone?: string
 }
 
 export interface NightlyResult {
   docs: number
-  lint: { reportPath: string; errors: number; warnings: number; skipped: string[] }
+  lint: { reportPath: string; errors: number; warnings: number; skipped: string[]; prunedReports: number }
   embeddings: { skipped: boolean; docsEmbedded: number; chunksUpserted: number; docsRemoved: number; chunksDeleted: number; error?: string }
 }
 
@@ -84,8 +88,36 @@ export async function loadVaultDocs(deps: SyncDeps, rows: FileRow[]): Promise<Ma
   return docs
 }
 
-export function reportPathFor(now: number): string {
-  return `${REPORT_FOLDER}/lint-${new Date(now).toISOString().slice(0, 10)}.md`
+/** YYYY-MM-DD in the given zone. The cron runs at 19:00 UTC, which is already the next day in Seoul. */
+export function localDate(now: number, timeZone = 'Asia/Seoul'): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(now))
+    const get = (t: string) => parts.find(p => p.type === t)?.value ?? ''
+    return `${get('year')}-${get('month')}-${get('day')}`
+  } catch {
+    return new Date(now).toISOString().slice(0, 10)
+  }
+}
+
+export function reportPathFor(now: number, timeZone?: string): string {
+  return `${REPORT_FOLDER}/lint-${localDate(now, timeZone)}.md`
+}
+
+const REPORT_NAME_RE = /^_reports\/lint-(\d{4}-\d{2}-\d{2})\.md$/
+
+/** Tombstone lint reports older than the retention window. Returns how many were removed. */
+export async function pruneOldReports(deps: SyncDeps, rows: FileRow[], now: number, retentionDays = REPORT_RETENTION_DAYS): Promise<number> {
+  const cutoff = now - retentionDays * 86_400_000
+  let pruned = 0
+  for (const row of rows) {
+    const m = REPORT_NAME_RE.exec(row.path)
+    if (!m) continue
+    const dated = Date.parse(`${m[1]}T00:00:00Z`)
+    if (Number.isNaN(dated) || dated >= cutoff) continue
+    const r = await deleteFile(deps, row.path, row.etag, BOT_AUTHOR)
+    if (r.status === 200) pruned++
+  }
+  return pruned
 }
 
 export async function runNightly(deps: NightlyDeps): Promise<NightlyResult> {
@@ -100,11 +132,12 @@ export async function runNightly(deps: NightlyDeps): Promise<NightlyResult> {
   const report: LintReport = runLint({ docs: [...docs.values()], previousSnapshot: previous }, { now })
   await writeJson(deps, SNAPSHOT_KEY, report.snapshot)
 
-  const reportPath = reportPathFor(now)
-  const markdown = reportToMarkdown(report, { title: 'Nightly vault lint' })
+  const reportPath = reportPathFor(now, deps.timeZone)
+  const markdown = reportToMarkdown(report, { title: 'Nightly vault lint', date: localDate(now, deps.timeZone) })
   const put = await putFile(deps, { path: reportPath, body: enc.encode(markdown), mtime: now, author: BOT_AUTHOR })
   if (put.status >= 400) log(`[nightly] report write failed: ${JSON.stringify(put.body)}`)
-  log(`[nightly] lint: ${report.summary.bySeverity.error} errors, ${report.summary.bySeverity.warn} warnings → ${reportPath}`)
+  const prunedReports = await pruneOldReports(deps, rows, now)
+  log(`[nightly] lint: ${report.summary.bySeverity.error} errors, ${report.summary.bySeverity.warn} warnings → ${reportPath} (${prunedReports} old reports pruned)`)
 
   // ── Embeddings ───────────────────────────────────────────────────────────
   const embeddings: NightlyResult['embeddings'] = { skipped: true, docsEmbedded: 0, chunksUpserted: 0, docsRemoved: 0, chunksDeleted: 0 }
@@ -129,7 +162,11 @@ export async function runNightly(deps: NightlyDeps): Promise<NightlyResult> {
         if (prev && prev.etag === row.etag) continue
         const doc = docs.get(path)
         if (!doc) continue
-        if (doc.graphWeight === 'skip' || path.startsWith(`${REPORT_FOLDER}/`)) continue
+        if (doc.graphWeight === 'skip' || path.startsWith(`${REPORT_FOLDER}/`)) {
+          // Excluded now — drop whatever an earlier night embedded for it
+          if (prev) { await deps.vectors.deleteByIds(chunkIds(path, prev.chunks)); embeddings.chunksDeleted += prev.chunks; delete index.docs[path] }
+          continue
+        }
         const chunks = chunkDocument(doc)
         if (prev && prev.chunks > chunks.length) await deps.vectors.deleteByIds(chunkIds(path, prev.chunks).slice(chunks.length))
         for (let i = 0; i < chunks.length; i += EMBED_BATCH) {
@@ -159,7 +196,7 @@ export async function runNightly(deps: NightlyDeps): Promise<NightlyResult> {
 
   return {
     docs: docs.size,
-    lint: { reportPath, errors: report.summary.bySeverity.error, warnings: report.summary.bySeverity.warn, skipped: report.skipped.map(s => s.rule) },
+    lint: { reportPath, errors: report.summary.bySeverity.error, warnings: report.summary.bySeverity.warn, skipped: report.skipped.map(s => s.rule), prunedReports },
     embeddings,
   }
 }
