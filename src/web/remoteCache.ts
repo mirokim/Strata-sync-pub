@@ -25,17 +25,35 @@ export interface CacheSnapshot {
   emptyFolders: string[]
 }
 
+/** What changed since the last write; `rows` are upserts, `removed` are deleted paths. */
+export interface CacheDelta {
+  cursor: number
+  emptyFolders: string[]
+  rows: CachedRow[]
+  removed: string[]
+}
+
 export interface CacheBackend {
   load(): Promise<CacheSnapshot | null>
-  save(snapshot: CacheSnapshot): Promise<void>
+  /** Apply a delta; the backend must already hold the rest of the snapshot. */
+  write(delta: CacheDelta): Promise<void>
   clear(): Promise<void>
 }
 
 export class MemoryCacheBackend implements CacheBackend {
-  private snapshot: CacheSnapshot | null = null
-  async load() { return this.snapshot ? structuredCloneSafe(this.snapshot) : null }
-  async save(s: CacheSnapshot) { this.snapshot = structuredCloneSafe(s) }
-  async clear() { this.snapshot = null }
+  private rows = new Map<string, CachedRow>()
+  private cursor: number | null = null
+  private emptyFolders: string[] = []
+  async load(): Promise<CacheSnapshot | null> {
+    if (this.cursor === null) return null
+    return structuredCloneSafe({ cursor: this.cursor, rows: [...this.rows.values()], emptyFolders: this.emptyFolders })
+  }
+  async write(d: CacheDelta) {
+    for (const p of d.removed) this.rows.delete(p)
+    for (const r of d.rows) this.rows.set(r.path, structuredCloneSafe(r))
+    this.cursor = d.cursor; this.emptyFolders = [...d.emptyFolders]
+  }
+  async clear() { this.rows.clear(); this.cursor = null; this.emptyFolders = [] }
 }
 
 function structuredCloneSafe<T>(v: T): T {
@@ -81,16 +99,16 @@ export class IndexedDbCacheBackend implements CacheBackend {
     }
   }
 
-  async save(snapshot: CacheSnapshot): Promise<void> {
+  async write(delta: CacheDelta): Promise<void> {
     const db = await this.open()
     try {
       await new Promise<void>((resolve, reject) => {
         const tx = db.transaction(['rows', 'meta'], 'readwrite')
         const rows = tx.objectStore('rows')
-        rows.clear()
-        for (const r of snapshot.rows) rows.put(r)
-        tx.objectStore('meta').put(snapshot.cursor, 'cursor')
-        tx.objectStore('meta').put(snapshot.emptyFolders, 'emptyFolders')
+        for (const p of delta.removed) rows.delete(p)
+        for (const r of delta.rows) rows.put(r)
+        tx.objectStore('meta').put(delta.cursor, 'cursor')
+        tx.objectStore('meta').put(delta.emptyFolders, 'emptyFolders')
         tx.oncomplete = () => resolve()
         tx.onerror = () => reject(tx.error)
       })
@@ -121,6 +139,8 @@ export class RemoteCache {
   emptyFolders = new Set<string>()
   private saveTimer: ReturnType<typeof setTimeout> | null = null
   private saving: Promise<void> = Promise.resolve()
+  /** Paths touched since the last flush (upserts and deletes); only these are written. */
+  private dirty = new Set<string>()
 
   constructor(private readonly backend: CacheBackend) {}
 
@@ -137,6 +157,7 @@ export class RemoteCache {
     const changed: string[] = []
     const removed: string[] = []
     for (const d of docs) {
+      this.dirty.add(d.path)
       if (d.deleted) {
         if (this.rows.delete(d.path)) removed.push(d.path)
       } else {
@@ -156,14 +177,14 @@ export class RemoteCache {
   }
 
   /** Record a write we made ourselves so the next pull recognises it as already applied. */
-  setRow(row: CachedRow): void { this.rows.set(row.path, row); this.scheduleSave() }
-  removeRow(path: string): void { this.rows.delete(path); this.scheduleSave() }
+  setRow(row: CachedRow): void { this.rows.set(row.path, row); this.dirty.add(row.path); this.scheduleSave() }
+  removeRow(path: string): void { this.rows.delete(path); this.dirty.add(path); this.scheduleSave() }
 
   addEmptyFolder(folder: string): void { this.emptyFolders.add(folder); this.scheduleSave() }
 
   /** Forget everything (server sequence reset or disconnect). */
   async reset(): Promise<void> {
-    this.rows.clear(); this.cursor = 0; this.emptyFolders.clear()
+    this.rows.clear(); this.cursor = 0; this.emptyFolders.clear(); this.dirty.clear()
     if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = null }
     await this.backend.clear().catch(() => {})
   }
@@ -182,11 +203,16 @@ export class RemoteCache {
     this.saveTimer = setTimeout(() => { this.saveTimer = null; void this.flush() }, 300)
   }
 
-  /** Persist now (also awaited by tests). */
+  /** Persist what changed since the last flush (also awaited by tests). */
   flush(): Promise<void> {
     if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = null }
-    const snapshot: CacheSnapshot = { cursor: this.cursor, rows: [...this.rows.values()], emptyFolders: [...this.emptyFolders] }
-    this.saving = this.saving.then(() => this.backend.save(snapshot)).catch(() => {})
+    const touched = [...this.dirty]; this.dirty.clear()
+    const delta: CacheDelta = {
+      cursor: this.cursor, emptyFolders: [...this.emptyFolders],
+      rows: touched.map(p => this.rows.get(p)).filter((r): r is CachedRow => Boolean(r)),
+      removed: touched.filter(p => !this.rows.has(p)),
+    }
+    this.saving = this.saving.then(() => this.backend.write(delta)).catch(() => {})
     return this.saving
   }
 }

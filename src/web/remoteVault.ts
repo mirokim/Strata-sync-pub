@@ -75,6 +75,7 @@ export class RemoteVault {
   private statusListeners = new Set<(s: TeamSyncState) => void>()
   private pollTimer: unknown = null
   private imageCache = new Map<string, string>()
+  private authWarned = false
   private readonly now: () => number
   private readonly fetchImpl?: FetchLike
   private readonly opts: Required<Pick<RemoteVaultOptions, 'pollIntervalMs' | 'setTimer' | 'clearTimer' | 'notify'>>
@@ -150,6 +151,10 @@ export class RemoteVault {
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
       this.setStatus({ inFlight: false, lastError: message })
+      if (e instanceof RemoteError && e.status === 401 && !this.authWarned) {
+        this.authWarned = true
+        this.opts.notify('The team token was rejected — reconnect in Settings → Server', 'error')
+      }
       if (this.cache.rows.size === 0) throw e
       return { changed, removed }
     }
@@ -180,9 +185,10 @@ export class RemoteVault {
     const row: CachedRow = res.row
       ? { path: rel, etag: res.row.etag, size: res.row.size, mtime: res.row.mtime, author: res.row.author, seq: res.row.seq, content: isMd ? dec.decode(bytes) : null }
       : { ...(idx ?? { path: rel, size: bytes.byteLength, mtime: this.now(), author: this.config.author, seq: this.cache.cursor }), path: rel, etag: res.etag, content: isMd ? dec.decode(bytes) : null }
+    // The cursor is deliberately NOT advanced to this write's seq: other clients' rows may sit
+    // between the old cursor and ours, and skipping ahead would lose them. The next pull returns
+    // our own row again, and apply() ignores it because the etag already matches.
     this.cache.setRow(row)
-    // Our own write moves the head; do not treat it as a foreign change on the next poll
-    if (res.row && res.row.seq > this.cache.cursor) this.cache.cursor = res.row.seq
     return row
   }
 
@@ -201,8 +207,14 @@ export class RemoteVault {
       } else {
         this.cache.removeRow(rel)
       }
-      const copy = conflictName(rel, this.config.author, this.now())
-      await this.write(copy, enc.encode(content), { createOnly: true })
+      let copy = conflictName(rel, this.config.author, this.now())
+      for (let n = 2; ; n++) {
+        try { await this.write(copy, enc.encode(content), { createOnly: true }); break }
+        catch (e2) {
+          if (!(e2 instanceof RemoteError) || e2.status !== 409 || n > 20) throw e2
+          copy = conflictName(rel, this.config.author, this.now()).replace(/(\.[^.]*)?$/, `-${n}$1`)
+        }
+      }
       this.setStatus({ conflicts: [...this.status.conflicts.slice(-19), { path: rel, keptAs: copy, at: this.now(), remoteAuthor: e.current?.author ?? 'unknown' }] })
       this.opts.notify(`${rel} was changed by ${e.current?.author || 'someone else'} — your version is kept as "${copy}"`, 'warn')
       this.emitChanged()

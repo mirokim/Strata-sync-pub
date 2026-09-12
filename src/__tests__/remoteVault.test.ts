@@ -174,6 +174,26 @@ describe('loadFiles / scanMetadata', () => {
     expect(r.files.map(f => f.relativePath).sort()).toEqual(['active/Combat System.md', 'active/New.md'])
   })
 
+  it('persists deletions and our own writes as deltas', async () => {
+    const backend = new MemoryCacheBackend()
+    const v1 = makeVault(backend)
+    await v1.api.loadFiles(v1.vaultPath)
+    await v1.api.saveFile(A('active/Mine.md'), 'mine')
+    await v1.api.deleteFile(A('active/Stamina.md'))
+    await v1.cache.flush()
+    const snap = await backend.load()
+    expect(snap!.rows.map(r => r.path).sort()).toEqual(['active/Combat System.md', 'active/Mine.md', 'assets/logo.png'])
+    expect(snap!.rows.find(r => r.path === 'active/Mine.md')!.content).toBe('mine')
+  })
+
+  it('warns once when the token is rejected', async () => {
+    await vault.api.loadFiles(vault.vaultPath)
+    server.token = 'rotated'
+    await vault.poll(); await vault.poll()
+    expect(notices.filter(n => n.includes('token'))).toHaveLength(1)
+    expect(vault.status.lastError).toContain('token')
+  })
+
   it('serves the mirror when the server is down, and fails only when the mirror is empty', async () => {
     await vault.api.loadFiles(vault.vaultPath)
     server.failNext = 502
@@ -226,6 +246,28 @@ describe('saveFile', () => {
     expect(vault.status.conflicts[0]).toMatchObject({ path: 'active/Stamina.md', keptAs: copy, remoteAuthor: 'bob' })
     expect(notices[0]).toContain('bob')
     expect(changes).toEqual([undefined]) // full reload requested
+  })
+
+  it("never skips a teammate's row that landed just before our own write", async () => {
+    await vault.api.loadFiles(vault.vaultPath)              // cursor = 3
+    server.put('active/Stamina.md', 'bob was here', 'bob')  // seq 4, not yet pulled
+    await vault.api.saveFile(A('active/Mine.md'), 'mine')  // seq 5
+    const events: (string | undefined)[] = []
+    vault.api.onChanged(d => events.push(d.changedFile))
+    await vault.poll()
+    expect(events).toEqual(['active/Stamina.md'])
+    expect(await vault.api.readFile(A('active/Stamina.md'))).toBe('bob was here')
+  })
+
+  it('numbers conflict copies when two races land in the same minute', async () => {
+    await vault.api.loadFiles(vault.vaultPath)
+    server.put('active/Stamina.md', 'theirs 1', 'bob')
+    const first = await vault.api.saveFile(A('active/Stamina.md'), 'ours 1')
+    server.put('active/Stamina.md', 'theirs 2', 'bob')
+    const second = await vault.api.saveFile(A('active/Stamina.md'), 'ours 2')
+    expect(first.path).toBe(A('active/Stamina (conflict 미로 2026-09-12 1030).md'))
+    expect(second.path).toBe(A('active/Stamina (conflict 미로 2026-09-12 1030)-2.md'))
+    expect(new TextDecoder().decode(server.blobs.get('active/Stamina (conflict 미로 2026-09-12 1030)-2.md'))).toBe('ours 2')
   })
 
   it('keeps .strata-sync/ files in the browser only', async () => {
