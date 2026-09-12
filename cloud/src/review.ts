@@ -57,6 +57,8 @@ export interface ReviewDeps extends SyncDeps {
 export type ReviewOutcome =
   | { status: 'reviewed'; reviewPath: string; personas: number }
   | { status: 'skipped'; reason: string }
+  /** Inside the cooldown: the consumer should retry after `retryAfterMs` so the latest version still gets its review. */
+  | { status: 'deferred'; retryAfterMs: number }
 
 const enc = new TextEncoder()
 const dec = new TextDecoder()
@@ -74,9 +76,9 @@ export function isReviewablePath(path: string, reviewFolders: string[] = []): bo
   return reviewFolders.some(f => p === f || p.startsWith(f.replace(/\/+$/, '') + '/'))
 }
 
+/** `active/Enemy AI Spec.md` → `_reviews/active/Enemy AI Spec.md` — mirrors the folder so same-named documents do not collide. */
 export function reviewPathFor(docPath: string): string {
-  const name = docPath.replace(/\\/g, '/').split('/').pop() ?? docPath
-  return `${REVIEW_FOLDER}/${name}`
+  return `${REVIEW_FOLDER}/${docPath.replace(/\\/g, '/')}`
 }
 
 // ── State ────────────────────────────────────────────────────────────────────
@@ -147,7 +149,7 @@ export async function reviewDocument(deps: ReviewDeps, job: ReviewJob): Promise<
   const state = await readReviewState(deps)
   const prev = state.reviewed[path]
   if (prev && prev.etag === row.etag) return { status: 'skipped', reason: 'already reviewed this version' }
-  if (prev && now - prev.at < REVIEW_COOLDOWN_MS) return { status: 'skipped', reason: 'cooldown' }
+  if (prev && now - prev.at < REVIEW_COOLDOWN_MS) return { status: 'deferred', retryAfterMs: REVIEW_COOLDOWN_MS - (now - prev.at) }
 
   const bytes = await deps.blobs.get(path)
   if (!bytes) return { status: 'skipped', reason: 'content missing' }
@@ -171,7 +173,7 @@ export async function reviewDocument(deps: ReviewDeps, job: ReviewJob): Promise<
   })).trim()
 
   const reviewPath = reviewPathFor(path)
-  const markdown = renderReview({ doc: { title: doc.title, path, author: row.author, etag: row.etag }, reviews, synthesis, now })
+  const markdown = renderReview({ doc: { title: doc.title, filename: doc.filename, path, author: row.author, etag: row.etag }, reviews, synthesis, now })
   const put = await putFile(deps, { path: reviewPath, body: enc.encode(markdown), mtime: now, author: REVIEW_AUTHOR })
   if (put.status >= 400) {
     log(`[review] write failed for ${reviewPath}: ${JSON.stringify(put.body)}`)
@@ -185,7 +187,7 @@ export async function reviewDocument(deps: ReviewDeps, job: ReviewJob): Promise<
 }
 
 export function renderReview(input: {
-  doc: { title: string; path: string; author: string; etag: string }
+  doc: { title: string; filename: string; path: string; author: string; etag: string }
   reviews: { persona: Persona; text: string }[]
   synthesis: string
   now: number
@@ -203,8 +205,10 @@ export function renderReview(input: {
     'graph_weight: low',
     '---',
     '',
-    `# Director review — [[${input.doc.title}]]`,
+    // Wikilinks resolve by file name, not by the frontmatter title
+    `# Director review — [[${input.doc.filename.replace(/\.md$/i, '')}]]`,
     '',
+    ...(input.doc.title !== input.doc.filename.replace(/\.md$/i, '') ? [`_${input.doc.title}_`, ''] : []),
     `Saved by ${input.doc.author || 'unknown'} · reviewed ${date.slice(0, 16).replace('T', ' ')} UTC · five independent reads, then a synthesis.`,
     '',
     input.synthesis,

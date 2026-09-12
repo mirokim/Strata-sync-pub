@@ -146,7 +146,12 @@ export default {
         try {
           const outcome = await reviewDocument(deps, m.body as ReviewJob)
           console.log('[review]', (m.body as ReviewJob).path, JSON.stringify(outcome))
-          m.ack()
+          if (outcome.status === 'deferred') {
+            // Inside the cooldown: come back when it ends (Queues cap a retry delay at 12 hours)
+            m.retry({ delaySeconds: Math.min(Math.ceil(outcome.retryAfterMs / 1000) + 5, 12 * 3600) })
+          } else {
+            m.ack()
+          }
         } catch (e) {
           console.error('[review] failed', (m.body as ReviewJob).path, e)
           m.retry({ delaySeconds: 300 })

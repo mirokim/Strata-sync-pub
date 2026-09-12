@@ -297,12 +297,20 @@ async function handleTool(name: string, args: Args): Promise<ToolResult> {
         const doc = docs.find(d => d.id === args.docId)
         if (!doc) return err(`unknown docId ${args.docId}`)
         const linked = new Set(getLinks().flatMap(l => l.source === doc.id ? [l.target] : l.target === doc.id ? [l.source] : []))
-        const suggestions = findImplicitLinks(0.1, 500)
+        let suggestions = findImplicitLinks(0.1, 500)
           .filter(p => p.docA === doc.id || p.docB === doc.id)
           .map(p => ({ docId: p.docA === doc.id ? p.docB : p.docA, similarity: p.similarity }))
           .filter(s => !linked.has(s.docId) && !isProposalDoc(s.docId))
           .slice(0, topK)
           .map(s => ({ docId: s.docId, title: idToTitle.get(s.docId) ?? s.docId, score: Number(s.similarity.toFixed(3)) }))
+        if (suggestions.length === 0) {
+          // The implicit-link memo only keeps the global top pairs; fall back to BM25 over the document's own text
+          const probe = `${doc.filename.replace(/\.md$/i, '')} ${doc.sections.map(s => s.body).join(' ').slice(0, 1500)}`
+          suggestions = bm25Search(probe, topK * 3)
+            .filter(h => h.docId !== doc.id && !linked.has(h.docId) && !isProposalDoc(h.docId))
+            .slice(0, topK)
+            .map(h => ({ docId: h.docId, title: idToTitle.get(h.docId) ?? h.filename.replace(/\.md$/i, ''), score: Number(h.score.toFixed(3)) }))
+        }
         return ok({ for: doc.id, suggestions })
       }
       const text = String(args.text ?? '').trim()

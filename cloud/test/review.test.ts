@@ -25,6 +25,8 @@ beforeEach(() => {
   }
 })
 
+const reason = (o: Awaited<ReturnType<typeof reviewDocument>>) => (o as { reason?: string }).reason
+
 const save = (path: string, text: string, author = 'ann', ifMatch?: string) =>
   putFile(deps as SyncDeps, { path, body: enc(text), mtime: clock, author, ifMatch })
 
@@ -44,7 +46,8 @@ describe('eligibility', () => {
     expect(shouldEnqueueReview({ path: 'a.md', deleted: false, size: 5000, author: 'strata-bot' })).toBe(false)
     expect(shouldEnqueueReview({ path: 'a.md', deleted: true, size: 5000, author: 'ann' })).toBe(false)
     expect(shouldEnqueueReview({ path: 'a.md', deleted: false, size: 50, author: 'ann' })).toBe(false)
-    expect(reviewPathFor('active/Enemy AI Spec.md')).toBe('_reviews/Enemy AI Spec.md')
+    expect(reviewPathFor('active/Enemy AI Spec.md')).toBe('_reviews/active/Enemy AI Spec.md')
+    expect(reviewPathFor('Root Doc.md')).toBe('_reviews/Root Doc.md')
   })
 })
 
@@ -53,7 +56,7 @@ describe('reviewDocument', () => {
     const saved = await save('active/Enemy AI Spec.md', LONG_BODY)
     const etag = (saved.body as { etag: string }).etag
     const out = await reviewDocument(deps, { path: 'active/Enemy AI Spec.md', etag })
-    expect(out).toEqual({ status: 'reviewed', reviewPath: '_reviews/Enemy AI Spec.md', personas: 5 })
+    expect(out).toEqual({ status: 'reviewed', reviewPath: '_reviews/active/Enemy AI Spec.md', personas: 5 })
 
     expect(calls.length).toBe(PERSONAS.length + 1)
     const personaCalls = calls.slice(0, PERSONAS.length)
@@ -66,9 +69,9 @@ describe('reviewDocument', () => {
     expect(calls[PERSONAS.length].effort).toBe('high')
     expect(calls[PERSONAS.length].user).toContain('# Programming Director')
 
-    const row = await meta.get('_reviews/Enemy AI Spec.md')
+    const row = await meta.get('_reviews/active/Enemy AI Spec.md')
     expect(row?.author).toBe('strata-bot')
-    const md = dec(blobs.objects.get('_reviews/Enemy AI Spec.md')!)
+    const md = dec(blobs.objects.get('_reviews/active/Enemy AI Spec.md')!)
     expect(md).toContain('# Director review — [[Enemy AI Spec]]')
     expect(md).toContain('## Shared concerns')
     expect(md).toContain('## Art Director')
@@ -86,7 +89,9 @@ describe('reviewDocument', () => {
     // edited right away → cooldown
     clock += 60_000
     await save('Doc.md', LONG_BODY + '\n\nmore', 'ann', etag)
-    expect((await reviewDocument(deps, { path: 'Doc.md' })).reason).toBe('cooldown')
+    const deferred = await reviewDocument(deps, { path: 'Doc.md' })
+    expect(deferred.status).toBe('deferred')
+    expect((deferred as { retryAfterMs: number }).retryAfterMs).toBe(REVIEW_COOLDOWN_MS - 60_000)
 
     // edited again after the cooldown → reviewed again, still one review file (replaced)
     clock += REVIEW_COOLDOWN_MS + 1
@@ -98,16 +103,16 @@ describe('reviewDocument', () => {
 
   it('skips stale jobs, short notes, skipped docs and missing documents', async () => {
     await save('Short.md', '# short\n\ntiny')
-    expect((await reviewDocument(deps, { path: 'Short.md' })).reason).toBe('too short to review')
+    expect(reason(await reviewDocument(deps, { path: 'Short.md' }))).toBe('too short to review')
 
     await save('Skip.md', '---\ngraph_weight: skip\n---\n' + LONG_BODY)
-    expect((await reviewDocument(deps, { path: 'Skip.md' })).reason).toBe('graph_weight: skip')
+    expect(reason(await reviewDocument(deps, { path: 'Skip.md' }))).toBe('graph_weight: skip')
 
     const saved = await save('Doc.md', LONG_BODY)
-    expect((await reviewDocument(deps, { path: 'Doc.md', etag: 'old-etag' })).reason).toBe('superseded by a newer save')
+    expect(reason(await reviewDocument(deps, { path: 'Doc.md', etag: 'old-etag' }))).toBe('superseded by a newer save')
     void saved
-    expect((await reviewDocument(deps, { path: 'Missing.md' })).reason).toBe('document gone')
-    expect((await reviewDocument(deps, { path: '_agent/x.md' })).reason).toBe('path not reviewable')
+    expect(reason(await reviewDocument(deps, { path: 'Missing.md' }))).toBe('document gone')
+    expect(reason(await reviewDocument(deps, { path: '_agent/x.md' }))).toBe('path not reviewable')
     expect(calls.length).toBe(0)
   })
 
