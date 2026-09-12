@@ -64,10 +64,14 @@ into, a graph over it, and AI members who read it through a role of their own.
 - **3D graph on large vaults** — node labels come from a shared pool of 160 DOM elements instead of
   one per node (a 5,000-document vault meant 5,000 text-shadowed divs laid out every frame). Hubs and
   the nodes nearest the camera get labelled, hovered/selected/AI-highlighted nodes always do, and a
-  small vault still labels everything (`src/lib/graphLabels.ts`). Sphere tessellation drops with
-  node count and the scene uploads every second simulation tick past 2,000 nodes. `perf/graph3d.html`
+  small vault still labels everything (`src/lib/graph3dQuality.ts`). Sphere tessellation drops with
+  node count and the scene uploads every second simulation tick past 2,000 nodes.
+- **Adaptive quality for laptops** — the render loop watches the interval between back-to-back
+  frames; when the median of 60 frames is above 24 ms it steps down one level and stays there:
+  1 pixel ratio 1 (big graphs start here), 2 only the strongest half of the edges (the hovered
+  node's edges are always drawn), 3 idle auto-rotation drawn at half rate. `perf/graph3d.html`
   mounts the graph alone with a synthetic 5,600-node / 80,000-link graph for profiling
-  (`window.__graph3dPerf` turns on `performance.measure` timings).
+  (`window.__graph3dPerf` turns on `performance.measure` timings, `?quality=N` pins a level).
 - Graph overlay controls (minimap, layout buttons, search) sit inside the file tree and status bar.
 - Settings → About describes the product as it is now.
 

@@ -17,7 +17,7 @@ import { buildNodeColorMap, getNodeColor, lightenColor, degreeScaleFactor, degre
 import { useActivityHeat } from '@/hooks/useActivityHeat'
 import type { GraphLink } from '@/types'
 import NodeTooltip from './NodeTooltip'
-import { sphereSegmentsFor, chooseLabelledNodes } from '@/lib/graphLabels'
+import { sphereSegmentsFor, chooseLabelledNodes, nextQualityLevel, strongestEdgeMask, edgeSubsetIndex, QUALITY_MAX } from '@/lib/graph3dQuality'
 
 interface Props {
   width: number
@@ -38,6 +38,11 @@ const LABEL_REASSIGN_MS = 120
 // Above this size the scene is updated on every second simulation tick (the layout still runs at
 // full speed, the GPU upload and render just happen at ~30 fps) and spheres use fewer segments.
 const BIG_GRAPH_NODES = 2000
+// Adaptive quality (see nextQualityLevel): the loop measures the interval between consecutively
+// rendered frames; a slow median steps the level down. Big graphs start one step down (pixel ratio 1).
+const QUALITY_WINDOW_FRAMES = 60
+const QUALITY_SLOW_MS = 24
+const EDGE_FRACTION_REDUCED = 0.5
 // Opt-in timing (perf/graph3d.html sets window.__graph3dPerf): performance.measure entries
 // 'graph3d.tick' / 'graph3d.render' / 'graph3d.labels' so a profiler-less run can still be read.
 const perfOn = () => (globalThis as { __graph3dPerf?: boolean }).__graph3dPerf === true
@@ -99,6 +104,10 @@ export default function Graph3D({ width, height }: Props) {
   const lastLabelAssignRef = useRef(0)
   const maxDegRef = useRef(0)
   const simTickCountRef = useRef(0)
+  const qualityRef = useRef(0)
+  const frameIntervalsRef = useRef<number[]>([])
+  const lastRenderTsRef = useRef(0)
+  const applyEdgeBudgetRef = useRef<(() => void) | null>(null)
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const renderBudgetRef = useRef(0)
@@ -269,7 +278,12 @@ export default function Graph3D({ width, height }: Props) {
 
     const dpr = window.devicePixelRatio
     const renderer = new THREE.WebGLRenderer({ antialias: dpr <= 1, alpha: true })
-    renderer.setPixelRatio(Math.min(dpr, 1.5))
+    // A big graph starts at quality level 1 (pixel ratio 1): on a HiDPI laptop the 1.5× buffer alone
+    // more than doubles the fragments spent on tens of thousands of edges
+    qualityRef.current = nodes.length > BIG_GRAPH_NODES ? 1 : 0
+    frameIntervalsRef.current = []
+    lastRenderTsRef.current = 0
+    renderer.setPixelRatio(Math.min(dpr, qualityRef.current >= 1 ? 1 : 1.5))
     renderer.setSize(width, height)
     renderer.setClearColor(0x000000, 0)
     mount.appendChild(renderer.domElement)
@@ -484,6 +498,40 @@ export default function Graph3D({ width, height }: Props) {
     lineSegments.frustumCulled = false
     scene.add(lineSegments)
 
+    // ── Edge budget (quality level ≥ 2): draw the strongest half of the edges plus the hovered
+    // node's neighbourhood. Positions are still updated for every link; only the index changes.
+    let edgeMask: Uint8Array | null = null      // built on first use (an 80k-link sort, once)
+    let edgeIndexApplied = false
+    const applyEdgeBudget = () => {
+      if (qualityRef.current < 2) {
+        if (edgeIndexApplied) { lineGeo.setIndex(null); edgeIndexApplied = false }
+        return
+      }
+      edgeMask ??= strongestEdgeMask(Float32Array.from(links, l => (l as GraphLink).strength ?? 0.5), EDGE_FRACTION_REDUCED)
+      const hovered = lastHoveredRef.current
+      const keep = hovered ? adjacencyRef.current.get(hovered) : undefined
+      lineGeo.setIndex(new THREE.BufferAttribute(edgeSubsetIndex(edgeMask, keep), 1))
+      edgeIndexApplied = true
+      renderBudgetRef.current = Math.max(renderBudgetRef.current, 2)
+    }
+    applyEdgeBudgetRef.current = applyEdgeBudget
+
+    // perf/graph3d.html can pin a starting level (window.__graph3dQualityStart) to inspect each one
+    const startLevel = perfOn() ? Number((globalThis as { __graph3dQualityStart?: number }).__graph3dQualityStart) : NaN
+    if (Number.isInteger(startLevel) && startLevel >= 0 && startLevel <= QUALITY_MAX) {
+      qualityRef.current = startLevel
+      renderer.setPixelRatio(Math.min(dpr, startLevel >= 1 ? 1 : 1.5))
+      applyEdgeBudget()
+    }
+
+    const stepDownQuality = () => {
+      if (qualityRef.current >= QUALITY_MAX) return
+      qualityRef.current++
+      if (qualityRef.current === 1) renderer.setPixelRatio(1)
+      if (qualityRef.current === 2) applyEdgeBudget()
+      console.info(`[Graph3D] frame time high — quality level ${qualityRef.current} (${['full', 'pixel ratio 1', 'half the edges', 'auto-rotate at half rate'][qualityRef.current]})`)
+    }
+
     // ── Selection ring ────────────────────────────────────────────────────────
     const ringPoints: THREE.Vector3[] = []
     for (let i = 0; i <= RING_SEGMENTS; i++) {
@@ -596,6 +644,10 @@ export default function Graph3D({ width, height }: Props) {
       if (controls.autoRotate || aiSet.size > 0 || ringVisible || particlesVisible) {
         renderBudgetRef.current = Math.max(renderBudgetRef.current, 2)
       }
+      // Lowest quality level: when the idle auto-rotation is the only reason to draw, draw every
+      // other frame (the rotation itself keeps its speed — controls.update() ran above)
+      const onlyAutoRotate = controls.autoRotate && aiSet.size === 0 && !ringVisible && !particlesVisible && renderBudgetRef.current <= 2
+      if (qualityRef.current >= 3 && onlyAutoRotate && tickRef.current % 2 === 1) return
 
       if (renderBudgetRef.current > 0) {
         if (ringVisible) {
@@ -655,6 +707,19 @@ export default function Graph3D({ width, height }: Props) {
           perfMeasure('graph3d.labels', labelStart)
         }
         renderBudgetRef.current--
+
+        // Frame pacing: intervals between back-to-back rendered frames feed the quality controller
+        const ts = performance.now()
+        if (lastRenderTsRef.current && ts - lastRenderTsRef.current < 200) {
+          const intervals = frameIntervalsRef.current
+          intervals.push(ts - lastRenderTsRef.current)
+          if (intervals.length >= QUALITY_WINDOW_FRAMES) {
+            const next = nextQualityLevel(qualityRef.current, intervals, QUALITY_SLOW_MS)
+            intervals.length = 0
+            if (next !== qualityRef.current) stepDownQuality()
+          }
+        }
+        lastRenderTsRef.current = ts
       }
       // Always track previous AI highlight set — must be outside renderBudget guard
       // so delta comparisons stay accurate even when rendering is paused.
@@ -716,6 +781,7 @@ export default function Graph3D({ width, height }: Props) {
       // Clear remaining scene objects (lineSegments, ring, particles, etc.)
       scene.clear()
 
+      applyEdgeBudgetRef.current = null
       renderer.domElement.removeEventListener('webglcontextlost', onContextLost)
       renderer.domElement.removeEventListener('webglcontextrestored', onContextRestored)
       renderer.dispose()
@@ -899,6 +965,8 @@ export default function Graph3D({ width, height }: Props) {
     const colorArray = lineColorArrayRef.current
     const colorAttr = lineColorAttrRef.current
     const tmpColor = new THREE.Color()
+    // With the edge budget on, the hovered node's own edges must be drawn even when they are weak
+    applyEdgeBudgetRef.current?.()
 
     if (!hoveredNodeId) {
       const prev = prevHoverStateRef.current

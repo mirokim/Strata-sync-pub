@@ -4,7 +4,7 @@
  *   npx vite --port 4189           then open  http://localhost:4189/perf/graph3d.html?n=5600&m=80000
  *
  * ?n   node count (default 5600)      ?m   link count (default 80000)
- * ?labels=0  start with labels hidden ?seed  PRNG seed
+ * ?labels=0  start with labels hidden ?seed  PRNG seed   ?quality=0..3  pin the adaptive quality level
  * The HUD (and window.__perf) reports frames per second, averaged every second.
  */
 import { Buffer } from 'buffer'
@@ -48,8 +48,9 @@ while (links.length < M && N > 1) {
 useGraphStore.getState().setGraph(nodes, links)
 if (q.get('labels') === '0') useSettingsStore.setState({ showNodeLabels: false })
 
-declare global { interface Window { __graph3dPerf?: boolean; __graphStore: typeof useGraphStore; __perf: { fps: number; frames: number; nodes: number; links: number; labels: number } } }
+declare global { interface Window { __graph3dPerf?: boolean; __graph3dQualityStart?: number; __graphStore: typeof useGraphStore; __perf: { fps: number; frames: number; nodes: number; links: number; labels: number } } }
 window.__graph3dPerf = true
+if (q.get('quality')) window.__graph3dQualityStart = Number(q.get('quality'))
 window.__graphStore = useGraphStore
 window.__perf = { fps: 0, frames: 0, nodes: N, links: links.length, labels: 0 }
 
