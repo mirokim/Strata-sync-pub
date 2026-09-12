@@ -1,0 +1,28 @@
+# Strata Sync cloud — team vault sync API + nightly batch.
+#
+#   npx wrangler d1 create strata-sync-db        → paste database_id below
+#   npx wrangler r2 bucket create strata-vault
+#   npx wrangler secret put TEAM_TOKEN            → shared team token (any long random string)
+#   npx wrangler d1 migrations apply strata-sync-db --remote
+#   npx wrangler deploy
+name = "strata-sync-cloud"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+
+[[r2_buckets]]
+binding = "VAULT"
+bucket_name = "strata-vault"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "strata-sync-db"
+database_id = "REPLACE_WITH_D1_ID"
+migrations_dir = "migrations"
+
+[vars]
+# Largest single file accepted by PUT /v1/file (bytes). Images in design vaults rarely exceed this.
+MAX_FILE_BYTES = "10485760"

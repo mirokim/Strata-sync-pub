@@ -1,0 +1,18 @@
+{
+  "name": "strata-sync-cloud",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "migrate:local": "wrangler d1 migrations apply strata-sync-db --local",
+    "migrate:remote": "wrangler d1 migrations apply strata-sync-db --remote"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260911.1",
+    "typescript": "^5.5.0",
+    "wrangler": "^4.131.1"
+  }
+}

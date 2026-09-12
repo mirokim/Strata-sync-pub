@@ -60,3 +60,7 @@ manual/manual_unpacked/
 # MCP runtime caches (written next to mcp-config.json)
 implicit_links_cache.json
 vector_cache.json
+
+# Cloudflare local secrets
+cloud/.dev.vars
+cloud/.wrangler/
