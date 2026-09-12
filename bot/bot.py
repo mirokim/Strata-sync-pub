@@ -406,7 +406,8 @@ class SlackBotRunner:
         from modules.persona_config import resolve_persona
         from modules.rag_simple import search_vault, build_rag_context, apply_hotness_rerank, record_doc_access
         from modules.graph_expand import expand_via_wikilinks
-        from modules.rag_electron import search_via_electron, get_model_for_tag, ask_via_electron, get_images_via_electron, mirofish_via_electron, get_electron_settings, get_api_key_from_settings, save_mirofish_to_vault, is_electron_alive, propose_via_electron
+        from modules.rag_electron import search_via_electron, get_model_for_tag, ask_via_electron, get_images_via_electron, mirofish_via_electron, get_electron_settings, get_api_key_from_settings, save_mirofish_to_vault, is_electron_alive
+        from modules.team_server import record_proposal, unavailable_message
         from modules.slack_utils import extract_slack_files, download_slack_file
         from modules.multi_agent_rag import build_multi_agent_context
         from modules.web_search import search_web, build_web_context
@@ -1545,12 +1546,12 @@ class SlackBotRunner:
                 return
             user_name = command.get("user_name") or command.get("user_id") or "slack"
             try:
-                result = propose_via_electron(title, body, source=f"slack:{user_name}")
+                result = record_proposal(title, body, source=f"slack:{user_name}")
             except Exception as e:  # HTTP error with detail
                 respond(text=f"❌ Could not record the proposal: {e}")
                 return
             if not result or not result.get("ok"):
-                respond(text="❌ Strata Sync is not running, so the proposal could not be recorded.")
+                respond(text=f"❌ {unavailable_message()}")
                 return
             respond(text=f"📝 Proposal recorded as `{result.get('path')}` — promote it in Strata Sync when you agree with it.")
 

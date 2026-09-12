@@ -45,7 +45,8 @@ from modules.telegram_utils import (
 from modules.claude_client import ClaudeClient
 from modules.persona_config import resolve_persona, PERSONA_ALIASES
 from modules.rag_simple import search_vault as rag_search, RagResult
-from modules.rag_electron import is_electron_alive, search_via_electron as electron_search, ask_via_electron as electron_ask, propose_via_electron
+from modules.rag_electron import is_electron_alive, search_via_electron as electron_search, ask_via_electron as electron_ask
+from modules.team_server import record_proposal, unavailable_message
 from modules.api_keys import get_anthropic_key
 from modules.web_search import search_web, build_web_context
 from modules.constants import DEFAULT_SONNET_MODEL
@@ -251,12 +252,12 @@ def handle_message(message: dict, cfg: dict, token: str) -> None:
             return
         author = (message.get("from") or {}).get("username") or (message.get("from") or {}).get("first_name") or "telegram"
         try:
-            result = propose_via_electron(title, body, source=f"telegram:{author}")
+            result = record_proposal(title, body, source=f"telegram:{author}")
         except Exception as e:
             send_message(token, chat_id, f"❌ Could not record the proposal: {e}", reply_to=message_id)
             return
         if not result or not result.get("ok"):
-            send_message(token, chat_id, "❌ Strata Sync is not running, so the proposal could not be recorded.", reply_to=message_id)
+            send_message(token, chat_id, f"❌ {unavailable_message()}", reply_to=message_id)
             return
         send_message(token, chat_id, f"📝 Proposal recorded as `{result.get('path')}` — promote it in Strata Sync when you agree with it.", reply_to=message_id)
         return
