@@ -99,7 +99,7 @@ export const useUIStore = create<UIState>()(
       toggleSettingsPanel: () => set(s => ({ centerTab: s.centerTab === 'settings' ? 'graph' : 'settings' })),
     }),
     {
-      name: 'rembrandt-ui',
+      name: 'strata-sync-ui',
       version: 2,
       migrate: (persisted: any, version: number) => {
         // v0/v1: 'speaker' was the default — migrate to 'document' mode

@@ -1,8 +1,8 @@
 /**
- * miroStore.ts — MiroFish 시뮬레이터 상태 관리
+ * miroStore.ts — MiroFish simulator state management
  *
- * config: persist (IndexedDB)
- * simState: 런타임 전용 (재시작 시 초기화)
+ * config: persisted (localStorage)
+ * simState: runtime only (reset on restart)
  */
 
 import { create } from 'zustand'
@@ -22,7 +22,7 @@ import {
   type MirofishHistoryEntry,
 } from '@/services/mirofish/types'
 
-// ── 초기 상태 ─────────────────────────────────────────────────────────────────
+// Initial state
 
 const INITIAL_SIM_STATE: MirofishSimulationState = {
   status: 'idle',
@@ -33,7 +33,7 @@ const INITIAL_SIM_STATE: MirofishSimulationState = {
   report: '',
 }
 
-// ── Store 타입 ────────────────────────────────────────────────────────────────
+// Store type
 
 interface MiroState {
   config: MirofishSimulationConfig
@@ -41,37 +41,37 @@ interface MiroState {
   _abortController: AbortController | null
   presets: MirofishPersonaPreset[]
   scheduledTopics: MirofishScheduledTopic[]
-  /** 완료된 시뮬레이션 이력 (최근 20개 유지) */
+  /** Completed simulation history (keep most recent 20) */
   simulationHistory: MirofishHistoryEntry[]
 
-  // config 액션
+  // Config actions
   setConfig: (partial: Partial<MirofishSimulationConfig>) => void
   setPersonas: (personas: MirofishPersona[]) => void
   addPersona: () => void
   removePersona: (id: string) => void
   updatePersona: (id: string, partial: Partial<MirofishPersona>) => void
 
-  // 프리셋 액션
+  // Preset actions
   savePreset: (name: string) => void
   loadPreset: (id: string) => void
   deletePreset: (id: string) => void
 
-  // 스케줄 액션
+  // Schedule actions
   addScheduledTopic: (topic: Omit<MirofishScheduledTopic, 'id'>) => void
   updateScheduledTopic: (id: string, partial: Partial<MirofishScheduledTopic>) => void
   deleteScheduledTopic: (id: string) => void
 
-  // 히스토리 액션
+  // History actions
   deleteHistoryEntry: (id: string) => void
   clearHistory: () => void
 
-  // 시뮬레이션 액션
+  // Simulation actions
   startSimulation: () => Promise<void>
   stopSimulation: () => void
   resetSimulation: () => void
 }
 
-// ── Store ─────────────────────────────────────────────────────────────────────
+// Store
 
 export const useMiroStore = create<MiroState>()(
   persist(
@@ -83,7 +83,7 @@ export const useMiroStore = create<MiroState>()(
       scheduledTopics: [],
       simulationHistory: [],
 
-      // ── config 액션 ────────────────────────────────────────────────────────
+      // Config actions
 
       setConfig: (partial) =>
         set(s => ({ config: { ...s.config, ...partial } })),
@@ -95,12 +95,12 @@ export const useMiroStore = create<MiroState>()(
         const id = `persona_${Date.now()}`
         const newPersona: MirofishPersona = {
           id,
-          name: '새 페르소나',
+          name: 'New Persona',
           role: 'new role',
           stance: 'neutral',
           activityLevel: 0.7,
           influenceWeight: 0.5,
-          systemPrompt: '당신의 관점과 말투를 여기에 작성하세요.',
+          systemPrompt: 'Write your perspective and tone here.',
         }
         set(s => ({ config: { ...s.config, personas: s.config.personas.length < 50 ? [...s.config.personas, newPersona] : s.config.personas } }))
       },
@@ -118,7 +118,7 @@ export const useMiroStore = create<MiroState>()(
           },
         })),
 
-      // ── 프리셋 액션 ────────────────────────────────────────────────────
+      // Preset actions
       savePreset: (name) =>
         set(s => ({
           presets: [
@@ -137,7 +137,7 @@ export const useMiroStore = create<MiroState>()(
       deletePreset: (id) =>
         set(s => ({ presets: s.presets.filter(p => p.id !== id) })),
 
-      // ── 스케줄 액션 ────────────────────────────────────────────────────
+      // Schedule actions
       addScheduledTopic: (topic) =>
         set(s => ({
           scheduledTopics: [...s.scheduledTopics, { ...topic, id: `sched_${Date.now()}` }],
@@ -151,13 +151,13 @@ export const useMiroStore = create<MiroState>()(
       deleteScheduledTopic: (id) =>
         set(s => ({ scheduledTopics: s.scheduledTopics.filter(t => t.id !== id) })),
 
-      // ── 히스토리 액션 ──────────────────────────────────────────────────
+      // History actions
       deleteHistoryEntry: (id) =>
         set(s => ({ simulationHistory: s.simulationHistory.filter(h => h.id !== id) })),
 
       clearHistory: () => set({ simulationHistory: [] }),
 
-      // ── 시뮬레이션 액션 ───────────────────────────────────────────────────
+      // Simulation actions
 
       startSimulation: async () => {
         const { config } = get()
@@ -167,7 +167,7 @@ export const useMiroStore = create<MiroState>()(
         set({ _abortController: abort, simState: { ...INITIAL_SIM_STATE, totalRounds: config.numRounds } })
 
         try {
-          // 1. 페르소나 자동 생성
+          // 1. Auto-generate personas
           let personas = config.personas
           if (config.autoGeneratePersonas) {
             set(s => ({ simState: { ...s.simState, status: 'generating-personas' } }))
@@ -176,7 +176,7 @@ export const useMiroStore = create<MiroState>()(
             set(s => ({ config: { ...s.config, personas } }))
           }
 
-          // 2. 시뮬레이션 실행
+          // 2. Run simulation
           set(s => ({ simState: { ...s.simState, status: 'running' } }))
 
           const feed: MirofishPost[] = []
@@ -224,14 +224,14 @@ export const useMiroStore = create<MiroState>()(
 
           if (abort.signal.aborted) return
 
-          // 3. 보고서 생성
+          // 3. Generate report
           set(s => ({ simState: { ...s.simState, status: 'generating-report', streamingPost: null } }))
           let report = ''
           try {
             report = await generateReport(config.topic, feed, config.modelId)
           } catch (reportErr) {
-            console.error('[miroStore] 보고서 생성 오류:', reportErr)
-            report = `## 보고서 생성 실패\n\n오류: ${reportErr instanceof Error ? reportErr.message : String(reportErr)}`
+            console.error('[miroStore] Report generation error:', reportErr)
+            report = `## Report Generation Failed\n\nError: ${reportErr instanceof Error ? reportErr.message : String(reportErr)}`
           }
 
           if (abort.signal.aborted) return
@@ -255,7 +255,7 @@ export const useMiroStore = create<MiroState>()(
               simState: {
                 ...s.simState,
                 status: 'error',
-                errorMessage: err instanceof Error ? err.message : '알 수 없는 오류',
+                errorMessage: err instanceof Error ? err.message : 'Unknown error',
               },
             }))
           }
@@ -276,7 +276,7 @@ export const useMiroStore = create<MiroState>()(
         set({ simState: INITIAL_SIM_STATE }),
     }),
     {
-      name: 'sandbox-miro',
+      name: 'strata-sync-miro',
       partialize: (s) => ({
         config: s.config,
         presets: s.presets,

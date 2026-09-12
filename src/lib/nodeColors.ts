@@ -39,7 +39,7 @@ const STOP_WORDS = new Set([
   'for', 'with', 'about', 'from', 'and', 'or', 'not', 'no', 'but', 'as',
   'this', 'that', 'these', 'those', 'it', 'its', 'how', 'what', 'when',
   'overview', 'summary', 'notes', 'note', 'section', 'chapter', 'part',
-  // Korean particles / common words
+  // Korean particles / common words (kept for Korean vault support)
   '의', '은', '는', '이', '가', '을', '를', '에', '도', '로', '와', '과',
   '한', '하는', '하기', '하여', '하고', '하면', '된', '되는', '대한',
   '관한', '및', '위한', '통한', '관련', '개요', '정리', '내용', '구조',
@@ -49,8 +49,8 @@ const STOP_WORDS = new Set([
  * Extract the first meaningful word from a node label (section heading).
  * Used as the "topic" key for color assignment.
  * e.g. "Combat Design Overview" → "combat"
- *      "UI 레이아웃 가이드" → "ui"
- *      "레벨 플로우 설계" → "레벨"
+ *      "UI Layout Guide" → "ui"
+ *      "Level Flow Design" → "level"
  */
 function extractTopic(label: string): string {
   const words = label
@@ -105,7 +105,7 @@ function speakerHex(node: GraphNode): string {
   return '#' + n.toString(16).padStart(6, '0')
 }
 
-/** 이미지 노드 고정 색상 — 모든 colorMode에서 동일하게 적용 */
+/** Fixed color for image nodes — applied uniformly across all colorModes */
 const IMAGE_NODE_COLOR = '#a78bfa' // violet-400
 
 export function getNodeColor(
@@ -113,7 +113,7 @@ export function getNodeColor(
   mode: NodeColorMode,
   colorMap: Map<string, string>,
 ): string {
-  // 이미지 노드는 colorMode 무관하게 고정 보라색
+  // Image nodes always use fixed violet regardless of colorMode
   if (node.isImage) return IMAGE_NODE_COLOR
 
   if (mode === 'document') {

@@ -1,8 +1,7 @@
 /**
- * oasisEnvironment.ts — OASIS 환경 (포스트 저장소 + 추천 엔진 + 행동 결정)
+ * oasisEnvironment.ts — OASIS environment (post store + recommendation engine + action decisions)
  *
- * OASIS environment.py + recommendation_system.py + action_space.py를
- * TypeScript로 재현합니다.
+ * TypeScript reimplementation of OASIS environment.py + recommendation_system.py + action_space.py.
  */
 
 import type { SocialGraph } from './socialGraph'
@@ -15,10 +14,10 @@ export interface OASISPost {
   content: string
   round: number
   timestamp: number
-  likes: Set<string>      // 좋아요 누른 에이전트 ID
-  reposts: Set<string>    // 리포스트한 에이전트 ID
-  originalPostId?: string // 리포스트인 경우 원본 포스트 ID
-  /** 작성자의 커뮤니티 영향력 (0.1–1.0) — 추천 가중치에 반영 */
+  likes: Set<string>      // agent IDs that liked this post
+  reposts: Set<string>    // agent IDs that reposted this
+  originalPostId?: string // original post ID if this is a repost
+  /** Author's community influence (0.1–1.0) — reflected in recommendation weight */
   influenceWeight: number
 }
 
@@ -30,7 +29,7 @@ export interface AgentDecision {
   targetAgentId?: string
 }
 
-// 행동 타입별 기본 가중치 (OASIS action_space 대응)
+// Default weights per action type (corresponds to OASIS action_space)
 const ACTION_WEIGHTS: Record<ActionType, number> = {
   post:       0.75,
   repost:     0.15,
@@ -45,7 +44,7 @@ export class OASISEnvironment {
 
   constructor(private graph: SocialGraph) {}
 
-  // ── 포스트 관리 ─────────────────────────────────────────────────────────────
+  // ── Post management ─────────────────────────────────────────────────────────
 
   addPost(
     authorId: string, authorName: string, stance: string,
@@ -73,7 +72,7 @@ export class OASISEnvironment {
     return this.posts.find(p => p.id === postId)
   }
 
-  // ── 추천 엔진 (OASIS recommendation_system.py 대응) ─────────────────────────
+  // ── Recommendation engine (corresponds to OASIS recommendation_system.py) ──
 
   getRecommendedPosts(agentId: string, limit = 15): OASISPost[] {
     const following = new Set(this.graph.getFollowing(agentId))
@@ -82,7 +81,7 @@ export class OASISEnvironment {
       .filter(p => following.has(p.authorId) && p.authorId !== agentId)
       .slice(-20)
 
-    // 트렌딩: 좋아요+리포스트 수 + 작성자 영향력 가중치 합산
+    // Trending: sum of likes + reposts + author influence weight
     const trending = [...this.posts]
       .sort((a, b) => {
         const scoreA = (a.likes.size + a.reposts.size) + a.influenceWeight * 3
@@ -99,7 +98,7 @@ export class OASISEnvironment {
     return merged.slice(0, limit)
   }
 
-  // ── 행동 결정 (OASIS action_space.py 대응) ──────────────────────────────────
+  // ── Action decision (corresponds to OASIS action_space.py) ──────────────────
 
   decideAction(agentId: string): AgentDecision {
     const hasPosts = this.posts.length > 0

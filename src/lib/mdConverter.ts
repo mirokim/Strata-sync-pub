@@ -5,7 +5,7 @@
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type ConversionType = '회의록' | '보고서' | '기획서' | '기타'
+export type ConversionType = 'minutes' | 'report' | 'proposal' | 'other'
 
 export interface ConversionMeta {
   /** Document title (used as first H2 heading) */
@@ -28,17 +28,17 @@ export interface ConversionMeta {
  * ---
  * speaker: art_director
  * date: 2026-02-27
- * tags: [회의록]
- * type: 회의록
+ * tags: [meeting]
+ * type: meeting
  * ---
  *
- * ## 제목
+ * ## Title
  *
  * {content}
  * ```
  */
 export function generateMD(meta: ConversionMeta, content: string): string {
-  const safeTitle = meta.title.trim() || '문서'
+  const safeTitle = meta.title.trim() || 'Document'
   const safeSpeaker = meta.speaker || 'unknown'
   const safeDate = meta.date || new Date().toISOString().split('T')[0]
 
@@ -59,22 +59,18 @@ export function generateMD(meta: ConversionMeta, content: string): string {
 // ── File content extractors ───────────────────────────────────────────────────
 
 /**
- * Text extraction from a DOCX file using JSZip.
- * Decompresses the ZIP, parses word/document.xml, extracts <w:t> elements.
+ * Best-effort text extraction from a DOCX file (ZIP+XML format).
+ * Locates <w:t> elements inside the binary and concatenates their text content.
  */
 export async function extractDocxText(file: File): Promise<string> {
-  const JSZip = (await import('jszip')).default
   const buffer = await file.arrayBuffer()
-  let zip: InstanceType<typeof JSZip>
-  try {
-    zip = await JSZip.loadAsync(buffer)
-  } catch {
-    return ''
-  }
-  const xmlFile = zip.file('word/document.xml')
-  if (!xmlFile) return ''
-  const xml = await xmlFile.async('string')
-  return (xml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) ?? [])
+  // Decode ignoring invalid bytes — the XML tags will be readable even in binary
+  const decoder = new TextDecoder('utf-8', { fatal: false })
+  const raw = decoder.decode(buffer)
+  // Match text between <w:t> and </w:t> tags (Word body text)
+  const matches = raw.match(/<w:t[^>]*>([^<]*)<\/w:t>/g)
+  if (!matches || matches.length === 0) return ''
+  return matches
     .map(m => m.replace(/<w:t[^>]*>/, '').replace(/<\/w:t>/, ''))
     .join(' ')
     .replace(/\s+/g, ' ')
@@ -82,30 +78,24 @@ export async function extractDocxText(file: File): Promise<string> {
 }
 
 /**
- * Text extraction from a PDF file using pdf.js.
+ * Best-effort text extraction from a PDF file.
+ * Finds text strings inside BT...ET text blocks.
  */
 export async function extractPdfText(file: File): Promise<string> {
-  const pdfjsLib = await import('pdfjs-dist')
-  // Worker는 Vite가 번들링한 경로 사용
-  if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-      'pdfjs-dist/build/pdf.worker.mjs',
-      import.meta.url,
-    ).toString()
-  }
   const buffer = await file.arrayBuffer()
-  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise
-  const parts: string[] = []
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i)
-    const content = await page.getTextContent()
-    const pageText = content.items
-      .filter((item): item is import('pdfjs-dist/types/src/display/api').TextItem => 'str' in item)
-      .map(item => item.str)
-      .join(' ')
-    if (pageText.trim()) parts.push(pageText)
+  // PDF text is often stored as latin1/Windows-1252
+  const decoder = new TextDecoder('latin1')
+  const raw = decoder.decode(buffer)
+  const blocks = raw.match(/BT[\s\S]*?ET/g) ?? []
+  const texts: string[] = []
+  for (const block of blocks) {
+    // Match strings in parentheses (Tj / TJ operators)
+    const strings = block.match(/\(([^)]{1,300})\)/g)
+    if (strings) {
+      texts.push(...strings.map(s => s.slice(1, -1)))
+    }
   }
-  return parts.join('\n').replace(/\s+/g, ' ').trim()
+  return texts.join(' ').replace(/\s+/g, ' ').trim()
 }
 
 /**
@@ -125,10 +115,10 @@ export async function extractHtmlText(file: File): Promise<string> {
         const text = (doc.body?.innerText ?? doc.body?.textContent ?? '')
         resolve(text.replace(/\s+/g, ' ').trim())
       } catch {
-        reject(new Error('HTML 파일 파싱 실패'))
+        reject(new Error('Failed to parse HTML file'))
       }
     }
-    reader.onerror = () => reject(new Error('HTML 파일 읽기 실패'))
+    reader.onerror = () => reject(new Error('Failed to read HTML file'))
     reader.readAsText(file, 'utf-8')
   })
 }
@@ -144,7 +134,7 @@ export async function readFileAsText(file: File): Promise<string> {
     return new Promise<string>((resolve, reject) => {
       const reader = new FileReader()
       reader.onload = () => resolve(reader.result as string)
-      reader.onerror = () => reject(new Error('파일 읽기 실패'))
+      reader.onerror = () => reject(new Error('Failed to read file'))
       reader.readAsText(file, 'utf-8')
     })
   }
@@ -153,5 +143,5 @@ export async function readFileAsText(file: File): Promise<string> {
   if (name.endsWith('.docx')) return extractDocxText(file)
   if (name.endsWith('.pdf')) return extractPdfText(file)
 
-  throw new Error('지원하지 않는 파일 형식 (.txt .md .html .docx .pdf)')
+  throw new Error('Unsupported file format (.txt .md .html .docx .pdf)')
 }

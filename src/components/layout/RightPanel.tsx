@@ -46,7 +46,7 @@ export default function RightPanel() {
       {/* Edit Agent panel */}
       {editAgentPanelVisible && (
         isOverlay ? (
-          /* ── Overlay / slide-over mode (narrow screen) ── */
+          /* Overlay / slide-over mode (narrow screen) */
           <>
             {/* Backdrop */}
             <div
@@ -71,7 +71,7 @@ export default function RightPanel() {
             </div>
           </>
         ) : (
-          /* ── Inline mode (wide screen) ── */
+          /* Inline mode (wide screen) */
           <>
             <div style={{ flexShrink: 0, background: 'var(--color-bg-secondary)' }}>
               <ResizeHandle onResize={handleAgentResize} />

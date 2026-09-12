@@ -60,7 +60,7 @@ export default function DocViewer() {
             'hover:bg-[var(--color-bg-hover)]'
           )}
           style={{ color: 'var(--color-text-muted)' }}
-          aria-label="그래프로 돌아가기"
+          aria-label="Back to graph"
         >
           <ChevronLeft size={12} />
           Graph
@@ -81,8 +81,8 @@ export default function DocViewer() {
           style={{ color: 'var(--color-text-muted)', fontSize: 12 }}
           data-testid="doc-viewer-empty"
         >
-          <div style={{ marginBottom: 8 }}>← 파일 트리에서 문서를 선택하세요</div>
-          <div style={{ fontSize: 11, opacity: 0.5 }}>또는 그래프에서 노드를 클릭하세요</div>
+          <div style={{ marginBottom: 8 }}>← Select a document from the file tree</div>
+          <div style={{ fontSize: 11, opacity: 0.5 }}>or click a node in the graph</div>
         </div>
       )}
 
@@ -183,14 +183,14 @@ export default function DocViewer() {
                         className="text-xs font-semibold tracking-wide"
                         style={{ color: 'var(--color-text-muted)' }}
                       >
-                        우선순위 참조
+                        Priority Reference
                       </span>
                       {higherPriority.length > 0 && (
                         <span
                           className="text-xs px-1.5 py-0.5 rounded"
                           style={{ background: 'rgba(245,158,11,0.15)', color: 'var(--color-warning)' }}
                         >
-                          상위 문서 {higherPriority.length}개
+                          {higherPriority.length} higher-priority doc{higherPriority.length !== 1 ? 's' : ''}
                         </span>
                       )}
                     </div>
@@ -225,13 +225,13 @@ export default function DocViewer() {
                             {isHigher && (
                               <span className="shrink-0 flex items-center gap-0.5" style={{ color: 'var(--color-warning)' }}>
                                 <ArrowUp size={10} />
-                                <span>우선</span>
+                                <span>Higher</span>
                               </span>
                             )}
                             {isLower && (
                               <span className="shrink-0 flex items-center gap-0.5" style={{ color: 'var(--color-text-muted)' }}>
                                 <ArrowDown size={10} />
-                                <span>하위</span>
+                                <span>Lower</span>
                               </span>
                             )}
                           </div>

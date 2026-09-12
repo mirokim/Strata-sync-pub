@@ -37,32 +37,32 @@ export default function CommandPalette() {
   // Built-in commands
   const builtinCommands: PaletteItem[] = useMemo(() => [
     {
-      id: 'cmd:settings', label: '설정 열기', sub: 'Settings',
+      id: 'cmd:settings', label: 'Open Settings', sub: 'Settings',
       icon: <Settings size={14} />,
       action: () => { toggleSettings(); setOpen(false) },
     },
     {
-      id: 'cmd:left-panel', label: '왼쪽 패널 토글', sub: 'Toggle left panel',
+      id: 'cmd:left-panel', label: 'Toggle Left Panel', sub: 'Toggle left panel',
       icon: <PanelLeft size={14} />,
       action: () => { toggleLeft(); setOpen(false) },
     },
     {
-      id: 'cmd:right-panel', label: '오른쪽 패널 토글', sub: 'Toggle right panel',
+      id: 'cmd:right-panel', label: 'Toggle Right Panel', sub: 'Toggle right panel',
       icon: <PanelRight size={14} />,
       action: () => { toggleRight(); setOpen(false) },
     },
     {
-      id: 'cmd:agent-panel', label: '편집 에이전트 패널 토글', sub: 'Toggle edit agent',
+      id: 'cmd:agent-panel', label: 'Toggle Edit Agent Panel', sub: 'Toggle edit agent',
       icon: <Pencil size={14} />,
       action: () => { toggleAgent(); setOpen(false) },
     },
     {
-      id: 'cmd:run-agent', label: '편집 에이전트 지금 실행', sub: 'Run edit agent cycle now',
+      id: 'cmd:run-agent', label: 'Run Edit Agent Now', sub: 'Run edit agent cycle now',
       icon: <Zap size={14} />,
       action: () => { runEditAgentCycle(); setOpen(false) },
     },
     {
-      id: 'cmd:reload', label: '페이지 새로고침', sub: 'Reload',
+      id: 'cmd:reload', label: 'Reload Page', sub: 'Reload',
       icon: <RotateCcw size={14} />,
       action: () => { window.location.reload() },
     },
@@ -105,8 +105,7 @@ export default function CommandPalette() {
     if (open) {
       setQuery('')
       setActiveIdx(0)
-      const t = setTimeout(() => inputRef.current?.focus(), 30)
-      return () => clearTimeout(t)
+      setTimeout(() => inputRef.current?.focus(), 30)
     }
   }, [open])
 
@@ -119,17 +118,18 @@ export default function CommandPalette() {
     el?.scrollIntoView({ block: 'nearest' })
   }, [activeIdx])
 
-  // Global Ctrl+K shortcut — open only; Escape is handled in handleKeyDown (inner)
+  // Global Ctrl+K shortcut
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault()
         setOpen(true)
       }
+      if (e.key === 'Escape' && open) setOpen(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [setOpen])
+  }, [open, setOpen])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
@@ -187,7 +187,7 @@ export default function CommandPalette() {
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="파일 검색 또는 명령 실행..."
+            placeholder="Search files or run a command..."
             style={{
               flex: 1, background: 'transparent', border: 'none', outline: 'none',
               color: 'var(--color-text-primary)', fontSize: 14,
@@ -204,7 +204,7 @@ export default function CommandPalette() {
         <div ref={listRef} style={{ maxHeight: 360, overflowY: 'auto' }}>
           {results.length === 0 ? (
             <div style={{ padding: '20px 16px', textAlign: 'center', color: '#475569', fontSize: 13 }}>
-              결과 없음
+              No results found
             </div>
           ) : (
             results.map((item, idx) => (
@@ -232,7 +232,7 @@ export default function CommandPalette() {
                 </span>
                 {item.sub && (
                   <span style={{ fontSize: 11, color: '#475569', fontFamily: 'monospace' }}>
-                    {item.sub.length > 36 ? '…' + item.sub.slice(-34) : item.sub}
+                    {item.sub.length > 36 ? '...' + item.sub.slice(-34) : item.sub}
                   </span>
                 )}
               </div>
@@ -246,9 +246,9 @@ export default function CommandPalette() {
           borderTop: '1px solid var(--color-bg-tertiary)',
           display: 'flex', gap: 16, fontSize: 10, color: '#475569',
         }}>
-          <span><kbd style={{ marginRight: 4, padding: '1px 5px', borderRadius: 3, border: '1px solid rgba(255,255,255,0.1)' }}>↑↓</kbd>탐색</span>
-          <span><kbd style={{ marginRight: 4, padding: '1px 5px', borderRadius: 3, border: '1px solid rgba(255,255,255,0.1)' }}>↵</kbd>실행</span>
-          <span><kbd style={{ marginRight: 4, padding: '1px 5px', borderRadius: 3, border: '1px solid rgba(255,255,255,0.1)' }}>ESC</kbd>닫기</span>
+          <span><kbd style={{ marginRight: 4, padding: '1px 5px', borderRadius: 3, border: '1px solid rgba(255,255,255,0.1)' }}>↑↓</kbd>Navigate</span>
+          <span><kbd style={{ marginRight: 4, padding: '1px 5px', borderRadius: 3, border: '1px solid rgba(255,255,255,0.1)' }}>↵</kbd>Execute</span>
+          <span><kbd style={{ marginRight: 4, padding: '1px 5px', borderRadius: 3, border: '1px solid rgba(255,255,255,0.1)' }}>ESC</kbd>Close</span>
         </div>
       </div>
     </>

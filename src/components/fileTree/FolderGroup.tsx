@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { ChevronRight, ChevronDown, Folder } from 'lucide-react'
-import type { LoadedDocument } from '@/types'
+import type { MockDocument, LoadedDocument } from '@/types'
 import FileTreeItem from './FileTreeItem'
 import type { ContextMenuState } from './ContextMenu'
 import { useSettingsStore } from '@/stores/settingsStore'
 
 interface FolderGroupProps {
   folderPath: string
-  docs: LoadedDocument[]
+  docs: MockDocument[]
   /** null/undefined = local state; true/false = controlled open state */
   isOpenOverride?: boolean | null
   onContextMenu?: (state: ContextMenuState) => void
@@ -65,7 +65,7 @@ export default function FolderGroup({
         <label
           onClick={e => e.stopPropagation()}
           onPointerDown={e => e.stopPropagation()}
-          title={`"${displayName}" 폴더 색상 변경`}
+          title={`Change color for "${displayName}" folder`}
           style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', width: 14, height: 14, flexShrink: 0 }}
         >
           <span style={{
@@ -93,11 +93,11 @@ export default function FolderGroup({
         <div>
           {docs.length === 0 ? (
             <div style={{ padding: '4px 12px 4px 24px', fontSize: 10, color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-              비어 있음
+              Empty
             </div>
           ) : (
             docs.map(doc => (
-              <FileTreeItem key={doc.absolutePath || doc.id} doc={doc} onContextMenu={onContextMenu} />
+              <FileTreeItem key={(doc as LoadedDocument).absolutePath ?? doc.id} doc={doc} onContextMenu={onContextMenu} />
             ))
           )}
         </div>

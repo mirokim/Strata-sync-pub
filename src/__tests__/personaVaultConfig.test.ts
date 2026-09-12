@@ -7,10 +7,10 @@ import type { VaultPersonaConfig } from '@/lib/personaVaultConfig'
 const FULL_CONFIG: VaultPersonaConfig = {
   version: 2,
   disabledPersonaIds: ['plan_director'],
-  directorBios: { art_director: '비주얼 총괄' },
+  directorBios: { art_director: 'Visual Lead' },
   personaModels: { chief_director: 'claude-sonnet-4-6' },
-  personaPromptOverrides: { chief_director: '항상 한국어로 답하세요' },
-  customPersonas: [{ id: 'custom_1', name: '커스텀 AI', prompt: '테스트 프롬프트', color: '#ff0000' }],
+  personaPromptOverrides: { chief_director: 'Always respond in English.' },
+  customPersonas: [{ id: 'custom_1', name: 'Custom AI', prompt: 'test prompt', color: '#ff0000' }],
 }
 
 const FULL_YAML = `---
@@ -18,19 +18,19 @@ version: 2
 disabledPersonaIds:
   - plan_director
 directorBios:
-  art_director: 비주얼 총괄
+  art_director: Visual Lead
 personaModels:
   chief_director: claude-sonnet-4-6
 personaPromptOverrides:
-  chief_director: 항상 한국어로 답하세요
+  chief_director: Always respond in English.
 customPersonas:
   - id: custom_1
-    name: 커스텀 AI
-    prompt: 테스트 프롬프트
+    name: Custom AI
+    prompt: test prompt
     color: '#ff0000'
 ---
 
-<!-- Sandbox Map 페르소나 설정 파일 -->
+<!-- STRATA SYNC persona config file — managed automatically by the app. -->
 `
 
 // ── parsePersonaConfig ─────────────────────────────────────────────────────────
@@ -41,9 +41,9 @@ describe('parsePersonaConfig()', () => {
     expect(result).not.toBeNull()
     expect(result!.version).toBe(2)
     expect(result!.disabledPersonaIds).toEqual(['plan_director'])
-    expect(result!.directorBios.art_director).toBe('비주얼 총괄')
+    expect(result!.directorBios.art_director).toBe('Visual Lead')
     expect(result!.personaModels.chief_director).toBe('claude-sonnet-4-6')
-    expect(result!.personaPromptOverrides.chief_director).toBe('항상 한국어로 답하세요')
+    expect(result!.personaPromptOverrides.chief_director).toBe('Always respond in English.')
     expect(result!.customPersonas).toHaveLength(1)
     expect(result!.customPersonas[0].id).toBe('custom_1')
   })

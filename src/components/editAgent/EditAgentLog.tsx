@@ -5,6 +5,7 @@ import { useVaultStore } from '@/stores/vaultStore'
 import EditAgentLogEntryRow from './EditAgentLogEntry'
 import { Trash2, Play, Square, History } from 'lucide-react'
 import { runEditAgentCycle } from '@/services/editAgentRunner'
+import { EDIT_AGENT_LOG_PATH } from '@/lib/constants'
 
 interface CycleRecord {
   start: string   // ISO timestamp
@@ -36,10 +37,10 @@ export default function EditAgentLog() {
     if (!vaultPath || !window.vaultAPI) return
     setHistoryLoading(true)
     try {
-      const raw = await window.vaultAPI.readFile(`${vaultPath}/.rembrandt/edit-agent-logs.jsonl`)
+      const raw = await window.vaultAPI.readFile(`${vaultPath}/${EDIT_AGENT_LOG_PATH}`)
       if (!raw) { setHistory([]); return }
       const entries = raw.trim().split('\n').map(l => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean)
-      // Group into cycles: cycle_start → next cycle_start
+      // Group into cycles: cycle_start -> next cycle_start
       const cycles: CycleRecord[] = []
       let current: CycleRecord | null = null
       for (const e of entries) {
@@ -65,8 +66,8 @@ export default function EditAgentLog() {
   }
 
   const lastWakeStr = lastWakeAt
-    ? new Date(lastWakeAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
-    : '—'
+    ? new Date(lastWakeAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+    : '\u2014'
 
   const MONO = 'var(--ea-font-mono)'
 
@@ -76,7 +77,7 @@ export default function EditAgentLog() {
       background: 'var(--color-bg-secondary)',
     }}>
 
-      {/* ── Toolbar ────────────────────────────────────────────────────── */}
+      {/* Toolbar */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6,
         padding: '0 10px', height: 34,
@@ -87,7 +88,7 @@ export default function EditAgentLog() {
           flex: 1, fontFamily: MONO, fontSize: 10,
           color: isRunning ? 'var(--color-accent)' : 'var(--color-text-muted)',
         }}>
-          {isRunning ? '● running' : `last run ${lastWakeStr}`}
+          {isRunning ? '\u25CF running' : `last run ${lastWakeStr}`}
         </span>
 
         {/* Run now button */}
@@ -114,7 +115,7 @@ export default function EditAgentLog() {
         {/* History */}
         <button
           onClick={handleToggleHistory}
-          title="이전 실행 히스토리"
+          title="Previous run history"
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: 26, height: 26, borderRadius: 5, border: 'none',
@@ -129,7 +130,7 @@ export default function EditAgentLog() {
         {/* Clear logs */}
         <button
           onClick={clearLogs}
-          title="로그 지우기"
+          title="Clear logs"
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: 26, height: 26, borderRadius: 5, border: 'none',
@@ -143,7 +144,7 @@ export default function EditAgentLog() {
         </button>
       </div>
 
-      {/* ── History panel ────────────────────────────────────────────────── */}
+      {/* History panel */}
       {showHistory && (
         <div style={{
           flexShrink: 0, borderBottom: '1px solid var(--color-border)',
@@ -152,16 +153,16 @@ export default function EditAgentLog() {
         }}>
           {historyLoading ? (
             <div style={{ padding: '8px 12px', fontFamily: MONO, fontSize: 10, color: 'var(--color-text-muted)' }}>
-              로드 중...
+              Loading...
             </div>
           ) : history.length === 0 ? (
             <div style={{ padding: '8px 12px', fontFamily: MONO, fontSize: 10, color: 'var(--color-text-muted)' }}>
-              기록 없음
+              No history
             </div>
           ) : history.map((c, i) => {
             const startDate = new Date(c.start)
-            const dateStr = startDate.toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' })
-            const timeStr = startDate.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
+            const dateStr = startDate.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' })
+            const timeStr = startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
             const duration = c.done
               ? Math.round((new Date(c.done).getTime() - startDate.getTime()) / 1000)
               : null
@@ -174,7 +175,7 @@ export default function EditAgentLog() {
               }}>
                 <span style={{ color: 'var(--color-text-muted)' }}>{dateStr} {timeStr}</span>
                 <span style={{ color: 'var(--color-text-secondary)' }}>
-                  처리 {c.processed ?? '?'}개 · 편집 {c.edited ?? '?'}개
+                  processed {c.processed ?? '?'} · edited {c.edited ?? '?'}
                   {c.model && <span style={{ color: 'var(--color-text-muted)', marginLeft: 6 }}>{c.model.split('-').slice(-2).join('-')}</span>}
                 </span>
                 {duration != null && (
@@ -186,7 +187,7 @@ export default function EditAgentLog() {
         </div>
       )}
 
-      {/* ── Status banners ─────────────────────────────────────────────── */}
+      {/* Status banners */}
       {isRunning && pendingQueue.length > 0 && (
         <div style={{
           padding: '5px 12px', flexShrink: 0,
@@ -198,10 +199,10 @@ export default function EditAgentLog() {
           <span style={{ color: 'var(--color-accent)' }}>{pendingQueue.length} queued</span>
           {processingFile && (
             <span style={{ color: 'var(--color-text-muted)' }}>
-              →&nbsp;
+              &rarr;&nbsp;
               <span style={{ color: 'var(--color-text-secondary)' }}>
                 {processingFile.length > 32
-                  ? '…' + processingFile.slice(-30)
+                  ? '\u2026' + processingFile.slice(-30)
                   : processingFile}
               </span>
             </span>
@@ -220,7 +221,7 @@ export default function EditAgentLog() {
         </div>
       )}
 
-      {/* ── Log rows ───────────────────────────────────────────────────── */}
+      {/* Log rows */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {logs.length === 0 ? (
           <div style={{

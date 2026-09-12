@@ -12,39 +12,39 @@ interface ShortcutGroup {
 
 const GROUPS: ShortcutGroup[] = [
   {
-    label: '에디터',
+    label: 'Editor',
     rows: [
-      { keys: ['Ctrl', 'S'],           desc: '저장' },
-      { keys: ['Ctrl', 'B'],           desc: '굵게 (Bold)' },
-      { keys: ['Ctrl', 'I'],           desc: '기울임 (Italic)' },
-      { keys: ['Ctrl', 'Shift', 'S'],  desc: '취소선 (Strikethrough)' },
-      { keys: ['Ctrl', 'Shift', 'H'],  desc: '하이라이트 (Highlight)' },
-      { keys: ['Ctrl', 'Shift', 'C'],  desc: '인라인 코드 (Inline Code)' },
-      { keys: ['Ctrl', 'Z'],           desc: '실행 취소 (Undo)' },
-      { keys: ['Ctrl', 'Y'],           desc: '다시 실행 (Redo)' },
-      { keys: ['Ctrl', 'A'],           desc: '전체 선택' },
+      { keys: ['Ctrl', 'S'],           desc: 'Save' },
+      { keys: ['Ctrl', 'B'],           desc: 'Bold' },
+      { keys: ['Ctrl', 'I'],           desc: 'Italic' },
+      { keys: ['Ctrl', 'Shift', 'S'],  desc: 'Strikethrough' },
+      { keys: ['Ctrl', 'Shift', 'H'],  desc: 'Highlight' },
+      { keys: ['Ctrl', 'Shift', 'C'],  desc: 'Inline Code' },
+      { keys: ['Ctrl', 'Z'],           desc: 'Undo' },
+      { keys: ['Ctrl', 'Y'],           desc: 'Redo' },
+      { keys: ['Ctrl', 'A'],           desc: 'Select All' },
     ],
   },
   {
-    label: '채팅',
+    label: 'Chat',
     rows: [
-      { keys: ['Enter'],              desc: '메시지 전송' },
-      { keys: ['Shift', 'Enter'],     desc: '줄바꿈' },
+      { keys: ['Enter'],              desc: 'Send message' },
+      { keys: ['Shift', 'Enter'],     desc: 'New line' },
     ],
   },
   {
-    label: '그래프',
+    label: 'Graph',
     rows: [
-      { keys: ['Scroll'],             desc: '줌 인 / 아웃' },
-      { keys: ['Drag'],               desc: '뷰 이동 (Pan)' },
-      { keys: ['Click'],              desc: '노드 선택' },
-      { keys: ['Double Click'],       desc: '노드 에디터로 열기' },
+      { keys: ['Scroll'],             desc: 'Zoom in / out' },
+      { keys: ['Drag'],               desc: 'Pan view' },
+      { keys: ['Click'],              desc: 'Select node' },
+      { keys: ['Double Click'],       desc: 'Open node in editor' },
     ],
   },
   {
-    label: '일반',
+    label: 'General',
     rows: [
-      { keys: ['Escape'],             desc: '팝업 / 메뉴 닫기' },
+      { keys: ['Escape'],             desc: 'Close popup / menu' },
     ],
   },
 ]

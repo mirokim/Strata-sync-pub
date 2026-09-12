@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useGraphStore, DEFAULT_PHYSICS, PHYSICS_BOUNDS } from '@/stores/graphStore'
 import { MOCK_NODES, MOCK_LINKS } from '@/data/mockGraph'
-import type { GraphNode, GraphLink } from '@/types'
 
 beforeEach(() => {
   useGraphStore.setState({
@@ -108,73 +107,6 @@ describe('useGraphStore — resetPhysics()', () => {
     useGraphStore.getState().updatePhysics({ centerForce: 0.9, charge: -100, linkDistance: 200 })
     useGraphStore.getState().resetPhysics()
     expect(useGraphStore.getState().physics).toEqual(DEFAULT_PHYSICS)
-  })
-})
-
-describe('useGraphStore — setGraph()', () => {
-  const newNodes: GraphNode[] = [
-    { id: 'n1', label: 'Node 1', group: 0, size: 1 },
-    { id: 'n2', label: 'Node 2', group: 0, size: 1 },
-    { id: 'n3', label: 'Node 3', group: 0, size: 1 },
-  ]
-  const newLinks: GraphLink[] = [
-    { source: 'n1', target: 'n2' },
-    { source: 'n2', target: 'n3' },
-    { source: 'n1', target: 'n3' },
-  ]
-
-  it('atomically updates nodes and links in a single call', () => {
-    useGraphStore.getState().setGraph(newNodes, newLinks)
-    const state = useGraphStore.getState()
-    expect(state.nodes).toHaveLength(3)
-    expect(state.links).toHaveLength(3)
-  })
-
-  it('resets graphLayoutReady to false', () => {
-    useGraphStore.setState({ graphLayoutReady: true })
-    useGraphStore.getState().setGraph(newNodes, newLinks)
-    expect(useGraphStore.getState().graphLayoutReady).toBe(false)
-  })
-
-  it('computes degreeMap from new links', () => {
-    useGraphStore.getState().setGraph(newNodes, newLinks)
-    const { degreeMap } = useGraphStore.getState()
-    // n1→n2, n2→n3, n1→n3: n1 degree=2, n2 degree=2, n3 degree=2
-    expect(degreeMap.get('n1')).toBe(2)
-    expect(degreeMap.get('n2')).toBe(2)
-    expect(degreeMap.get('n3')).toBe(2)
-  })
-
-  it('computes maxDegree from new links', () => {
-    useGraphStore.getState().setGraph(newNodes, newLinks)
-    expect(useGraphStore.getState().maxDegree).toBe(2)
-  })
-
-  it('builds adjacencyByIndex for each node', () => {
-    useGraphStore.getState().setGraph(newNodes, newLinks)
-    const { adjacencyByIndex } = useGraphStore.getState()
-    // n1 is in links 0 and 2 (0-indexed)
-    expect(adjacencyByIndex.get('n1')).toEqual(new Set([0, 2]))
-    // n2 is in links 0 and 1
-    expect(adjacencyByIndex.get('n2')).toEqual(new Set([0, 1]))
-  })
-
-  it('handles empty nodes and links', () => {
-    useGraphStore.getState().setGraph([], [])
-    const state = useGraphStore.getState()
-    expect(state.nodes).toHaveLength(0)
-    expect(state.links).toHaveLength(0)
-    expect(state.degreeMap.size).toBe(0)
-    expect(state.maxDegree).toBe(1)
-  })
-
-  it('does not affect selectedNodeId or physics', () => {
-    const firstId = MOCK_NODES[0].id
-    useGraphStore.getState().setSelectedNode(firstId)
-    useGraphStore.getState().updatePhysics({ charge: -500 })
-    useGraphStore.getState().setGraph(newNodes, newLinks)
-    expect(useGraphStore.getState().selectedNodeId).toBe(firstId)
-    expect(useGraphStore.getState().physics.charge).toBe(-500)
   })
 })
 

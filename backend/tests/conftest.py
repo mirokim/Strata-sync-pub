@@ -2,7 +2,7 @@
 conftest.py — pytest fixtures for backend tests
 
 Uses an in-memory (ephemeral) ChromaDB client so tests are fully isolated
-from the production ~/.rembrandt/chroma database and from each other.
+from the production ~/.strata-sync/chroma database and from each other.
 """
 
 import uuid

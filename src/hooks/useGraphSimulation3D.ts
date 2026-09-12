@@ -3,7 +3,7 @@ import { useGraphStore } from '@/stores/graphStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { GraphNode } from '@/types'
 
-/** 클러스터 그룹 키 계산 — 태그는 첫 번째 태그, 폴더는 상위 폴더명 */
+/** Compute cluster group key — tag uses first tag, folder uses top-level folder name */
 function getClusterKey(node: GraphNode, mode: 'tag' | 'folder'): string {
   if (mode === 'tag') return node.tags?.[0] ?? '__none__'
   if (mode === 'folder') return node.folderPath?.split(/[/\\]/)[0] ?? '__root__'

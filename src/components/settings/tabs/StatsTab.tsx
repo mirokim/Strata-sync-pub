@@ -5,7 +5,7 @@ import { SPEAKER_CONFIG } from '@/lib/speakerConfig'
 import StatsChart from './StatsChart'
 import type { SpeakerId } from '@/types'
 
-// ── 작은 수평 바 ────────────────────────────────────────────────────────────
+// ── Small horizontal bar ────────────────────────────────────────────────────
 
 function MiniBar({ value, max, color }: { value: number; max: number; color: string }) {
   const pct = max > 0 ? Math.round((value / max) * 100) : 0
@@ -16,14 +16,14 @@ function MiniBar({ value, max, color }: { value: number; max: number; color: str
   )
 }
 
-// ── 요약 카드 ────────────────────────────────────────────────────────────────
+// ── Summary card ────────────────────────────────────────────────────────────
 
 function Card({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
     <div style={{
       background: 'var(--color-bg-active)',
       border: '1px solid var(--color-border)',
-      borderRadius: 2,
+      borderRadius: 8,
       padding: '10px 14px',
       flex: 1,
       minWidth: 0,
@@ -35,7 +35,7 @@ function Card({ label, value, sub }: { label: string; value: string | number; su
   )
 }
 
-// ── 섹션 제목 ─────────────────────────────────────────────────────────────────
+// ── Section title ─────────────────────────────────────────────────────────────
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
@@ -62,34 +62,34 @@ export default function StatsTab() {
   const stats = useMemo(() => {
     if (!docs || docs.length === 0) return null
 
-    // Speaker 분포
+    // Speaker distribution
     const speakerCounts: Record<string, number> = {}
     for (const d of docs) {
       speakerCounts[d.speaker] = (speakerCounts[d.speaker] ?? 0) + 1
     }
 
-    // 태그 집계
+    // Tag aggregation
     const tagMap: Record<string, number> = {}
     for (const d of docs) {
       for (const t of d.tags) tagMap[t] = (tagMap[t] ?? 0) + 1
     }
     const topTags = Object.entries(tagMap).sort((a, b) => b[1] - a[1]).slice(0, 10)
 
-    // 링크 집계
+    // Link aggregation
     const linkCounts = docs.map(d => d.links.length)
     const totalLinks = linkCounts.reduce((a, b) => a + b, 0)
     const avgLinks = docs.length > 0 ? (totalLinks / docs.length).toFixed(1) : '0'
     const orphanCount = docs.filter(d => d.links.length === 0).length
     const topLinked = [...docs].sort((a, b) => b.links.length - a.links.length).slice(0, 8)
 
-    // 날짜 범위
+    // Date range
     const dates = docs.map(d => d.date).filter(Boolean).sort()
     const dateRange = dates.length >= 2 ? `${dates[0]} ~ ${dates[dates.length - 1]}` : dates[0] ?? '-'
 
-    // 이미지 refs
+    // Image refs
     const totalImages = docs.reduce((acc, d) => acc + (d.imageRefs?.length ?? 0), 0)
 
-    // 총 단어 (rawContent 합산)
+    // Total characters (sum of rawContent)
     const totalChars = docs.reduce((acc, d) => acc + (d.rawContent?.length ?? 0), 0)
     const charLabel = totalChars > 1000
       ? `${(totalChars / 1000).toFixed(1)}K`
@@ -115,7 +115,7 @@ export default function StatsTab() {
     return (
       <div className="flex flex-col items-center justify-center h-full py-16 gap-2">
         <span style={{ fontSize: 28, opacity: 0.2 }}>📂</span>
-        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>볼트를 먼저 로드하세요</p>
+        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Please load a vault first</p>
       </div>
     )
   }
@@ -124,7 +124,7 @@ export default function StatsTab() {
     return (
       <div className="flex flex-col items-center justify-center h-full py-16 gap-2">
         <span style={{ fontSize: 28, opacity: 0.2 }}>📊</span>
-        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>문서가 없습니다</p>
+        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>No documents</p>
       </div>
     )
   }
@@ -142,23 +142,23 @@ export default function StatsTab() {
   return (
     <div className="flex flex-col gap-6">
 
-      {/* 요약 카드 */}
+      {/* Summary cards */}
       <div style={{ display: 'flex', gap: 8 }}>
-        <Card label="총 문서" value={stats.docCount} />
-        <Card label="노드" value={stats.nodeCount} />
-        <Card label="와이어" value={stats.linkCount} />
-        <Card label="이미지 참조" value={stats.totalImages} />
-        <Card label="총 글자" value={stats.charLabel} />
+        <Card label="Total Docs" value={stats.docCount} />
+        <Card label="Nodes" value={stats.nodeCount} />
+        <Card label="Wires" value={stats.linkCount} />
+        <Card label="Image Refs" value={stats.totalImages} />
+        <Card label="Total Chars" value={stats.charLabel} />
       </div>
 
-      {/* 날짜 · 링크 개요 */}
+      {/* Date · Link overview */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <SectionTitle>개요</SectionTitle>
+        <SectionTitle>Overview</SectionTitle>
         {[
-          ['날짜 범위', stats.dateRange],
-          ['평균 링크 수', `${stats.avgLinks} / 문서`],
-          ['고립 문서 (링크 없음)', `${stats.orphanCount}개`],
-          ['고유 태그 수', `${stats.totalTagTypes}개`],
+          ['Date Range', stats.dateRange],
+          ['Avg Links', `${stats.avgLinks} / doc`],
+          ['Isolated Docs (no links)', `${stats.orphanCount}`],
+          ['Unique Tag Count', `${stats.totalTagTypes}`],
         ].map(([k, v]) => (
           <div key={k} style={row}>
             <span style={{ color: 'var(--color-text-secondary)' }}>{k}</span>
@@ -167,9 +167,9 @@ export default function StatsTab() {
         ))}
       </div>
 
-      {/* 스피커 분포 */}
+      {/* Speaker distribution */}
       <div>
-        <SectionTitle>스피커 분포</SectionTitle>
+        <SectionTitle>Speaker Distribution</SectionTitle>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {Object.entries(stats.speakerCounts)
             .sort((a, b) => b[1] - a[1])
@@ -197,9 +197,9 @@ export default function StatsTab() {
         </div>
       </div>
 
-      {/* 상위 연결 문서 */}
+      {/* Top linked documents */}
       <div>
-        <SectionTitle>상위 연결 문서</SectionTitle>
+        <SectionTitle>Top Linked Documents</SectionTitle>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           {stats.topLinked.map((doc, i) => (
             <div key={doc.id} style={row}>
@@ -215,10 +215,10 @@ export default function StatsTab() {
         </div>
       </div>
 
-      {/* 상위 태그 */}
+      {/* Top tags */}
       {stats.topTags.length > 0 && (
         <div>
-          <SectionTitle>상위 태그</SectionTitle>
+          <SectionTitle>Top Tags</SectionTitle>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
             {stats.topTags.map(([tag, count]) => (
               <span

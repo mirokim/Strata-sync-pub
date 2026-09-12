@@ -9,7 +9,7 @@ export default function ResizeHandle({ onResize }: ResizeHandleProps) {
   const lastX = useRef(0)
   const cleanupRef = useRef<(() => void) | null>(null)
 
-  // 드래그 중 컴포넌트가 언마운트될 경우 리스너 정리
+  // Clean up listeners if component unmounts while dragging
   useEffect(() => {
     return () => { cleanupRef.current?.() }
   }, [])

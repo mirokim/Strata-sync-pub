@@ -2,7 +2,7 @@
  * personaVaultConfig.ts
  *
  * Serialize / deserialize the vault-scoped persona config file.
- * Stored at: {vaultPath}/.rembrandt/personas.md
+ * Stored at: {vaultPath}/.strata-sync/personas.md
  *
  * Format: YAML frontmatter (gray-matter) with a short markdown comment body.
  */
@@ -28,7 +28,7 @@ export interface VaultPersonaConfig {
 }
 
 const FILE_BODY =
-  '\n<!-- Sandbox Map 페르소나 설정 파일 —— 앱에서 자동으로 관리됩니다. -->\n'
+  '\n<!-- STRATA SYNC persona config file — managed automatically by the app. -->\n'
 
 // ── Parse ──────────────────────────────────────────────────────────────────────
 

@@ -1,7 +1,8 @@
 /**
- * Electron launcher — VSCode 터미널에서 ELECTRON_RUN_AS_NODE=1이 상속되면
- * Electron이 browser process 대신 일반 Node.js로 시작되어 require('electron') 실패.
- * 이 래퍼가 해당 환경변수를 제거한 뒤 electron.exe를 spawn합니다.
+ * Electron launcher — When ELECTRON_RUN_AS_NODE=1 is inherited from VSCode terminal,
+ * Electron starts as a regular Node.js process instead of a browser process,
+ * causing require('electron') to fail. This wrapper removes that env variable
+ * before spawning electron.exe.
  */
 const { spawn } = require('child_process')
 const electron = require('electron')

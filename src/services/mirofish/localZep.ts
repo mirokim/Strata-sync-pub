@@ -1,15 +1,16 @@
 /**
- * localZep.ts — Zep Cloud 로컬 대체 구현 (SQLite 기반)
+ * localZep.ts — Local replacement for Zep Cloud (SQLite-based)
  *
- * sql.js (WASM SQLite)를 사용하여 Zep Cloud의 에이전트 메모리 API를 재현합니다.
- * 단일 시뮬레이션 세션 내 에이전트별 기억을 in-memory SQLite DB로 관리합니다.
+ * Uses sql.js (WASM SQLite) to replicate the Zep Cloud agent memory API.
+ * Manages per-agent memory within a single simulation session using an in-memory SQLite DB.
  *
- * Zep Cloud API 대응:
- *   client.memory.add(sessionId, messages)       → LocalZepClient.add()
- *   client.memory.get(sessionId)                 → LocalZepClient.get()
- *   client.memory.search(sessionId, text, limit) → LocalZepClient.search()
+ * Zep Cloud API mapping:
+ *   client.memory.add(sessionId, messages)       -> LocalZepClient.add()
+ *   client.memory.get(sessionId)                 -> LocalZepClient.get()
+ *   client.memory.search(sessionId, text, limit) -> LocalZepClient.search()
  */
 
+// @ts-ignore — sql.js has no type declarations
 import initSqlJs from 'sql.js'
 // @ts-ignore — Vite ?url import
 import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url'
@@ -22,7 +23,7 @@ export interface ZepMessage {
 
 export interface ZepMemory {
   messages: ZepMessage[]
-  /** Zep의 auto-summary 대응 — 최근 10개 메시지 컨텍스트 */
+  /** Corresponds to Zep's auto-summary — context from last 10 messages */
   context: string
 }
 
@@ -31,10 +32,10 @@ export interface ZepSearchResult {
   score: number
 }
 
-// sql.js DB 인스턴스 (시뮬레이션 전체에서 공유)
-let _db: import('sql.js').Database | null = null
+// sql.js DB instance (shared across entire simulation)
+let _db: any | null = null
 
-async function getDb(): Promise<import('sql.js').Database> {
+async function getDb(): Promise<any> {
   if (_db) return _db
   const SQL = await initSqlJs({ locateFile: () => sqlWasmUrl })
   _db = new SQL.Database()
@@ -67,7 +68,7 @@ export class LocalZepClient {
     stmt.free()
   }
 
-  /** Zep Cloud: client.memory.get() — 최근 30개만 가져와 메모리 과부하 방지 */
+  /** Zep Cloud: client.memory.get() — fetches only last 30 to prevent memory overload */
   async get(sessionId: string): Promise<ZepMemory> {
     const db = await this.dbPromise
     const res = db.exec(
@@ -78,7 +79,7 @@ export class LocalZepClient {
       .reverse()
       .map((row: (string | number | null | Uint8Array)[]) => {
         let metadata: Record<string, unknown> = {}
-        try { metadata = JSON.parse((row[2] as string) ?? '{}') } catch { /* 손상된 메타데이터 무시 */ }
+        try { metadata = JSON.parse((row[2] as string) ?? '{}') } catch { /* ignore corrupted metadata */ }
         return {
           role:     row[0] as ZepMessage['role'],
           content:  row[1] as string,
@@ -94,7 +95,7 @@ export class LocalZepClient {
     return { messages, context }
   }
 
-  /** Zep Cloud: client.memory.search() — 키워드 빈도 기반 관련도 점수 */
+  /** Zep Cloud: client.memory.search() — keyword frequency-based relevance scoring */
   async search(sessionId: string, text: string, limit = 5): Promise<ZepSearchResult[]> {
     const { messages } = await this.get(sessionId)
     const words = text.toLowerCase().split(/\s+/).filter(Boolean)
@@ -111,13 +112,13 @@ export class LocalZepClient {
       .slice(0, limit)
   }
 
-  /** 세션 메시지 삭제 */
+  /** Delete session messages */
   async delete(sessionId: string): Promise<void> {
     const db = await this.dbPromise
     db.run('DELETE FROM messages WHERE session=?', [sessionId])
   }
 
-  /** DB 전체 초기화 (시뮬레이션 종료 후 메모리 해제) */
+  /** Full DB reset (release memory after simulation ends) */
   static reset(): void {
     _db?.close()
     _db = null

@@ -74,7 +74,6 @@ function mockFetch(stream: ReadableStream<Uint8Array>, ok = true) {
 function resetSettings() {
   useSettingsStore.setState({
     personaModels: { ...DEFAULT_PERSONA_MODELS },
-    settingsPanelOpen: false,
   })
 }
 
@@ -98,7 +97,7 @@ describe('llmClient — streamMessage', () => {
 
     const { streamMessage } = await import('@/services/llmClient')
     const chunks: string[] = []
-    await streamMessage('chief_director', '테스트 메시지', [], (c) => chunks.push(c))
+    await streamMessage('chief_director', 'test message', [], (c) => chunks.push(c))
 
     const fullText = chunks.join('')
     expect(fullText).toContain('[Mock]')
@@ -110,7 +109,7 @@ describe('llmClient — streamMessage', () => {
 
     const { streamMessage } = await import('@/services/llmClient')
     const chunks: string[] = []
-    await streamMessage('art_director', '색상 팔레트 관련', [], (c) => chunks.push(c))
+    await streamMessage('art_director', 'color palette related', [], (c) => chunks.push(c))
 
     expect(chunks.join('')).toContain('[Mock]')
   })
@@ -120,13 +119,13 @@ describe('llmClient — streamMessage', () => {
   it('streams Anthropic response when API key is set', async () => {
     vi.stubEnv('VITE_ANTHROPIC_API_KEY', 'test-anthropic-key')
     // chief_director uses Anthropic by default
-    mockFetch(makeAnthropicStream(['안녕', '하세', '요']))
+    mockFetch(makeAnthropicStream(['hello', ' world', '!']))
 
     const { streamMessage } = await import('@/services/llmClient')
     const chunks: string[] = []
-    await streamMessage('chief_director', '테스트', [], (c) => chunks.push(c))
+    await streamMessage('chief_director', 'test', [], (c) => chunks.push(c))
 
-    expect(chunks).toEqual(['안녕', '하세', '요'])
+    expect(chunks).toEqual(['hello', ' world', '!'])
     expect(globalThis.fetch).toHaveBeenCalledOnce()
 
     // Verify correct endpoint
@@ -136,16 +135,16 @@ describe('llmClient — streamMessage', () => {
 
   it('sends system prompt and user message to Anthropic', async () => {
     vi.stubEnv('VITE_ANTHROPIC_API_KEY', 'test-key')
-    mockFetch(makeAnthropicStream(['응답']))
+    mockFetch(makeAnthropicStream(['response']))
 
     const { streamMessage } = await import('@/services/llmClient')
-    await streamMessage('chief_director', '질문입니다', [], () => {})
+    await streamMessage('chief_director', 'question here', [], () => {})
 
     const [, options] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
     const body = JSON.parse((options as RequestInit).body as string)
 
-    expect(body.system).toContain('프로젝트 매니저')
-    expect(body.messages).toContainEqual({ role: 'user', content: '질문입니다' })
+    expect(body.system).toContain('STRATA BOT')
+    expect(body.messages).toContainEqual({ role: 'user', content: 'question here' })
     expect(body.stream).toBe(true)
   })
 
@@ -153,14 +152,14 @@ describe('llmClient — streamMessage', () => {
 
   it('streams OpenAI response when API key is set', async () => {
     vi.stubEnv('VITE_OPENAI_API_KEY', 'test-openai-key')
-    useSettingsStore.setState({ personaModels: { ...DEFAULT_PERSONA_MODELS, art_director: 'gpt-4o' } })
-    mockFetch(makeOpenAIStream(['아트', ' 방향']))
+    // art_director uses OpenAI by default
+    mockFetch(makeOpenAIStream(['art', ' direction']))
 
     const { streamMessage } = await import('@/services/llmClient')
     const chunks: string[] = []
-    await streamMessage('art_director', '비주얼', [], (c) => chunks.push(c))
+    await streamMessage('art_director', 'visual', [], (c) => chunks.push(c))
 
-    expect(chunks).toEqual(['아트', ' 방향'])
+    expect(chunks).toEqual(['art', ' direction'])
     const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
     expect(url).toContain('openai.com')
   })
@@ -169,25 +168,24 @@ describe('llmClient — streamMessage', () => {
 
   it('streams Gemini response when API key is set', async () => {
     vi.stubEnv('VITE_GEMINI_API_KEY', 'test-gemini-key')
-    useSettingsStore.setState({ personaModels: { ...DEFAULT_PERSONA_MODELS, plan_director: 'gemini-2.5-pro' } })
-    mockFetch(makeGeminiStream(['기획', ' 의견']))
+    // plan_director uses Gemini by default
+    mockFetch(makeGeminiStream(['plan', ' opinion']))
 
     const { streamMessage } = await import('@/services/llmClient')
     const chunks: string[] = []
-    await streamMessage('plan_director', '기능 우선순위', [], (c) => chunks.push(c))
+    await streamMessage('plan_director', 'feature priority', [], (c) => chunks.push(c))
 
-    expect(chunks).toEqual(['기획', ' 의견'])
+    expect(chunks).toEqual(['plan', ' opinion'])
     const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
     expect(url).toContain('generativelanguage.googleapis.com')
   })
 
   it('sends API key via x-goog-api-key header for Gemini', async () => {
     vi.stubEnv('VITE_GEMINI_API_KEY', 'my-gemini-key')
-    useSettingsStore.setState({ personaModels: { ...DEFAULT_PERSONA_MODELS, plan_director: 'gemini-2.5-pro' } })
     mockFetch(makeGeminiStream(['ok']))
 
     const { streamMessage } = await import('@/services/llmClient')
-    await streamMessage('plan_director', '테스트', [], () => {})
+    await streamMessage('plan_director', 'test', [], () => {})
 
     const [url, opts] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
     expect(url).not.toContain('key=')
@@ -198,14 +196,14 @@ describe('llmClient — streamMessage', () => {
 
   it('streams Grok response when API key is set', async () => {
     vi.stubEnv('VITE_GROK_API_KEY', 'test-grok-key')
-    useSettingsStore.setState({ personaModels: { ...DEFAULT_PERSONA_MODELS, level_director: 'grok-3' } })
-    mockFetch(makeOpenAIStream(['레벨', ' 디자인']))
+    // level_director uses Grok by default
+    mockFetch(makeOpenAIStream(['level', ' design']))
 
     const { streamMessage } = await import('@/services/llmClient')
     const chunks: string[] = []
-    await streamMessage('level_director', '레벨 구조', [], (c) => chunks.push(c))
+    await streamMessage('level_director', 'level structure', [], (c) => chunks.push(c))
 
-    expect(chunks).toEqual(['레벨', ' 디자인'])
+    expect(chunks).toEqual(['level', ' design'])
     const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
     expect(url).toContain('x.ai')
   })
@@ -217,13 +215,12 @@ describe('llmClient — streamMessage', () => {
     // Override chief_director to use OpenAI gpt-4o
     useSettingsStore.setState({
       personaModels: { ...DEFAULT_PERSONA_MODELS, chief_director: 'gpt-4o' },
-      settingsPanelOpen: false,
-    })
-    mockFetch(makeOpenAIStream(['gpt 응답']))
+      })
+    mockFetch(makeOpenAIStream(['gpt response']))
 
     const { streamMessage } = await import('@/services/llmClient')
     const chunks: string[] = []
-    await streamMessage('chief_director', '질문', [], (c) => chunks.push(c))
+    await streamMessage('chief_director', 'question', [], (c) => chunks.push(c))
 
     const [url, options] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
     expect(url).toContain('openai.com')
@@ -243,7 +240,7 @@ describe('llmClient — streamMessage', () => {
     const { streamMessage } = await import('@/services/llmClient')
     // streamMessage itself throws; callers catch it
     await expect(
-      streamMessage('chief_director', '질문', [], () => {})
+      streamMessage('chief_director', 'question', [], () => {})
     ).rejects.toThrow(/401/)
   })
 
@@ -251,34 +248,34 @@ describe('llmClient — streamMessage', () => {
 
   it('includes history messages in the request body', async () => {
     vi.stubEnv('VITE_ANTHROPIC_API_KEY', 'test-key')
-    mockFetch(makeAnthropicStream(['응답']))
+    mockFetch(makeAnthropicStream(['response']))
 
     const history: ChatMessage[] = [
       {
         id: 'h1',
         persona: 'chief_director',
         role: 'user',
-        content: '이전 질문',
+        content: 'previous question',
         timestamp: 1000,
       },
       {
         id: 'h2',
         persona: 'chief_director',
         role: 'assistant',
-        content: '이전 응답',
+        content: 'previous response',
         timestamp: 1001,
       },
     ]
 
     const { streamMessage } = await import('@/services/llmClient')
-    await streamMessage('chief_director', '새 질문', history, () => {})
+    await streamMessage('chief_director', 'new question', history, () => {})
 
     const [, options] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
     const body = JSON.parse((options as RequestInit).body as string)
 
-    expect(body.messages).toContainEqual({ role: 'user', content: '이전 질문' })
-    expect(body.messages).toContainEqual({ role: 'assistant', content: '이전 응답' })
-    expect(body.messages).toContainEqual({ role: 'user', content: '새 질문' })
+    expect(body.messages).toContainEqual({ role: 'user', content: 'previous question' })
+    expect(body.messages).toContainEqual({ role: 'assistant', content: 'previous response' })
+    expect(body.messages).toContainEqual({ role: 'user', content: 'new question' })
   })
 })
 
@@ -292,12 +289,12 @@ const RAG_MOCK_DOC = {
   date: '2025-01-01',
   tags: ['art'],
   links: [],
-  rawContent: '다크 판타지 스타일의 비주얼',
+  rawContent: 'Dark fantasy visual style.',
   sections: [
     {
       id: 'art_001_s1',
-      heading: '아트 컨셉',
-      body: '다크 판타지 스타일의 비주얼',
+      heading: 'Art Concept',
+      body: 'Dark fantasy visual style.',
       wikiLinks: [],
     },
   ],
@@ -310,8 +307,6 @@ describe('fetchRAGContext()', () => {
     // Seed vault + graph stores for buildDeepGraphContext to work
     useVaultStore.setState({ loadedDocuments: [RAG_MOCK_DOC] })
     useGraphStore.setState({ links: [] })
-    // Disable small-vault full-injection mode so tests exercise the normal RAG path
-    useSettingsStore.setState({ searchConfig: { ...useSettingsStore.getState().searchConfig, fullVaultThreshold: 0 } })
   })
 
   afterEach(() => {
@@ -325,59 +320,18 @@ describe('fetchRAGContext()', () => {
   it('returns empty string when backendAPI is unavailable and vault is empty', async () => {
     useVaultStore.setState({ loadedDocuments: null })
     const { fetchRAGContext } = await import('@/services/llmClient')
-    const result = await fetchRAGContext('테스트 쿼리')
+    const result = await fetchRAGContext('test query')
     expect(result).toBe('')
   })
 
-  it('returns empty string when search returns no results', async () => {
-    // @ts-expect-error — test stub
-    window.backendAPI = {
-      search: vi.fn().mockResolvedValue({ results: [], query: '테스트' }),
-    }
+  it('returns empty string when vault is empty and query matches nothing', async () => {
+    useVaultStore.setState({ loadedDocuments: [] })
     const { fetchRAGContext } = await import('@/services/llmClient')
-    const result = await fetchRAGContext('테스트')
+    const result = await fetchRAGContext('unrelated query xyz')
     expect(result).toBe('')
   })
 
-  it('returns formatted context string from backendAPI results (score > 0.05)', async () => {
-    // @ts-expect-error — test stub
-    window.backendAPI = {
-      search: vi.fn().mockResolvedValue({
-        results: [
-          {
-            doc_id: 'art_001',
-            filename: 'art.md',
-            section_id: 'art_001_s1',
-            heading: '아트 컨셉',
-            speaker: 'art_director',
-            content: '다크 판타지 스타일의 비주얼',
-            score: 0.85,
-            tags: ['art'],
-          },
-        ],
-        query: '아트 방향',
-      }),
-    }
-    const { fetchRAGContext } = await import('@/services/llmClient')
-    const result = await fetchRAGContext('아트 방향')
-    // buildDeepGraphContext no-links fallback: [문서] {name}\n{content}
-    expect(result).toContain('## 관련 문서')
-    expect(result).toContain('art')
-    expect(result).toContain('다크 판타지 스타일의 비주얼')
-  })
-
-  it('returns empty string when backendAPI.search throws', async () => {
-    // @ts-expect-error — test stub
-    window.backendAPI = {
-      search: vi.fn().mockRejectedValue(new Error('Connection refused')),
-    }
-    const { fetchRAGContext } = await import('@/services/llmClient')
-    // Should not throw — RAG failure is non-fatal
-    const result = await fetchRAGContext('쿼리')
-    expect(result).toBe('')
-  })
-
-  it('directVaultSearch path: strong filename match (score>=0.4) returns pinned content', async () => {
+    it('directVaultSearch path: strong filename match (score>=0.4) returns pinned content', async () => {
     // Seed vault with a document whose filename contains query terms
     const feedbackDoc = {
       id: 'feedback_2026',
@@ -387,6 +341,7 @@ describe('fetchRAGContext()', () => {
       date: '2026-01-28',
       tags: [],
       links: [],
+      // Korean content is intentional: tests Korean filename matching and particle stripping
       rawContent: '피드백 내용입니다.',
       sections: [{ id: 'fb_s1', heading: '피드백', body: '피드백 내용입니다.', wikiLinks: [] }],
       mtime: Date.now(),
@@ -395,139 +350,8 @@ describe('fetchRAGContext()', () => {
     const { fetchRAGContext } = await import('@/services/llmClient')
     const result = await fetchRAGContext('2026 01 28 피드백')
     // Should contain pinned content section header
-    expect(result).toContain('직접 지목된 문서')
+    expect(result).toContain('Directly Referenced Document')
     expect(result).toContain('피드백 내용입니다.')
-  })
-})
-
-// ── generateSlackAnswer tests ─────────────────────────────────────────────────
-
-describe('generateSlackAnswer()', () => {
-  beforeEach(() => {
-    resetSettings()
-    vi.restoreAllMocks()
-    useVaultStore.setState({ loadedDocuments: null, imagePathRegistry: null })
-    useGraphStore.setState({ links: [] })
-  })
-
-  afterEach(() => {
-    vi.unstubAllEnvs()
-    useVaultStore.setState({ loadedDocuments: null, imagePathRegistry: null })
-  })
-
-  it('returns { answer, imagePaths } shape', async () => {
-    vi.stubEnv('VITE_ANTHROPIC_API_KEY', 'test-key')
-    mockFetch(makeAnthropicStream(['테스트 답변']))
-
-    const { generateSlackAnswer } = await import('@/services/llmClient')
-    const result = await generateSlackAnswer('질문', 'chief_director')
-
-    expect(result).toHaveProperty('answer')
-    expect(result).toHaveProperty('imagePaths')
-    expect(Array.isArray(result.imagePaths)).toBe(true)
-  })
-
-  it('returns answer text from Anthropic stream', async () => {
-    vi.stubEnv('VITE_ANTHROPIC_API_KEY', 'test-key')
-    mockFetch(makeAnthropicStream(['안녕', '하세요']))
-
-    const { generateSlackAnswer } = await import('@/services/llmClient')
-    const { answer } = await generateSlackAnswer('안녕?', 'chief_director')
-
-    expect(answer).toBe('안녕하세요')
-  })
-
-  it('returns empty string when no API key', async () => {
-    vi.stubEnv('VITE_ANTHROPIC_API_KEY', '')
-
-    const { generateSlackAnswer } = await import('@/services/llmClient')
-    const { answer, imagePaths } = await generateSlackAnswer('질문', 'chief_director')
-
-    expect(answer).toBe('')
-    expect(imagePaths).toEqual([])
-  })
-
-  it('collects imagePaths from docs with imageRefs matching the query', async () => {
-    vi.stubEnv('VITE_ANTHROPIC_API_KEY', 'test-key')
-    mockFetch(makeAnthropicStream(['답변']))
-
-    const docWithImage = {
-      id: 'charA',
-      filename: '캐릭터A.md',
-      folderPath: '',
-      speaker: 'art_director',
-      date: '',
-      tags: [],
-      links: [],
-      rawContent: '캐릭터A 일러스트 설명',
-      imageRefs: ['art_charA.png'],
-      sections: [{ id: 'charA_s1', heading: '캐릭터A', body: '일러스트', wikiLinks: [] }],
-      mtime: Date.now(),
-    }
-    const registry = {
-      'art_charA.png': { relativePath: 'assets/art_charA.png', absolutePath: 'C:/vault/assets/art_charA.png' },
-    }
-    useVaultStore.setState({ loadedDocuments: [docWithImage], imagePathRegistry: registry })
-
-    const { generateSlackAnswer } = await import('@/services/llmClient')
-    const { imagePaths } = await generateSlackAnswer('캐릭터A', 'chief_director')
-
-    expect(imagePaths).toContain('C:/vault/assets/art_charA.png')
-  })
-
-  it('returns empty imagePaths when no imageRefs in matching docs', async () => {
-    vi.stubEnv('VITE_ANTHROPIC_API_KEY', 'test-key')
-    mockFetch(makeAnthropicStream(['답변']))
-
-    const docNoImage = {
-      id: 'docB',
-      filename: '스펙문서.md',
-      folderPath: '',
-      speaker: 'chief_director',
-      date: '',
-      tags: [],
-      links: [],
-      rawContent: '스펙 내용',
-      sections: [{ id: 's1', heading: '스펙', body: '내용', wikiLinks: [] }],
-      mtime: Date.now(),
-    }
-    useVaultStore.setState({ loadedDocuments: [docNoImage], imagePathRegistry: {} })
-
-    const { generateSlackAnswer } = await import('@/services/llmClient')
-    const { imagePaths } = await generateSlackAnswer('스펙', 'chief_director')
-
-    expect(imagePaths).toEqual([])
-  })
-
-  it('caps imagePaths at 3', async () => {
-    vi.stubEnv('VITE_ANTHROPIC_API_KEY', 'test-key')
-    mockFetch(makeAnthropicStream(['답변']))
-
-    const docs = ['a', 'b', 'c', 'd', 'e'].map((x, i) => ({
-      id: `doc${x}`,
-      filename: `char${x}.md`,
-      folderPath: '',
-      speaker: 'art_director',
-      date: '',
-      tags: [],
-      links: [],
-      rawContent: `char${x} 일러스트`,
-      imageRefs: [`img${x}.png`],
-      sections: [{ id: `s${i}`, heading: `char${x}`, body: '내용', wikiLinks: [] }],
-      mtime: Date.now(),
-    }))
-    const registry = Object.fromEntries(
-      ['a', 'b', 'c', 'd', 'e'].map(x => [
-        `img${x}.png`,
-        { relativePath: `assets/img${x}.png`, absolutePath: `C:/vault/img${x}.png` },
-      ])
-    )
-    useVaultStore.setState({ loadedDocuments: docs, imagePathRegistry: registry })
-
-    const { generateSlackAnswer } = await import('@/services/llmClient')
-    const { imagePaths } = await generateSlackAnswer('char', 'chief_director')
-
-    expect(imagePaths.length).toBeLessThanOrEqual(3)
   })
 })
 

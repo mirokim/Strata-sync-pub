@@ -31,17 +31,15 @@ describe('FileTree — rendering', () => {
 
   it('renders speaker group headers for documents that exist', () => {
     render(<FileTree />)
-    // With SPEAKER_IDS=['chief_director'], mock mode shows PM group + 미분류 (unknown) group
-    const pmGroup = screen.getByRole('button', { name: /PM/i })
-    expect(pmGroup).toBeInTheDocument()
-    // Non-PM docs (art/plan/level/tech) fall into unknown group
-    const unknownGroup = screen.getByRole('button', { name: /미분류/i })
-    expect(unknownGroup).toBeInTheDocument()
+    // Labels: Chief, Art, Design, Level (mock docs have no prog_director so Tech is hidden)
+    const groups = screen.getAllByRole('button', { name: /CHIEF|ART|DESIGN|LEVEL|TECH/i })
+    // At least 4 groups from mock data (chief, art, plan→design, level)
+    expect(groups.length).toBeGreaterThanOrEqual(4)
   })
 
   it('shows total document count in footer', () => {
     render(<FileTree />)
-    expect(screen.getByText(`${MOCK_DOCUMENTS.length} / ${MOCK_DOCUMENTS.length} 문서`)).toBeInTheDocument()
+    expect(screen.getByText(`${MOCK_DOCUMENTS.length} / ${MOCK_DOCUMENTS.length} docs`)).toBeInTheDocument()
   })
 })
 
@@ -56,14 +54,14 @@ describe('FileTree — search filtering', () => {
     const searchInput = screen.getByRole('textbox', { name: /search/i })
     await userEvent.type(searchInput, 'character')
     // Only art docs with "character" should remain visible
-    expect(screen.getByText(/0 문서|1 문서|2 문서/)).toBeInTheDocument()
+    expect(screen.getByText(/0 docs|1 docs|2 docs/)).toBeInTheDocument()
   })
 
-  it('shows "검색 결과 없음" when no match', async () => {
+  it('shows "No results found" when no match', async () => {
     render(<FileTree />)
     const searchInput = screen.getByRole('textbox', { name: /search/i })
     await userEvent.type(searchInput, 'xyznonexistent')
-    expect(screen.getByText('검색 결과 없음')).toBeInTheDocument()
+    expect(screen.getByText('No results found')).toBeInTheDocument()
   })
 
   it('clear button resets search', async () => {
@@ -73,7 +71,7 @@ describe('FileTree — search filtering', () => {
     const clearBtn = screen.getByRole('button', { name: /clear search/i })
     await userEvent.click(clearBtn)
     expect(searchInput).toHaveValue('')
-    expect(screen.getByText(`${MOCK_DOCUMENTS.length} / ${MOCK_DOCUMENTS.length} 문서`)).toBeInTheDocument()
+    expect(screen.getByText(`${MOCK_DOCUMENTS.length} / ${MOCK_DOCUMENTS.length} docs`)).toBeInTheDocument()
   })
 })
 
@@ -95,18 +93,18 @@ describe('FileTree — document selection', () => {
 describe('FileTree — speaker group toggle', () => {
   it('clicking a speaker group header collapses it', async () => {
     render(<FileTree />)
-    // Use 미분류 (unknown) group which always has docs in mock mode
-    const unknownGroupBtn = screen.getByRole('button', { name: /미분류/i })
-    expect(unknownGroupBtn).toHaveAttribute('aria-expanded', 'true')
-    await userEvent.click(unknownGroupBtn)
-    expect(unknownGroupBtn).toHaveAttribute('aria-expanded', 'false')
+    // Find the "ART" speaker group button
+    const artGroupBtn = screen.getByRole('button', { name: /ART/i })
+    expect(artGroupBtn).toHaveAttribute('aria-expanded', 'true')
+    await userEvent.click(artGroupBtn)
+    expect(artGroupBtn).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('clicking a collapsed group expands it again', async () => {
     render(<FileTree />)
-    const unknownGroupBtn = screen.getByRole('button', { name: /미분류/i })
-    await userEvent.click(unknownGroupBtn) // collapse
-    await userEvent.click(unknownGroupBtn) // expand
-    expect(unknownGroupBtn).toHaveAttribute('aria-expanded', 'true')
+    const artGroupBtn = screen.getByRole('button', { name: /ART/i })
+    await userEvent.click(artGroupBtn) // collapse
+    await userEvent.click(artGroupBtn) // expand
+    expect(artGroupBtn).toHaveAttribute('aria-expanded', 'true')
   })
 })

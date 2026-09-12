@@ -11,8 +11,7 @@
  */
 export async function* parseSSEStream(
   response: Response,
-  extractChunk: (data: string) => string | null,
-  signal?: AbortSignal
+  extractChunk: (data: string) => string | null
 ): AsyncGenerator<string> {
   if (!response.body) {
     throw new Error('Response body is null — cannot stream')
@@ -25,7 +24,6 @@ export async function* parseSSEStream(
 
   try {
     while (true) {
-      if (signal?.aborted) { reader.cancel(); break }
       const { done, value } = await reader.read()
       if (done) break
 

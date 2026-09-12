@@ -15,7 +15,7 @@ export default function TagsTab() {
   const [bulkProgress, setBulkProgress] = useState<BulkTagProgress | null>(null)
   const [bulkDoneMsg, setBulkDoneMsg] = useState<string | null>(null)
 
-  // 기존 프리셋 중 색상이 없는 것들 마운트 시 자동 배정
+  // Auto-assign colors to existing presets that have no color on mount
   useEffect(() => {
     const missing = tagPresets.filter(t => !tagColors[t])
     if (missing.length > 0) {
@@ -35,19 +35,19 @@ export default function TagsTab() {
   const handleBulkAssign = async () => {
     if (isBulkAssigning) return
     if (!loadedDocuments?.length) {
-      setBulkDoneMsg('볼트를 먼저 로드해주세요')
+      setBulkDoneMsg('Please load a vault first')
       setTimeout(() => setBulkDoneMsg(null), 3000)
       return
     }
     if (tagPresets.length === 0) {
-      setBulkDoneMsg('태그 프리셋을 먼저 추가해주세요')
+      setBulkDoneMsg('Please add tag presets first')
       setTimeout(() => setBulkDoneMsg(null), 3000)
       return
     }
 
     setIsBulkAssigning(true)
     setBulkDoneMsg(null)
-    setBulkProgress({ current: 0, total: loadedDocuments.length, docName: '준비 중…', done: false })
+    setBulkProgress({ current: 0, total: loadedDocuments.length, docName: 'Preparing…', done: false })
 
     try {
       const { bulkAssignTagsToAllDocs } = await import('@/services/tagService')
@@ -55,12 +55,12 @@ export default function TagsTab() {
         loadedDocuments,
         (p) => { if (!p.done) setBulkProgress(p) },
       )
-      // 볼트 리로드로 태그 반영
+      // Reload vault to apply tags
       if (vaultPath) await loadVault(vaultPath)
-      setBulkDoneMsg(`완료: ${saved}개 문서 태그 지정, ${skipped}개 건너뜀`)
+      setBulkDoneMsg(`Done: ${saved} document(s) tagged, ${skipped} skipped`)
       setTimeout(() => setBulkDoneMsg(null), 6000)
     } catch {
-      setBulkDoneMsg('오류가 발생했습니다')
+      setBulkDoneMsg('An error occurred')
       setTimeout(() => setBulkDoneMsg(null), 3000)
     } finally {
       setIsBulkAssigning(false)
@@ -73,18 +73,18 @@ export default function TagsTab() {
   return (
     <div className="flex flex-col gap-7">
 
-      {/* 태그 프리셋 */}
+      {/* Tag presets */}
       <section>
         <div className="flex items-center gap-1.5 mb-1.5">
           <Tag size={13} style={{ color: 'var(--color-text-muted)' }} />
-          <h3 className="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>태그 프리셋</h3>
+          <h3 className="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Tag Presets</h3>
           {tagPresets.length > 0 && (
             <button
               onClick={handleBulkAssign}
               disabled={isBulkAssigning}
               title={docCount > 0
-                ? `AI로 vault 전체 ${docCount}개 문서에 태그를 자동 지정합니다`
-                : '볼트를 먼저 로드해주세요'}
+                ? `AI will auto-assign tags to all ${docCount} documents in the vault`
+                : 'Please load a vault first'}
               className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded text-[10px] transition-colors"
               style={{
                 background: 'var(--color-bg-surface)',
@@ -99,12 +99,12 @@ export default function TagsTab() {
               {isBulkAssigning
                 ? <Loader2 size={10} className="animate-spin" />
                 : <Wand2 size={10} />}
-              {isBulkAssigning ? '지정 중…' : '자동 배정'}
+              {isBulkAssigning ? 'Assigning…' : 'Auto-Assign'}
             </button>
           )}
         </div>
 
-        {/* 진행 상태 */}
+        {/* Progress */}
         {isBulkAssigning && bulkProgress && (
           <div style={{ marginBottom: 8 }}>
             <div style={{ height: 2, background: 'var(--color-bg-active)', borderRadius: 1, overflow: 'hidden', marginBottom: 5 }}>
@@ -122,7 +122,7 @@ export default function TagsTab() {
           </div>
         )}
 
-        {/* 완료/오류 메시지 */}
+        {/* Done / error message */}
         {bulkDoneMsg && (
           <p style={{ fontSize: 11, color: 'var(--color-accent)', marginBottom: 6 }}>
             {bulkDoneMsg}
@@ -130,16 +130,16 @@ export default function TagsTab() {
         )}
 
         <p className="text-[11px] mb-4" style={{ color: 'var(--color-text-muted)' }}>
-          AI 태그 제안 시 이 목록에서만 선택합니다. 왼쪽 색상 점을 클릭해 그래프 노드 색상을 지정하세요.
+          AI tag suggestions will only select from this list. Click the color dot on the left to set the graph node color.
         </p>
 
-        {/* 현재 프리셋 목록 */}
+        {/* Current preset list */}
         {tagPresets.length === 0 ? (
           <div
             className="flex items-center justify-center py-6 rounded-lg mb-4"
             style={{ border: '1px dashed var(--color-border)', color: 'var(--color-text-muted)', fontSize: 12 }}
           >
-            아직 태그 프리셋이 없습니다
+            No tag presets yet
           </div>
         ) : (
           <div className="flex flex-wrap gap-2 mb-4">
@@ -159,7 +159,7 @@ export default function TagsTab() {
                 >
                   {/* Color picker swatch */}
                   <label
-                    title={`"${tag}" 노드 색상 변경`}
+                    title={`Change node color for "${tag}"`}
                     style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'pointer', flexShrink: 0 }}
                   >
                     <span style={{
@@ -178,7 +178,7 @@ export default function TagsTab() {
                   #{tag}
                   <button
                     onClick={() => removeTagPreset(tag)}
-                    title={`"${tag}" 제거`}
+                    title={`Remove "${tag}"`}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -189,7 +189,7 @@ export default function TagsTab() {
                       padding: 0,
                       lineHeight: 1,
                     }}
-                    onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-error)')}
+                    onMouseEnter={e => (e.currentTarget.style.color = '#f87171')}
                     onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
                   >
                     <X size={11} />
@@ -200,13 +200,13 @@ export default function TagsTab() {
           </div>
         )}
 
-        {/* 추가 입력 */}
+        {/* Add input */}
         <div className="flex gap-2">
           <input
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAdd() } }}
-            placeholder="새 태그 이름 입력"
+            placeholder="Enter new tag name"
             className="flex-1 px-3 py-2 rounded-lg text-xs outline-none"
             style={{
               background: 'var(--color-bg-surface)',
@@ -228,7 +228,7 @@ export default function TagsTab() {
             }}
           >
             <Plus size={12} />
-            추가
+            Add
           </button>
         </div>
       </section>

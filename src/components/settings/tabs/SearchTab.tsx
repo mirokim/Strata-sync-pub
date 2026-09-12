@@ -23,7 +23,7 @@ function ToggleRow({ label, desc, checked, onChange }: {
   )
 }
 
-// ── Number input row ───────────────────────────────────────────────────────────
+// Number input row
 
 function NumRow({
   label, desc, field, min, max, step, value, onChange,
@@ -47,12 +47,12 @@ function NumRow({
           <span className="text-[13px]" style={{ color: 'var(--color-text-primary)' }}>{label}</span>
           {isDirty && (
             <span className="text-[10px] px-1 rounded" style={{ background: 'var(--color-accent)', color: '#fff' }}>
-              수정됨
+              Modified
             </span>
           )}
         </div>
         <p className="text-[11px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-          {desc} <span style={{ color: 'var(--color-text-muted)', opacity: 0.6 }}>(기본값: {def})</span>
+          {desc} <span style={{ color: 'var(--color-text-muted)', opacity: 0.6 }}>(default: {def})</span>
         </p>
       </div>
       <input
@@ -77,7 +77,7 @@ function NumRow({
   )
 }
 
-// ── Section header ─────────────────────────────────────────────────────────────
+// Section header
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -92,7 +92,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-// ── Component ──────────────────────────────────────────────────────────────────
+// Component
 
 // ── NumRow for ReasoningConfig ─────────────────────────────────────────────────
 
@@ -134,7 +134,7 @@ export default function SearchTab() {
 
       <div className="flex items-center justify-between">
         <p className="text-[12px]" style={{ color: 'var(--color-text-muted)' }}>
-          RAG 검색 알고리즘의 점수 가중치 및 임계값을 조정합니다.
+          Adjust the scoring weights and thresholds for the RAG search algorithm.
         </p>
         <button
           onClick={resetSearchConfig}
@@ -147,76 +147,76 @@ export default function SearchTab() {
             opacity: isDefault ? 0.5 : 1,
             cursor: isDefault ? 'not-allowed' : 'pointer',
           }}
-          title="모든 값을 기본값으로 초기화"
+          title="Reset all values to defaults"
         >
           <RotateCcw size={12} />
-          초기화
+          Reset
         </button>
       </div>
 
-      {/* 파일명 vs 본문 가중치 */}
-      <Section title="파일명 / 본문 가중치">
-        <NumRow label="파일명 가중치" desc="파일명에 쿼리 단어가 포함될 때 점수 (높을수록 제목 매칭 우선)"
+      {/* Filename vs body weights */}
+      <Section title="Filename / Body Weights">
+        <NumRow label="Filename Weight" desc="Score when query words match the filename (higher = prioritize title matching)"
           field="filenameWeight" min={1} max={50} step={1} value={sc.filenameWeight} onChange={set} />
-        <NumRow label="본문 가중치" desc="본문에 쿼리 단어가 포함될 때 점수"
+        <NumRow label="Body Weight" desc="Score when query words match the body text"
           field="bodyWeight" min={1} max={10} step={1} value={sc.bodyWeight} onChange={set} />
       </Section>
 
-      {/* Recency 부스트 */}
-      <Section title="최신성 부스트 (Recency Boost)">
-        <NumRow label="반감기 (일)" desc="날짜가 이 일수만큼 지나면 boost가 절반이 됨"
+      {/* Recency boost */}
+      <Section title="Recency Boost">
+        <NumRow label="Half-life (days)" desc="Boost halves after this many days"
           field="recencyHalfLifeDays" min={7} max={730} step={7} value={sc.recencyHalfLifeDays} onChange={set} />
-        <NumRow label="일반 쿼리 계수" desc="최신 인텐트가 없는 일반 쿼리의 recency 가중치"
+        <NumRow label="Normal Query Coefficient" desc="Recency weight for queries without recency intent"
           field="recencyCoeffNormal" min={0} max={5} step={0.1} value={sc.recencyCoeffNormal} onChange={set} />
-        <NumRow label="최신 인텐트 계수" desc="'최신', '현황', '진행 방향' 등 최신성 쿼리의 recency 가중치"
+        <NumRow label="Recency Intent Coefficient" desc="Recency weight for queries like 'latest', 'current status', 'direction'"
           field="recencyCoeffHot" min={0} max={10} step={0.1} value={sc.recencyCoeffHot} onChange={set} />
       </Section>
 
-      {/* 검색 후보 수 */}
-      <Section title="후보 문서 수">
-        <NumRow label="일반 쿼리 직접 검색 후보" desc="Stage 1 직접 문자열 검색 풀 크기"
+      {/* Candidate counts */}
+      <Section title="Candidate Document Count">
+        <NumRow label="Normal Query Direct Candidates" desc="Stage 1 direct string search pool size"
           field="directCandidatesNormal" min={5} max={200} step={5} value={sc.directCandidatesNormal} onChange={set} />
-        <NumRow label="최신 쿼리 직접 검색 후보" desc="최신 인텐트 감지 시 검색 풀 크기"
+        <NumRow label="Recency Query Direct Candidates" desc="Search pool size when recency intent is detected"
           field="directCandidatesRecency" min={5} max={200} step={5} value={sc.directCandidatesRecency} onChange={set} />
-        <NumRow label="BFS 시드 수" desc="직접 검색 상위 N개를 그래프 탐색 시작점으로 사용"
+        <NumRow label="BFS Seed Count" desc="Use top N direct search results as graph traversal starting points"
           field="directHitSeeds" min={1} max={20} step={1} value={sc.directHitSeeds} onChange={set} />
-        <NumRow label="BM25 후보 수" desc="직접 검색 미흡 시 BM25 폴백 후보 수"
+        <NumRow label="BM25 Candidates" desc="BM25 fallback candidate count when direct search is insufficient"
           field="bm25Candidates" min={1} max={30} step={1} value={sc.bm25Candidates} onChange={set} />
-        <NumRow label="리랭킹 시드 수" desc="BM25 결과를 리랭킹 후 최종 시드로 사용할 개수"
+        <NumRow label="Rerank Seed Count" desc="Number of BM25 results to use as final seeds after reranking"
           field="rerankSeeds" min={1} max={15} step={1} value={sc.rerankSeeds} onChange={set} />
       </Section>
 
-      {/* 임계값 */}
-      <Section title="점수 임계값">
-        <NumRow label="직접 히트 임계값" desc="이 점수 이상이면 BM25 폴백 없이 직접 검색 결과를 시드로 사용"
+      {/* Thresholds */}
+      <Section title="Score Thresholds">
+        <NumRow label="Direct Hit Threshold" desc="Above this score, direct search results are used as seeds without BM25 fallback"
           field="minDirectHitScore" min={0.01} max={1} step={0.01} value={sc.minDirectHitScore} onChange={set} />
-        <NumRow label="전체 본문 주입 임계값" desc="이 점수 이상이면 문서 전체 본문을 LLM 컨텍스트에 직접 주입"
+        <NumRow label="Full Body Injection Threshold" desc="Above this score, the full document body is injected into LLM context"
           field="minPinnedScore" min={0.01} max={1} step={0.01} value={sc.minPinnedScore} onChange={set} />
-        <NumRow label="BM25 최소 점수" desc="이 점수 미만의 BM25 결과는 무시"
+        <NumRow label="BM25 Minimum Score" desc="BM25 results below this score are ignored"
           field="minBm25Score" min={0} max={0.5} step={0.01} value={sc.minBm25Score} onChange={set} />
       </Section>
 
-      {/* 리랭킹 가중치 */}
-      <Section title="리랭킹 가중치 (BM25 폴백 경로)">
-        <NumRow label="BM25 점수 가중치" desc="BM25 검색 점수의 비중"
+      {/* Reranking weights */}
+      <Section title="Reranking Weights (BM25 Fallback Path)">
+        <NumRow label="BM25 Score Weight" desc="Weight of BM25 search score"
           field="rerankVectorWeight" min={0} max={1} step={0.05} value={sc.rerankVectorWeight} onChange={set} />
-        <NumRow label="키워드 점수 가중치" desc="키워드 겹침 점수의 비중"
+        <NumRow label="Keyword Score Weight" desc="Weight of keyword overlap score"
           field="rerankKeywordWeight" min={0} max={1} step={0.05} value={sc.rerankKeywordWeight} onChange={set} />
       </Section>
 
-      {/* 그래프 탐색 */}
-      <Section title="그래프 탐색 (BFS / PPR)">
-        <NumRow label="최대 홉 수" desc="시드 문서에서 위키링크를 몇 단계까지 따라갈지"
+      {/* Graph traversal */}
+      <Section title="Graph Traversal (BFS / PPR)">
+        <NumRow label="Max Hops" desc="How many wikilink hops to follow from seed documents"
           field="bfsMaxHops" min={1} max={6} step={1} value={sc.bfsMaxHops} onChange={set} />
-        <NumRow label="최대 수집 문서 수" desc="그래프 탐색으로 수집할 최대 문서 수"
+        <NumRow label="Max Collected Documents" desc="Maximum documents to collect via graph traversal"
           field="bfsMaxDocs" min={5} max={60} step={5} value={sc.bfsMaxDocs} onChange={set} />
       </Section>
 
-      {/* 소형 볼트 전체 주입 */}
-      <Section title="소형 볼트 전체 주입 (Claude Cowork 방식)">
+      {/* Small vault full injection */}
+      <Section title="Small Vault Full Injection">
         <NumRow
-          label="전체 주입 한도 (글자 수)"
-          desc="볼트 전체가 이 글자 수 이하이면 RAG 없이 모든 문서를 컨텍스트에 직접 주입. 0 = 비활성화"
+          label="Full Injection Limit (chars)"
+          desc="If the entire vault is under this character count, all docs are injected directly without RAG. 0 = disabled"
           field="fullVaultThreshold"
           min={0} max={300000} step={10000}
           value={sc.fullVaultThreshold}

@@ -61,8 +61,10 @@ describe('SPEAKER_CONFIG', () => {
 })
 
 describe('SPEAKER_IDS', () => {
-  it('is an array with only PM (chief_director)', () => {
-    expect(SPEAKER_IDS).toHaveLength(1)
-    expect(SPEAKER_IDS).toContain('chief_director')
+  it('is an array of all 5 speaker IDs', () => {
+    expect(SPEAKER_IDS).toHaveLength(5)
+    for (const id of EXPECTED_SPEAKERS) {
+      expect(SPEAKER_IDS).toContain(id)
+    }
   })
 })

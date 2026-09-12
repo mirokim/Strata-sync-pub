@@ -1,7 +1,7 @@
 {
-  "name": "sandbox-map-mcp",
+  "name": "strata-sync-mcp",
   "version": "0.3.0",
-  "description": "MCP server for Sandbox Map — full vault/chat/graph/agent control",
+  "description": "MCP server for Strata Sync — full vault/chat/graph/agent control",
   "type": "module",
   "main": "dist/src/index.js",
   "scripts": {

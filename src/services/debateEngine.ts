@@ -1,22 +1,27 @@
 /**
  * Debate engine — orchestrates multi-AI discussions.
- * Adapted from Onion_flow's debateEngine.ts for Sandbox MAP's provider system.
+ * Adapted from Onion_flow's debateEngine.ts for STRATA SYNC's provider system.
  *
- * Key difference: uses Sandbox MAP's streaming providers (providers/*.ts)
+ * Key difference: uses STRATA SYNC's streaming providers (providers/*.ts)
  * with env API keys, rather than Onion_flow's callWithTools/aiStore approach.
  */
 import type {
   DiscussionConfig,
   DiscussionMessage,
+  DiscussionParticipantId,
   DebateCallbacks,
   ReferenceFile,
 } from '@/types'
 import { DEBATE_PROVIDER_LABELS, ROLE_OPTIONS, ROLE_DESCRIPTIONS } from './debateRoles'
 import { generateId } from '@/lib/utils'
 import { getApiKey, useSettingsStore } from '@/stores/settingsStore'
-import { getProviderForModel, DEFAULT_MODELS_BY_PROVIDER } from '@/lib/modelConfig'
-import type { ProviderId, DirectorId, DiscussionParticipantId } from '@/types'
+import { getProviderForModel, DEBATE_MODEL_IDS } from '@/lib/modelConfig'
+import type { ProviderId } from '@/lib/modelConfig'
+import type { DirectorId } from '@/types'
 
+// ── Default models per provider (fallback for non-persona participants) ───────
+
+const DEFAULT_DEBATE_MODELS = DEBATE_MODEL_IDS
 
 // ── Content block types for multimodal messages ──────────────────────────────
 
@@ -34,48 +39,48 @@ function buildSystemPrompt(
 ): string {
   const label = DEBATE_PROVIDER_LABELS[currentProvider] || currentProvider
   const participantList = config.selectedProviders
-    .map((p) => DEBATE_PROVIDER_LABELS[p] || p)
+    .map((p: string) => DEBATE_PROVIDER_LABELS[p] || p)
     .join(', ')
 
   const labelList = config.selectedProviders
-    .map((p) => `"[${DEBATE_PROVIDER_LABELS[p] || p}]:"`)
+    .map((p: string) => `"[${DEBATE_PROVIDER_LABELS[p] || p}]:"`)
     .join(', ')
 
-  const base = `당신은 "${label}"입니다. 여러 AI가 참여하는 토론에 참가하고 있습니다.
-토론 주제: "${config.topic}"
-참여자: ${participantList}
+  const base = `You are "${label}" participating in a multi-AI debate.
+Debate topic: "${config.topic}"
+Participants: ${participantList}
 
-규칙:
-- 한국어로 답변하세요.
-- 간결하고 핵심적으로 답변하세요 (200~400자).
-- 다른 참여자의 의견을 구체적으로 언급하며 발전시키세요.
-- ${labelList} 형식의 라벨은 다른 참여자의 발언입니다.
-- "[User]:" 라벨은 토론을 지켜보는 사용자의 개입입니다. 사용자의 질문이나 요청에 우선적으로 응답하세요.
+Rules:
+- Reply in English.
+- Be concise and to the point (200–400 characters).
+- Reference and build on other participants' arguments specifically.
+- Labels in the format ${labelList} indicate other participants' statements.
+- The "[User]:" label is an intervention from the user observing the debate. Respond to the user's questions or requests first.
 
-정확성 및 신뢰성 원칙 (반드시 준수):
-- 사실 관계를 언급할 때는 반드시 출처를 밝히거나 링크를 제공하세요.
-- 사실, 이름, 도구, 기능, 날짜, 통계, 인용구, 출처 또는 예시를 절대 지어내지 마세요.
-- 모르는 정보에 대해서는 "확인이 필요합니다"라고 답하세요.
-- 확신도가 95% 미만인 정보는 불확실성을 명확히 밝히세요.`
+Accuracy and reliability principles (strictly required):
+- Always cite your source or provide a link when stating facts.
+- Never fabricate facts, names, tools, features, dates, statistics, quotes, sources, or examples.
+- If you don't know something, say "This needs verification."
+- Clearly acknowledge uncertainty for information you are less than 95% confident about.`
 
   let prompt: string
 
   switch (config.mode) {
     case 'roundRobin':
-      prompt = `${base}\n\n토론 방식: 라운드 로빈 (순서대로 발언)\n이전 발언자의 의견을 참고하여 동의/반박/보완하며 자신의 의견을 제시하세요.`
+      prompt = `${base}\n\nDebate format: Round Robin (speak in order)\nRefer to the previous speaker's opinion and agree, rebut, or supplement it with your own view.`
       break
 
     case 'freeDiscussion':
-      prompt = `${base}\n\n토론 방식: 자유 토론\n다른 참여자의 의견에 자유롭게 반박, 동의, 질문, 보완을 하세요.\n때로는 완전히 새로운 관점을 제시해도 좋습니다.`
+      prompt = `${base}\n\nDebate format: Free Discussion\nFreely rebut, agree with, question, or supplement other participants' opinions.\nOccasionally introducing a completely new perspective is welcome.`
       break
 
     case 'roleAssignment': {
       const roleConfig = config.roles.find((r) => r.provider === currentProvider)
-      const roleLabel = roleConfig?.role || '중립'
+      const roleLabel = roleConfig?.role || 'Neutral'
       const roleOption = ROLE_OPTIONS.find((r) => r.label === roleLabel)
       const roleDescription = roleOption ? ROLE_DESCRIPTIONS[roleOption.value] || '' : ''
 
-      prompt = `${base}\n\n토론 방식: 역할 배정\n당신에게 배정된 역할: **${roleLabel}**\n${roleDescription}\n이 역할의 관점과 말투를 일관되게 유지하며 논의하세요.`
+      prompt = `${base}\n\nDebate format: Role Assignment\nYour assigned role: **${roleLabel}**\n${roleDescription}\nMaintain this role's perspective and speaking style consistently throughout the discussion.`
       break
     }
 
@@ -83,28 +88,28 @@ function buildSystemPrompt(
       const isJudge = config.judgeProvider === currentProvider
       if (isJudge) {
         const debaters = config.selectedProviders
-          .filter((p) => p !== config.judgeProvider)
-          .map((p) => DEBATE_PROVIDER_LABELS[p] || p)
+          .filter((p: string) => p !== config.judgeProvider)
+          .map((p: string) => DEBATE_PROVIDER_LABELS[p] || p)
           .join(' vs ')
-        prompt = `${base}\n\n토론 방식: 결전모드 (심판)\n당신은 이 토론의 **심판**입니다. 토론에 직접 참여하지 않습니다.\n대결 구도: ${debaters}\n\n각 라운드가 끝나면 다음 형식으로 평가하세요:\n\n📊 **라운드 [N] 평가**\n\n| 참여자 | 점수 (10점 만점) | 평가 |\n|--------|-----------------|------|\n| [AI이름] | X점 | 한줄 평가 |\n\n💬 **심판 코멘트**: 이번 라운드의 핵심 쟁점과 각 참여자의 강점/약점을 분석하세요.\n🏆 **라운드 승자**: [AI이름]\n\n채점 기준: 논리성(3점), 근거의 질(3점), 반박력(2점), 설득력(2점)\n\n최종 라운드에서는 추가로:\n🏅 **최종 승자**: [AI이름]\n📝 **종합 평가**: 전체 토론을 종합적으로 평가하세요.`
+        prompt = `${base}\n\nDebate format: Battle Mode (Judge)\nYou are the **Judge** of this debate. You do not participate directly.\nMatchup: ${debaters}\n\nAfter each round, evaluate using this format:\n\n📊 **Round [N] Evaluation**\n\n| Participant | Score (out of 10) | Comment |\n|-------------|-------------------|---------|\n| [AI name] | X pts | One-line comment |\n\n💬 **Judge's Comment**: Analyze the key issues and each participant's strengths and weaknesses in this round.\n🏆 **Round Winner**: [AI name]\n\nScoring criteria: Logic (3 pts), Quality of evidence (3 pts), Rebuttal strength (2 pts), Persuasiveness (2 pts)\n\nIn the final round, additionally provide:\n🏅 **Overall Winner**: [AI name]\n📝 **Overall Evaluation**: Comprehensively assess the entire debate.`
       } else {
         const debaters = config.selectedProviders
-          .filter((p) => p !== config.judgeProvider)
-          .map((p) => DEBATE_PROVIDER_LABELS[p] || p)
-        const opponents = debaters.filter((n) => n !== label).join(', ')
+          .filter((p: string) => p !== config.judgeProvider)
+          .map((p: string) => DEBATE_PROVIDER_LABELS[p] || p)
+        const opponents = debaters.filter((n: string) => n !== label).join(', ')
         const judgeName = config.judgeProvider
           ? (DEBATE_PROVIDER_LABELS[config.judgeProvider] || config.judgeProvider)
-          : '심판'
+          : 'Judge'
 
         const roleConfig = config.roles.find((r) => r.provider === currentProvider)
         const roleLabel = roleConfig?.role
         const roleOption = roleLabel ? ROLE_OPTIONS.find((r) => r.label === roleLabel) : null
         const roleDescription = roleOption ? ROLE_DESCRIPTIONS[roleOption.value] || '' : ''
-        const roleSection = roleLabel && roleLabel !== '중립'
-          ? `\n\n당신의 캐릭터: **${roleLabel}**\n${roleDescription}\n이 캐릭터의 말투와 성격을 유지하면서 토론하세요.`
+        const roleSection = roleLabel && roleLabel !== 'Neutral'
+          ? `\n\nYour character: **${roleLabel}**\n${roleDescription}\nMaintain this character's tone and personality while debating.`
           : ''
 
-        prompt = `${base}\n\n토론 방식: 결전모드 (토론자)\n이것은 경쟁 토론입니다. 상대방: ${opponents}\n심판: ${judgeName} (매 라운드 채점)\n\n목표: 심판에게 높은 점수를 받아 승리하세요.\n- 강력한 논거와 구체적 근거를 제시하세요.\n- 상대방의 약점을 정확히 지적하고 반박하세요.\n- 논리성, 근거의 질, 반박력, 설득력이 채점 기준입니다.${roleSection}`
+        prompt = `${base}\n\nDebate format: Battle Mode (Debater)\nThis is a competitive debate. Opponent: ${opponents}\nJudge: ${judgeName} (scores each round)\n\nGoal: Win by earning a high score from the judge.\n- Present strong arguments with concrete evidence.\n- Precisely identify and rebut your opponent's weaknesses.\n- Scoring criteria: Logic, quality of evidence, rebuttal strength, persuasiveness.${roleSection}`
       }
       break
     }
@@ -114,11 +119,11 @@ function buildSystemPrompt(
   }
 
   if (config.useReference && config.referenceText.trim()) {
-    prompt += `\n\n참고 자료:\n"""\n${config.referenceText.trim()}\n"""\n\n위 참고 자료를 바탕으로 토론하세요.`
+    prompt += `\n\nReference material:\n"""\n${config.referenceText.trim()}\n"""\n\nBase your debate on the above reference material.`
   }
 
   if (config.referenceFiles.length > 0) {
-    prompt += `\n\n첨부된 이미지/문서 파일이 참고 자료로 제공됩니다. 해당 자료를 분석하고 토론에 활용하세요.`
+    prompt += `\n\nAttached image/document files are provided as reference material. Analyze them and use them in the debate.`
   }
 
   return prompt
@@ -150,7 +155,7 @@ function buildApiMessages(
     : []
 
   if (recent.length === 0) {
-    const text = '토론을 시작해주세요. 주제에 대한 당신의 의견을 먼저 제시하세요.'
+    const text = 'Please start the debate. Present your opinion on the topic first.'
     if (fileBlocks.length > 0) {
       return [{ role: 'user', content: [{ type: 'text', text }, ...fileBlocks] }]
     }
@@ -166,7 +171,7 @@ function buildApiMessages(
       ? 'User'
       : (DEBATE_PROVIDER_LABELS[msg.provider] || msg.provider)
     const prefix = msg.provider === 'user' ? '[User]' : `[${label}]`
-    const judgeTag = msg.messageType === 'judge-evaluation' ? ' (심판 평가)' : ''
+    const judgeTag = msg.messageType === 'judge-evaluation' ? ' (Judge Evaluation)' : ''
     const text = `${prefix}${judgeTag}: ${msg.content}`
 
     const msgFileBlocks = msg.files && msg.files.length > 0
@@ -196,7 +201,7 @@ function buildJudgeApiMessages(
   const recent = relevantMessages.slice(-20)
 
   if (recent.length === 0) {
-    return [{ role: 'user', content: `라운드 ${currentRound}의 토론을 평가해주세요.` }]
+    return [{ role: 'user', content: `Please evaluate the debate for round ${currentRound}.` }]
   }
 
   const messages: ApiMessage[] = recent.map((msg) => {
@@ -208,13 +213,13 @@ function buildJudgeApiMessages(
       : (DEBATE_PROVIDER_LABELS[msg.provider] || msg.provider)
     return {
       role: 'user',
-      content: `[${label}] (라운드 ${msg.round}): ${msg.content}`,
+      content: `[${label}] (Round ${msg.round}): ${msg.content}`,
     }
   })
 
   messages.push({
     role: 'user',
-    content: `위 토론 내용을 바탕으로 라운드 ${currentRound}을 평가해주세요.`,
+    content: `Based on the debate above, please evaluate round ${currentRound}.`,
   })
 
   return messages
@@ -268,7 +273,7 @@ async function waitWhilePaused(
   return callbacks.getStatus() === 'running'
 }
 
-// ── Call provider via Sandbox MAP's streaming providers ────────────────────
+// ── Call provider via STRATA SYNC's streaming providers ────────────────────
 
 async function callDebateProvider(
   persona: string,
@@ -277,16 +282,16 @@ async function callDebateProvider(
   signal: AbortSignal,
 ): Promise<{ content: string; isError: boolean }> {
   if (signal.aborted) {
-    return { content: '요청이 취소되었습니다.', isError: true }
+    return { content: 'Request cancelled.', isError: true }
   }
 
   // Resolve model: persona-based lookup first, then provider-based default fallback
   const { personaModels } = useSettingsStore.getState()
   const model =
     (personaModels as Record<string, string>)[persona] ??
-    DEFAULT_MODELS_BY_PROVIDER[persona]
+    DEFAULT_DEBATE_MODELS[persona]
   if (!model) {
-    return { content: `모델을 찾을 수 없습니다: ${persona}`, isError: true }
+    return { content: `Model not found: ${persona}`, isError: true }
   }
 
   // Derive provider from model ID; fall back to treating persona as a raw provider ID
@@ -296,7 +301,7 @@ async function callDebateProvider(
   const apiKey = getApiKey(provider)
   if (!apiKey) {
     const label = DEBATE_PROVIDER_LABELS[persona] || persona
-    return { content: `[${label}] API 키가 설정되지 않았습니다.`, isError: true }
+    return { content: `[${label}] API key is not configured.`, isError: true }
   }
 
   // Convert ApiMessage[] to simple {role, content: string}[] for the streaming providers
@@ -305,7 +310,7 @@ async function callDebateProvider(
     content: typeof m.content === 'string'
       ? m.content
       : (m.content as ContentPart[])
-          .map((p) => p.type === 'text' ? p.text : '[이미지 첨부]')
+          .map((p) => p.type === 'text' ? p.text : '[Image attachment]')
           .join('\n'),
   }))
 
@@ -342,19 +347,19 @@ async function callDebateProvider(
         break
       }
       default:
-        return { content: `지원하지 않는 제공자입니다: ${provider}`, isError: true }
+        return { content: `Unsupported provider: ${provider}`, isError: true }
     }
 
     if (signal.aborted) {
-      return { content: '요청이 취소되었습니다.', isError: true }
+      return { content: 'Request cancelled.', isError: true }
     }
 
     return { content: fullContent, isError: false }
   } catch (err) {
     if (signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) {
-      return { content: '요청이 취소되었습니다.', isError: true }
+      return { content: 'Request cancelled.', isError: true }
     }
-    const message = err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.'
+    const message = err instanceof Error ? err.message : 'An unknown error occurred.'
     return { content: message, isError: true }
   }
 }
@@ -371,14 +376,14 @@ export async function runDebate(
 
   const isBattleMode = config.mode === 'battle' && !!config.judgeProvider
   const turnParticipants = isBattleMode
-    ? config.selectedProviders.filter((p) => p !== config.judgeProvider)
+    ? config.selectedProviders.filter((p: string) => p !== config.judgeProvider)
     : config.selectedProviders
 
   const getRoleName = (provider: string): string | undefined => {
-    if (config.mode === 'battle' && config.judgeProvider === provider) return '심판'
+    if (config.mode === 'battle' && config.judgeProvider === provider) return 'Judge'
     if (config.mode === 'roleAssignment' || config.mode === 'battle') {
       const rc = config.roles.find((r) => r.provider === provider)
-      if (rc?.role && rc.role !== '중립') return rc.role
+      if (rc?.role && rc.role !== 'Neutral') return rc.role
     }
     return undefined
   }
@@ -469,7 +474,7 @@ export async function runDebate(
         timestamp: Date.now(),
         error: judgeResponse.isError ? judgeResponse.content : undefined,
         messageType: 'judge-evaluation',
-        roleName: '심판',
+        roleName: 'Judge',
       }
 
       callbacks.onMessage(judgeMessage)

@@ -110,7 +110,7 @@ let _configPath: string = ''
 
 export function getConfigPath(): string {
   if (_configPath) return _configPath
-  const envPath = process.env.SANDBOX_MAP_CONFIG
+  const envPath = process.env.STRATA_SYNC_CONFIG
   if (envPath) return resolve(envPath)
   return resolve(process.cwd(), 'mcp-config.json')
 }

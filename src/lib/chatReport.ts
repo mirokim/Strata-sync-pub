@@ -22,16 +22,16 @@ export function generateChatReport(
   personas: SpeakerId[],
 ): string {
   const now = new Date()
-  const dateStr = now.toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' })
-  const timeStr = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+  const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' })
+  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
   const personaNames = personas.map(id => SPEAKER_CONFIG[id]?.label ?? id).join(', ')
 
   const lines: string[] = [
-    `# 대화 보고서`,
+    `# Conversation Report`,
     ``,
-    `- **날짜**: ${dateStr} ${timeStr}`,
-    `- **참여 페르소나**: ${personaNames || '없음'}`,
-    `- **메시지 수**: ${messages.filter(m => !m.streaming).length}`,
+    `- **Date**: ${dateStr} ${timeStr}`,
+    `- **Personas**: ${personaNames || 'None'}`,
+    `- **Messages**: ${messages.filter(m => !m.streaming).length}`,
     ``,
     `---`,
     ``,
@@ -40,15 +40,15 @@ export function generateChatReport(
   for (const msg of messages) {
     if (msg.streaming) continue
 
-    const ts = new Date(msg.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+    const ts = new Date(msg.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
     const speakerLabel = msg.role === 'user'
-      ? '사용자'
+      ? 'User'
       : (SPEAKER_CONFIG[msg.persona]?.label ?? msg.persona)
 
     lines.push(`### ${speakerLabel} — ${ts}`, ``)
 
     if (msg.attachments?.length) {
-      for (const att of msg.attachments) lines.push(`> 📎 첨부: ${att.name}`)
+      for (const att of msg.attachments) lines.push(`> 📎 Attachment: ${att.name}`)
       lines.push(``)
     }
 

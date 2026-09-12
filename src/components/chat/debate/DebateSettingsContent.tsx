@@ -10,37 +10,48 @@ import { useSettingsStore, getApiKey } from '@/stores/settingsStore'
 import { getProviderForModel } from '@/lib/modelConfig'
 import { SPEAKER_IDS, SPEAKER_CONFIG } from '@/lib/speakerConfig'
 import { generateId } from '@/lib/utils'
+import { MAX_FILE_SIZE } from '@/lib/constants'
 import {
   ROLE_OPTIONS,
   ROLE_GROUPS,
-  DEBATE_MAX_FILES,
-  DEBATE_ACCEPTED_TYPES,
-  DEBATE_ACCEPTED_EXTENSIONS,
-  readFileAsDataUrl,
 } from '@/services/debateRoles'
-import { MAX_FILE_SIZE } from '@/lib/constants'
 import type { DiscussionMode, ReferenceFile } from '@/types'
+
+/** All participant candidates — the 5 director personas */
+const ALL_PERSONAS = SPEAKER_IDS
 
 const DEBATE_MODES: DiscussionMode[] = ['roundRobin', 'freeDiscussion', 'roleAssignment', 'battle']
 
 const MODE_LABELS: Record<DiscussionMode, string> = {
-  roundRobin: '라운드 로빈',
-  freeDiscussion: '자유 토론',
-  roleAssignment: '역할 배정',
-  battle: '결전모드',
+  roundRobin: 'Round Robin',
+  freeDiscussion: 'Free Discussion',
+  roleAssignment: 'Role Assignment',
+  battle: 'Battle Mode',
 }
 
 const MODE_DESCRIPTIONS: Record<DiscussionMode, string> = {
-  roundRobin: 'AI들이 순서대로 돌아가며 발언합니다',
-  freeDiscussion: 'AI들이 자유롭게 서로의 의견에 반박/동의합니다',
-  roleAssignment: '각 AI에 캐릭터/역할을 부여하여 토론합니다',
-  battle: 'AI 2명이 대결하고 1명이 심판으로 채점합니다',
+  roundRobin: 'AIs take turns speaking in order',
+  freeDiscussion: 'AIs freely rebut or agree with each other',
+  roleAssignment: 'Each AI is assigned a character/role for the debate',
+  battle: '2 AIs compete and 1 acts as judge to score',
 }
 
 const DELAY_OPTIONS = [5, 10, 15, 30] as const
 const REF_MAX_LENGTH = 10_000
+const MAX_FILES = 5
+const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf']
+const ACCEPTED_EXTENSIONS = '.png,.jpg,.jpeg,.gif,.webp,.pdf'
 
 const ROLE_LABEL_MAP = new Map(ROLE_OPTIONS.map((r) => [r.value, r.label]))
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
 
 export function DebateSettingsContent() {
   const settings = useDebateStore((s) => s.settings)
@@ -58,7 +69,7 @@ export function DebateSettingsContent() {
   const apiKeys = useSettingsStore(s => s.apiKeys)
   const personaModels = useSettingsStore(s => s.personaModels)
   const enabledProviders = useMemo(
-    () => SPEAKER_IDS.filter((p) => {
+    () => ALL_PERSONAS.filter((p) => {
       const model = (personaModels as Record<string, string>)[p]
       if (!model) return false
       const provider = getProviderForModel(model)
@@ -73,9 +84,9 @@ export function DebateSettingsContent() {
     if (!fileList) return
     const newFiles: ReferenceFile[] = []
     for (const file of Array.from(fileList)) {
-      if (!DEBATE_ACCEPTED_TYPES.includes(file.type as typeof DEBATE_ACCEPTED_TYPES[number])) continue
+      if (!ACCEPTED_TYPES.includes(file.type)) continue
       if (file.size > MAX_FILE_SIZE) continue
-      if (referenceFiles.length + newFiles.length >= DEBATE_MAX_FILES) break
+      if (referenceFiles.length + newFiles.length >= MAX_FILES) break
       const dataUrl = await readFileAsDataUrl(file)
       newFiles.push({ id: generateId(), filename: file.name, mimeType: file.type, size: file.size, dataUrl })
     }
@@ -110,12 +121,12 @@ export function DebateSettingsContent() {
   return (
     <div className="space-y-6">
       <p className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
-        토론 모드, 참여 AI, 역할, 라운드 수 등 토론에 필요한 설정을 구성합니다.
+        Configure debate mode, participating AIs, roles, number of rounds, and more.
       </p>
 
       {/* Mode Selection */}
       <div>
-        {sectionLabel('토론 모드')}
+        {sectionLabel('Debate Mode')}
         <div className="grid grid-cols-2 gap-1.5">
           {DEBATE_MODES.map(modeBtn)}
         </div>
@@ -126,14 +137,14 @@ export function DebateSettingsContent() {
 
       {/* Participants */}
       <div>
-        {sectionLabel('참여 AI 선택')}
+        {sectionLabel('Select Participating AIs')}
         {enabledProviders.length < 2 && (
           <div
             className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg mb-2"
             style={{ background: 'rgba(255,152,0,0.1)', color: '#ff9800' }}
           >
             <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-            <span>AI 설정에서 2개 이상의 페르소나에 API 키를 설정하세요</span>
+            <span>Set API keys for 2 or more personas in AI Settings</span>
           </div>
         )}
         {mode === 'battle' && selectedProviders.length >= 2 && selectedProviders.length < 3 && (
@@ -142,7 +153,7 @@ export function DebateSettingsContent() {
             style={{ background: 'rgba(255,152,0,0.1)', color: '#ff9800' }}
           >
             <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-            <span>결전모드는 3개의 AI가 필요합니다 (토론자 2 + 심판 1)</span>
+            <span>Battle mode requires 3 AIs (2 debaters + 1 judge)</span>
           </div>
         )}
         <div className="flex flex-wrap gap-1.5">
@@ -180,7 +191,7 @@ export function DebateSettingsContent() {
       {/* Judge Selection (Battle Mode) */}
       {mode === 'battle' && selectedProviders.length >= 3 && (
         <div>
-          {sectionLabel('심판 AI 선택')}
+          {sectionLabel('Select Judge AI')}
           <div className="flex flex-wrap gap-1.5">
             {selectedProviders.map((p) => {
               const isJudge = judgeProvider === p
@@ -208,14 +219,14 @@ export function DebateSettingsContent() {
       {/* Role Assignment */}
       {(mode === 'roleAssignment' || mode === 'battle') && selectedProviders.length > 0 && (
         <div>
-          {sectionLabel(mode === 'battle' ? '캐릭터 배정 (선택)' : '역할 배정')}
+          {sectionLabel(mode === 'battle' ? 'Character Assignment (optional)' : 'Role Assignment')}
           <div
             className="space-y-1.5 rounded-lg p-2.5"
             style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}
           >
             {selectedProviders.map((p) => {
               const isJudgeAI = mode === 'battle' && judgeProvider === p
-              const role = roles.find((r) => r.provider === p)?.role || '중립'
+              const role = roles.find((r) => r.provider === p)?.role || 'neutral'
               const meta = SPEAKER_CONFIG[p as keyof typeof SPEAKER_CONFIG]
               return (
                 <div key={p} className="flex items-center gap-2.5">
@@ -224,7 +235,7 @@ export function DebateSettingsContent() {
                     {meta?.label ?? p}
                   </span>
                   {isJudgeAI ? (
-                    <span className="flex-1 px-2 py-1 text-xs font-semibold" style={{ color: '#ff9800' }}>심판</span>
+                    <span className="flex-1 px-2 py-1 text-xs font-semibold" style={{ color: '#ff9800' }}>Judge</span>
                   ) : (
                     <select
                       value={role}
@@ -260,7 +271,7 @@ export function DebateSettingsContent() {
 
       {/* Rounds */}
       <div>
-        {sectionLabel(`라운드 수: ${maxRounds}`)}
+        {sectionLabel(`Rounds: ${maxRounds}`)}
         <input
           type="range"
           min={1}
@@ -294,7 +305,7 @@ export function DebateSettingsContent() {
             />
           </div>
           <FileText className="w-3.5 h-3.5" style={{ color: 'var(--color-text-secondary)' }} />
-          <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>참고 자료 포함</span>
+          <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>Include reference material</span>
         </label>
 
         {useReference && (
@@ -304,7 +315,7 @@ export function DebateSettingsContent() {
               onChange={(e) => {
                 if (e.target.value.length <= REF_MAX_LENGTH) updateSettings({ referenceText: e.target.value })
               }}
-              placeholder="토론에 참고할 텍스트를 붙여넣으세요."
+              placeholder="Paste text to use as reference for the debate."
               className="w-full px-3 py-2.5 text-sm rounded-lg resize-none focus:outline-none transition"
               style={{
                 background: 'var(--color-bg-surface)',
@@ -318,7 +329,7 @@ export function DebateSettingsContent() {
                 className="text-[10px]"
                 style={{ color: referenceText.length > REF_MAX_LENGTH * 0.9 ? '#ff9800' : 'var(--color-text-muted)' }}
               >
-                {referenceText.length.toLocaleString()} / {REF_MAX_LENGTH.toLocaleString()}자
+                {referenceText.length.toLocaleString()} / {REF_MAX_LENGTH.toLocaleString()} chars
               </span>
             </div>
 
@@ -326,30 +337,30 @@ export function DebateSettingsContent() {
             <label
               className="flex flex-col items-center justify-center gap-2 p-4 border-2 border-dashed rounded-lg cursor-pointer transition-all"
               style={{
-                borderColor: referenceFiles.length >= DEBATE_MAX_FILES ? 'var(--color-border)' : 'var(--color-border)',
-                color: referenceFiles.length >= DEBATE_MAX_FILES ? 'var(--color-text-muted)' : 'var(--color-text-secondary)',
-                opacity: referenceFiles.length >= DEBATE_MAX_FILES ? 0.4 : 1,
-                cursor: referenceFiles.length >= DEBATE_MAX_FILES ? 'not-allowed' : 'pointer',
+                borderColor: referenceFiles.length >= MAX_FILES ? 'var(--color-border)' : 'var(--color-border)',
+                color: referenceFiles.length >= MAX_FILES ? 'var(--color-text-muted)' : 'var(--color-text-secondary)',
+                opacity: referenceFiles.length >= MAX_FILES ? 0.4 : 1,
+                cursor: referenceFiles.length >= MAX_FILES ? 'not-allowed' : 'pointer',
               }}
               onDragOver={(e) => { e.preventDefault(); e.stopPropagation() }}
               onDrop={(e) => {
                 e.preventDefault(); e.stopPropagation()
-                if (referenceFiles.length < DEBATE_MAX_FILES) void handleFileUpload(e.dataTransfer.files)
+                if (referenceFiles.length < MAX_FILES) void handleFileUpload(e.dataTransfer.files)
               }}
             >
               <Upload className="w-4 h-4" />
-              <span className="text-xs font-medium">이미지/PDF 드래그 또는 클릭</span>
+              <span className="text-xs font-medium">Drag image/PDF or click to upload</span>
               <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
-                최대 10MB | 최대 {DEBATE_MAX_FILES}개
+                Max 10MB | Max {MAX_FILES} files
               </span>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept={DEBATE_ACCEPTED_EXTENSIONS}
+                accept={ACCEPTED_EXTENSIONS}
                 multiple
                 className="hidden"
                 onChange={(e) => void handleFileUpload(e.target.files)}
-                disabled={referenceFiles.length >= DEBATE_MAX_FILES}
+                disabled={referenceFiles.length >= MAX_FILES}
               />
             </label>
 
@@ -391,7 +402,7 @@ export function DebateSettingsContent() {
 
       {/* Pacing */}
       <div>
-        {sectionLabel('턴 속도 제어')}
+        {sectionLabel('Turn Speed Control')}
         <div className="grid grid-cols-2 gap-1.5 mb-2">
           {(['auto', 'manual'] as const).map((m) => (
             <button
@@ -404,7 +415,7 @@ export function DebateSettingsContent() {
                   : { background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }
               }
             >
-              {m === 'auto' ? '자동' : '수동'}
+              {m === 'auto' ? 'Auto' : 'Manual'}
             </button>
           ))}
         </div>
@@ -422,13 +433,13 @@ export function DebateSettingsContent() {
                     : { background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }
                 }
               >
-                {d}초
+                {d}s
               </button>
             ))}
           </div>
         ) : (
           <p className="text-[11px] pl-0.5" style={{ color: 'var(--color-text-muted)' }}>
-            각 AI 응답 후 '다음 턴' 버튼을 눌러야 진행됩니다
+            Press the 'Next Turn' button after each AI response to proceed
           </p>
         )}
       </div>

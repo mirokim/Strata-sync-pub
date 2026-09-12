@@ -1,10 +1,10 @@
 /**
- * VaultTabs — TopBar 중앙에 표시되는 멀티볼트 탭 컴포넌트
+ * VaultTabs — Multi-vault tab component displayed in the TopBar center area.
  *
- * 등록된 볼트들을 탭으로 보여주고:
- * - 클릭 → 볼트 전환 (switchVault + loadVault)
- * - + 버튼 → 새 볼트 추가 (폴더 선택)
- * - × 버튼 → 볼트 제거
+ * Shows registered vaults as tabs:
+ * - Click to switch vault (switchVault + loadVault)
+ * - "+" button to add a new vault (folder picker)
+ * - "x" button to remove a vault
  */
 
 import { useCallback } from 'react'
@@ -15,7 +15,7 @@ import { useGraphStore } from '@/stores/graphStore'
 
 export default function VaultTabs() {
   const { vaults, activeVaultId, switchVault, addVault, removeVault } = useVaultStore()
-  const { loadVault, loadVaultCached } = useVaultLoader()
+  const { loadVault } = useVaultLoader()
 
   const isElectron = Boolean(typeof window !== 'undefined' && window.vaultAPI)
   const vaultEntries = Object.entries(vaults)
@@ -26,10 +26,10 @@ export default function VaultTabs() {
     const entry = vaults[id]
     if (entry?.path) {
       window.vaultAPI?.watchStop()
-      await loadVaultCached(entry.path)
+      await loadVault(entry.path)
       await window.vaultAPI?.watchStart(entry.path)
     }
-  }, [activeVaultId, vaults, switchVault, loadVaultCached])
+  }, [activeVaultId, vaults, switchVault, loadVault])
 
   const handleAdd = useCallback(async () => {
     if (!window.vaultAPI) return
@@ -47,16 +47,16 @@ export default function VaultTabs() {
   const handleRemove = useCallback((e: React.MouseEvent, id: string) => {
     e.stopPropagation()
     if (id === activeVaultId) {
-      // 다른 볼트로 전환 후 로드
+      // Switch to another vault before removing
       const otherId = Object.keys(vaults).find(k => k !== id)
       if (otherId) {
         switchVault(otherId)
         const entry = vaults[otherId]
         if (entry?.path) {
           window.vaultAPI?.watchStop()
-          loadVaultCached(entry.path)
-          .then(() => window.vaultAPI?.watchStart(entry.path))
-          .catch((err: unknown) => console.warn('[VaultTabs] 볼트 로드 실패:', err))
+          loadVault(entry.path)
+            .then(() => window.vaultAPI?.watchStart(entry.path))
+            .catch((err: unknown) => console.warn('[VaultTabs] Failed to load vault:', err))
         }
       } else {
         window.vaultAPI?.watchStop()
@@ -65,9 +65,9 @@ export default function VaultTabs() {
       }
     }
     removeVault(id)
-  }, [activeVaultId, vaults, switchVault, removeVault, loadVaultCached])
+  }, [activeVaultId, vaults, switchVault, removeVault, loadVault])
 
-  // 볼트가 1개 이하면 탭 UI 숨김 (TopBar 공간 절약)
+  // Hide tab UI when there is only one vault or fewer (saves TopBar space)
   if (vaultEntries.length <= 1 && !isElectron) return null
 
   return (
@@ -105,7 +105,7 @@ export default function VaultTabs() {
                 onClick={(e) => handleRemove(e, id)}
                 className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity cursor-pointer"
                 style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}
-                title="볼트 제거"
+                title="Remove vault"
               >
                 <X size={9} />
               </span>
@@ -114,13 +114,13 @@ export default function VaultTabs() {
         )
       })}
 
-      {/* 새 볼트 추가 */}
+      {/* Add new vault */}
       {isElectron && vaultEntries.length < 8 && (
         <button
           onClick={handleAdd}
           className="flex items-center justify-center w-6 h-6 rounded transition-colors hover:bg-[var(--color-bg-hover)] shrink-0"
           style={{ color: 'var(--color-text-muted)' }}
-          title="볼트 추가"
+          title="Add vault"
         >
           <Plus size={11} />
         </button>

@@ -2,8 +2,8 @@
  * @type {import('electron-builder').Configuration}
  */
 module.exports = {
-  appId: 'com.sandbox-map.app',
-  productName: 'SANDBOX MAP',
+  appId: 'com.strata-sync.app',
+  productName: 'STRATA SYNC',
   copyright: 'Copyright © 2026 Smilegate',
   directories: {
     output: 'release',
@@ -11,22 +11,23 @@ module.exports = {
   files: [
     'dist/**/*',
     'electron/**/*',
-    'public/ico2.png',
+    'ico.png',
+    'strata-sync-icon.svg',
   ],
   win: {
     target: ['nsis', 'portable'],
-    icon: 'ico2.png',
+    icon: 'ico.png',
   },
   nsis: {
     oneClick: false,
     allowToChangeInstallationDirectory: true,
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
-    shortcutName: 'SANDBOX MAP',
+    shortcutName: 'STRATA SYNC',
   },
   mac: {
     target: ['dmg'],
-    icon: 'ico2.png',
+    icon: 'ico.png',
     category: 'public.app-category.productivity',
   },
 }

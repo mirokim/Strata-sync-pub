@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { useSettingsStore, DEFAULT_SEARCH_CONFIG, getApiKey } from '@/stores/settingsStore'
 import { DEFAULT_PERSONA_MODELS } from '@/lib/modelConfig'
 import type { SpeakerId } from '@/types'
 
@@ -14,7 +14,8 @@ const SPEAKER_IDS: SpeakerId[] = [
 function resetStore() {
   useSettingsStore.setState({
     personaModels: { ...DEFAULT_PERSONA_MODELS },
-    settingsPanelOpen: false,
+    apiKeys: {},
+    searchConfig: { ...DEFAULT_SEARCH_CONFIG },
   })
 }
 
@@ -37,19 +38,14 @@ describe('settingsStore', () => {
     expect(personaModels.chief_director).toContain('claude')
   })
 
-  it('default art_director model is a Claude model', () => {
+  it('default art_director model is gpt-4.1', () => {
     const { personaModels } = useSettingsStore.getState()
-    expect(personaModels.art_director).toContain('claude')
+    expect(personaModels.art_director).toBe('gpt-4.1')
   })
 
-  it('default plan_director model is a Claude model', () => {
+  it('default plan_director model is a Gemini model', () => {
     const { personaModels } = useSettingsStore.getState()
-    expect(personaModels.plan_director).toContain('claude')
-  })
-
-  it('settingsPanelOpen defaults to false', () => {
-    const { settingsPanelOpen } = useSettingsStore.getState()
-    expect(settingsPanelOpen).toBe(false)
+    expect(personaModels.plan_director).toContain('gemini')
   })
 
   // ── setPersonaModel ────────────────────────────────────────────────────────
@@ -88,29 +84,11 @@ describe('settingsStore', () => {
     expect(personaModels.chief_director).toBe(DEFAULT_PERSONA_MODELS.chief_director)
     expect(personaModels.art_director).toBe(DEFAULT_PERSONA_MODELS.art_director)
   })
-
-  // ── Settings panel toggle ──────────────────────────────────────────────────
-
-  it('setSettingsPanelOpen sets open state directly', () => {
-    const { setSettingsPanelOpen } = useSettingsStore.getState()
-    setSettingsPanelOpen(true)
-    expect(useSettingsStore.getState().settingsPanelOpen).toBe(true)
-
-    setSettingsPanelOpen(false)
-    expect(useSettingsStore.getState().settingsPanelOpen).toBe(false)
-  })
-
-  it('setSettingsPanelOpen can open and close the panel', () => {
-    useSettingsStore.getState().setSettingsPanelOpen(true)
-    expect(useSettingsStore.getState().settingsPanelOpen).toBe(true)
-    useSettingsStore.getState().setSettingsPanelOpen(false)
-    expect(useSettingsStore.getState().settingsPanelOpen).toBe(false)
-  })
 })
 
 describe('settingsStore — paragraphRenderQuality', () => {
-  it('defaults to "fast"', () => {
-    expect(useSettingsStore.getState().paragraphRenderQuality).toBe('fast')
+  it('defaults to "high"', () => {
+    expect(useSettingsStore.getState().paragraphRenderQuality).toBe('high')
   })
 
   it('setParagraphRenderQuality changes to "high"', () => {
@@ -131,11 +109,6 @@ describe('settingsStore — paragraphRenderQuality', () => {
     expect(useSettingsStore.getState().paragraphRenderQuality).toBe('medium')
     setParagraphRenderQuality('fast')
     expect(useSettingsStore.getState().paragraphRenderQuality).toBe('fast')
-  })
-
-  it('does not affect other settings state', () => {
-    useSettingsStore.getState().setParagraphRenderQuality('high')
-    expect(useSettingsStore.getState().settingsPanelOpen).toBe(false)
   })
 })
 
@@ -167,41 +140,98 @@ describe('settingsStore — showNodeLabels / toggleNodeLabels', () => {
   })
 })
 
-describe('settingsStore — slackBotConfig', () => {
+// ── setSearchConfig ───────────────────────────────────────────────────────────
+
+describe('settingsStore — setSearchConfig()', () => {
   beforeEach(() => {
-    useSettingsStore.setState({
-      slackBotConfig: { botToken: '', appToken: '', model: 'claude-sonnet-4-6' },
+    useSettingsStore.setState({ searchConfig: { ...DEFAULT_SEARCH_CONFIG } })
+  })
+
+  it('merges partial config, preserves other fields', () => {
+    useSettingsStore.getState().setSearchConfig({ filenameWeight: 20 })
+    const { searchConfig } = useSettingsStore.getState()
+    expect(searchConfig.filenameWeight).toBe(20)
+    // Other fields preserved
+    expect(searchConfig.bodyWeight).toBe(DEFAULT_SEARCH_CONFIG.bodyWeight)
+    expect(searchConfig.bm25Candidates).toBe(DEFAULT_SEARCH_CONFIG.bm25Candidates)
+    expect(searchConfig.bfsMaxHops).toBe(DEFAULT_SEARCH_CONFIG.bfsMaxHops)
+  })
+
+  it('can update multiple fields at once', () => {
+    useSettingsStore.getState().setSearchConfig({
+      filenameWeight: 5,
+      bodyWeight: 3,
+      bfsMaxHops: 5,
     })
+    const { searchConfig } = useSettingsStore.getState()
+    expect(searchConfig.filenameWeight).toBe(5)
+    expect(searchConfig.bodyWeight).toBe(3)
+    expect(searchConfig.bfsMaxHops).toBe(5)
+    // Untouched fields still default
+    expect(searchConfig.recencyHalfLifeDays).toBe(DEFAULT_SEARCH_CONFIG.recencyHalfLifeDays)
   })
 
-  it('defaults to empty tokens and claude-sonnet-4-6 model', () => {
-    const { slackBotConfig } = useSettingsStore.getState()
-    expect(slackBotConfig.botToken).toBe('')
-    expect(slackBotConfig.appToken).toBe('')
-    expect(slackBotConfig.model).toBe('claude-sonnet-4-6')
+  it('successive partial updates accumulate', () => {
+    useSettingsStore.getState().setSearchConfig({ filenameWeight: 15 })
+    useSettingsStore.getState().setSearchConfig({ bodyWeight: 2 })
+    const { searchConfig } = useSettingsStore.getState()
+    expect(searchConfig.filenameWeight).toBe(15)
+    expect(searchConfig.bodyWeight).toBe(2)
+  })
+})
+
+// ── resetSearchConfig ─────────────────────────────────────────────────────────
+
+describe('settingsStore — resetSearchConfig()', () => {
+  it('restores all search config fields to defaults', () => {
+    useSettingsStore.getState().setSearchConfig({
+      filenameWeight: 99,
+      bodyWeight: 99,
+      bfsMaxHops: 99,
+    })
+    useSettingsStore.getState().resetSearchConfig()
+    const { searchConfig } = useSettingsStore.getState()
+    expect(searchConfig).toEqual(DEFAULT_SEARCH_CONFIG)
   })
 
-  it('setSlackBotConfig updates botToken only', () => {
-    useSettingsStore.getState().setSlackBotConfig({ botToken: 'xoxb-test-token' })
-    const { slackBotConfig } = useSettingsStore.getState()
-    expect(slackBotConfig.botToken).toBe('xoxb-test-token')
-    expect(slackBotConfig.appToken).toBe('')
-    expect(slackBotConfig.model).toBe('claude-sonnet-4-6')
+  it('does not affect other settings state', () => {
+    useSettingsStore.getState().setPersonaModel('chief_director', 'gpt-4o')
+    useSettingsStore.getState().setSearchConfig({ filenameWeight: 50 })
+    useSettingsStore.getState().resetSearchConfig()
+    expect(useSettingsStore.getState().personaModels.chief_director).toBe('gpt-4o')
+    expect(useSettingsStore.getState().searchConfig.filenameWeight).toBe(DEFAULT_SEARCH_CONFIG.filenameWeight)
+  })
+})
+
+// ── getApiKey ─────────────────────────────────────────────────────────────────
+
+describe('settingsStore — getApiKey()', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ apiKeys: {} })
   })
 
-  it('setSlackBotConfig updates appToken only', () => {
-    useSettingsStore.getState().setSlackBotConfig({ appToken: 'xapp-test-token' })
-    const { slackBotConfig } = useSettingsStore.getState()
-    expect(slackBotConfig.appToken).toBe('xapp-test-token')
-    expect(slackBotConfig.botToken).toBe('')
+  it('returns stored key when set', () => {
+    useSettingsStore.getState().setApiKey('openai', 'sk-test-key-123')
+    const key = getApiKey('openai')
+    expect(key).toBe('sk-test-key-123')
   })
 
-  it('setSlackBotConfig merges partial updates', () => {
-    useSettingsStore.getState().setSlackBotConfig({ botToken: 'xoxb-1', appToken: 'xapp-1' })
-    useSettingsStore.getState().setSlackBotConfig({ model: 'claude-opus-4-6' })
-    const { slackBotConfig } = useSettingsStore.getState()
-    expect(slackBotConfig.botToken).toBe('xoxb-1')
-    expect(slackBotConfig.appToken).toBe('xapp-1')
-    expect(slackBotConfig.model).toBe('claude-opus-4-6')
+  it('returns undefined when no key is stored and no env var', () => {
+    const key = getApiKey('openai')
+    // No env var set in test environment, so should be undefined
+    expect(key).toBeUndefined()
+  })
+
+  it('trims whitespace from stored keys', () => {
+    useSettingsStore.getState().setApiKey('anthropic', '  sk-trimmed  ')
+    const key = getApiKey('anthropic')
+    expect(key).toBe('sk-trimmed')
+  })
+
+  it('returns correct key for different providers', () => {
+    useSettingsStore.getState().setApiKey('openai', 'openai-key')
+    useSettingsStore.getState().setApiKey('anthropic', 'anthropic-key')
+    expect(getApiKey('openai')).toBe('openai-key')
+    expect(getApiKey('anthropic')).toBe('anthropic-key')
   })
 })

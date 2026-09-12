@@ -16,7 +16,7 @@ export default function SearchBar({ value, onChange }: SearchBarProps) {
         type="text"
         value={value}
         onChange={e => onChange(e.target.value)}
-        placeholder="문서 검색..."
+        placeholder="Search documents..."
         className="flex-1 bg-transparent outline-none text-xs min-w-0"
         style={{ color: 'var(--color-text-primary)' }}
         aria-label="Search documents"

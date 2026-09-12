@@ -50,7 +50,7 @@ function MessageBubble({ message }: { message: DiscussionMessage }) {
           ...(isJudgeEval
             ? {
                 background: 'rgba(255,152,0,0.05)',
-                borderRadius: 2,
+                borderRadius: 8,
                 padding: '10px',
                 border: '1px solid rgba(255,152,0,0.2)',
               }
@@ -88,7 +88,7 @@ function MessageBubble({ message }: { message: DiscussionMessage }) {
                 className="text-[9px] font-bold px-1.5 py-0.5 rounded"
                 style={{ background: 'rgba(255,152,0,0.15)', color: '#ff9800' }}
               >
-                심판
+                Judge
               </span>
             )}
             <span
@@ -102,7 +102,7 @@ function MessageBubble({ message }: { message: DiscussionMessage }) {
                 className="text-[9px] font-semibold px-1.5 py-0.5 rounded"
                 style={{ background: 'rgba(244,67,54,0.1)', color: '#f44336' }}
               >
-                오류
+                Error
               </span>
             )}
           </div>
@@ -152,7 +152,7 @@ function MessageBubble({ message }: { message: DiscussionMessage }) {
       {expandedImage && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-6 cursor-pointer"
-          style={{ background: 'rgba(0,0,0,0.85)' }}
+          style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(4px)' }}
           onClick={() => setExpandedImage(null)}
         >
           <img
@@ -192,7 +192,7 @@ export function DebateThread() {
           >
             <MessageCircle className="w-5 h-5" />
           </div>
-          <p className="text-xs">토론이 시작되면 여기에 대화가 표시됩니다</p>
+          <p className="text-xs">Conversation will appear here once the debate starts</p>
         </div>
       )}
 

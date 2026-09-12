@@ -21,9 +21,9 @@ const makeDoc = (
   tags: [],
   links: [],
   sections: [
-    { id: `${id}_intro`, heading: '섹션', body: '내용', wikiLinks: [] },
+    { id: `${id}_intro`, heading: 'Section', body: 'Content', wikiLinks: [] },
   ],
-  rawContent: '내용',
+  rawContent: 'Content',
   ...overrides,
 })
 
@@ -170,8 +170,8 @@ describe('buildGraph()', () => {
     const docs: LoadedDocument[] = [
       makeDoc('ld1', {
         sections: [
-          { id: 'ld1_s1', heading: '섹션1', body: '내용', wikiLinks: [] },
-          { id: 'ld1_s2', heading: '섹션2', body: '내용', wikiLinks: [] },
+          { id: 'ld1_s1', heading: 'Section 1', body: 'Content', wikiLinks: [] },
+          { id: 'ld1_s2', heading: 'Section 2', body: 'Content', wikiLinks: [] },
         ],
       }),
     ]

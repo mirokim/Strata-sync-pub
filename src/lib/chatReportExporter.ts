@@ -1,16 +1,17 @@
+// TODO: Wire up — currently not imported by any consumer
 /**
- * chatReportExporter.ts — 대화 내용을 PDF용 HTML로 변환
+ * chatReportExporter.ts — Convert conversation content to HTML for PDF export
  *
- * generateReportHtmlFromContent(markdown, title?) → LLM이 작성한 마크다운 보고서를 HTML로 변환
- * generateReportHtml(messages, title?)            → 대화 raw 메시지를 버블 형태 HTML로 변환
+ * generateReportHtmlFromContent(markdown, title?) — Convert LLM-written markdown report to HTML
+ * generateReportHtml(messages, title?)            — Convert raw chat messages to bubble-style HTML
  *
- * Electron main 프로세스의 printToPDF()에 전달합니다.
+ * Passed to Electron main process's printToPDF().
  */
 
 import type { ChatMessage } from '@/types'
 import { SPEAKER_CONFIG } from '@/lib/speakerConfig'
 
-// ── Markdown → HTML 변환 (LLM 응답용) ──────────────────────────────────────
+// ── Markdown → HTML conversion (for LLM responses) ─────────────────────────
 
 function renderInline(html: string): string {
   return html
@@ -20,13 +21,13 @@ function renderInline(html: string): string {
 }
 
 /**
- * LLM이 출력한 마크다운을 HTML 조각으로 변환합니다.
- * 헤딩·리스트·테이블·코드블록·인용·HR을 지원합니다.
+ * Converts LLM-output markdown to an HTML fragment.
+ * Supports headings, lists, tables, code blocks, blockquotes, and HR.
  */
 function mdToHtml(rawMd: string): string {
-  // 1. 코드블록 추출 → 플레이스홀더로 대체 (내부 이스케이프 방지)
+  // 1. Extract code blocks → replace with placeholders (prevent internal escaping)
   const codeBlocks: string[] = []
-  const md = rawMd.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+  const md = rawMd.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, _lang, code) => {
     const escaped = escapeHtml(code.replace(/\n$/, ''))
     codeBlocks.push(`<pre><code>${escaped}</code></pre>`)
     return `@@CODE${codeBlocks.length - 1}@@`
@@ -73,7 +74,7 @@ function mdToHtml(rawMd: string): string {
   for (const rawLine of lines) {
     const line = rawLine
 
-    // 코드블록 플레이스홀더
+    // Code block placeholder
     if (/^@@CODE\d+@@$/.test(line.trim())) {
       flushPara(); closeList(); flushTable()
       const m = line.match(/@@CODE(\d+)@@/)
@@ -81,7 +82,7 @@ function mdToHtml(rawMd: string): string {
       continue
     }
 
-    // 테이블
+    // Table
     if (isTableRow(line)) {
       if (isSeparatorRow(line)) continue
       flushPara(); closeList()
@@ -92,7 +93,7 @@ function mdToHtml(rawMd: string): string {
       flushTable()
     }
 
-    // 헤딩
+    // Headings
     const h3 = line.match(/^### (.+)/)
     if (h3) { flushPara(); closeList(); out.push(`<h3>${renderInline(escapeHtml(h3[1]))}</h3>`); continue }
     const h2 = line.match(/^## (.+)/)
@@ -100,14 +101,14 @@ function mdToHtml(rawMd: string): string {
     const h1 = line.match(/^# (.+)/)
     if (h1) { flushPara(); closeList(); out.push(`<h1>${renderInline(escapeHtml(h1[1]))}</h1>`); continue }
 
-    // 수평선
+    // Horizontal rule
     if (/^---+$/.test(line.trim())) { flushPara(); closeList(); out.push('<hr>'); continue }
 
-    // 인용
+    // Blockquote
     const bq = line.match(/^> (.+)/)
     if (bq) { flushPara(); closeList(); out.push(`<blockquote>${renderInline(escapeHtml(bq[1]))}</blockquote>`); continue }
 
-    // 비순서 리스트
+    // Unordered list
     const ul = line.match(/^[-*] (.+)/)
     if (ul) {
       flushPara()
@@ -116,7 +117,7 @@ function mdToHtml(rawMd: string): string {
       continue
     }
 
-    // 순서 리스트
+    // Ordered list
     const ol = line.match(/^\d+\. (.+)/)
     if (ol) {
       flushPara()
@@ -125,10 +126,10 @@ function mdToHtml(rawMd: string): string {
       continue
     }
 
-    // 빈 줄
+    // Blank line
     if (line.trim() === '') { flushPara(); closeList(); continue }
 
-    // 일반 텍스트
+    // Regular text
     if (listType) closeList()
     paraLines.push(line)
   }
@@ -137,18 +138,18 @@ function mdToHtml(rawMd: string): string {
   return out.join('\n')
 }
 
-/** 커버 + CSS를 포함한 standalone HTML 뼈대 */
+/** Standalone HTML shell with cover page + CSS */
 function reportShell(title: string, bodyContent: string): string {
-  const dateStr = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })
+  const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
   return `<!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>${escapeHtml(title)}</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
     font-size: 13px; line-height: 1.75; color: #1e293b; background: #fff;
   }
   .cover {
@@ -193,24 +194,24 @@ function reportShell(title: string, bodyContent: string): string {
 </head>
 <body>
 <div class="cover">
-  <div class="cover-tag">Sandbox Map · Report</div>
+  <div class="cover-tag">Strata Sync · Report</div>
   <div class="cover-title">${escapeHtml(title)}</div>
   <div class="cover-date">${dateStr}</div>
 </div>
 <div class="body">
   ${bodyContent}
-  <div class="footer">Sandbox Map — ${dateStr} 생성</div>
+  <div class="footer">Strata Sync — Generated ${dateStr}</div>
 </div>
 </body>
 </html>`
 }
 
 /**
- * LLM이 마크다운으로 작성한 보고서를 PDF용 standalone HTML로 변환합니다.
+ * Converts an LLM-written markdown report to standalone HTML for PDF export.
  */
 export function generateReportHtmlFromContent(
   markdownContent: string,
-  title = '대화 보고서',
+  title = 'Conversation Report',
 ): string {
   const bodyHtml = mdToHtml(markdownContent)
   return reportShell(title, bodyHtml)
@@ -225,12 +226,12 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#39;')
 }
 
-/** 마크다운 기본 변환: bold, italic, inline code, 줄바꿈 */
+/** Basic markdown rendering: bold, italic, inline code, line breaks */
 function renderMarkdown(text: string): string {
   return escapeHtml(text)
-    // code block (``` ... ```) — 먼저 처리
+    // code block (``` ... ```) — process first
     .replace(/```[\s\S]*?```/g, (m) => {
-      const inner = m.slice(3, -3).replace(/^[^\n]*\n?/, '') // 언어 힌트 제거
+      const inner = m.slice(3, -3).replace(/^[^\n]*\n?/, '') // strip language hint
       return `<pre><code>${inner}</code></pre>`
     })
     // inline code
@@ -239,7 +240,7 @@ function renderMarkdown(text: string): string {
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     // italic
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // 줄바꿈 → <br>
+    // line breaks
     .replace(/\n/g, '<br>')
 }
 
@@ -252,14 +253,14 @@ function formatTime(ts: number): string {
 
 function formatDate(ts: number): string {
   const d = new Date(ts)
-  return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function buildMessageHtml(msg: ChatMessage): string {
   const isUser = msg.role === 'user'
   const cfg = SPEAKER_CONFIG[msg.role === 'assistant' ? msg.persona : 'chief_director']
   const color = isUser ? '#94a3b8' : cfg.color
-  const label = isUser ? '나' : cfg.label
+  const label = isUser ? 'User' : cfg.label
   const time = formatTime(msg.timestamp)
   const contentHtml = renderMarkdown(msg.content)
 
@@ -289,7 +290,7 @@ function buildMessageHtml(msg: ChatMessage): string {
 
 export function generateReportHtml(
   messages: ChatMessage[],
-  title = '대화 보고서',
+  title = 'Conversation Report',
 ): string {
   const nonEmpty = messages.filter(m => m.content.trim() && !m.streaming)
   if (nonEmpty.length === 0) return ''
@@ -298,7 +299,7 @@ export function generateReportHtml(
   const endDate = nonEmpty.length > 1 ? formatDate(nonEmpty[nonEmpty.length - 1].timestamp) : dateStr
   const dateRange = dateStr === endDate ? dateStr : `${dateStr} — ${endDate}`
 
-  // 참여 페르소나 요약
+  // Participating persona summary
   const personaSet = new Set(nonEmpty.filter(m => m.role === 'assistant').map(m => m.persona))
   const personaSummary = [...personaSet]
     .map(p => {
@@ -310,7 +311,7 @@ export function generateReportHtml(
   const messagesHtml = nonEmpty.map(buildMessageHtml).join('\n')
 
   return `<!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -319,7 +320,7 @@ export function generateReportHtml(
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   body {
-    font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
     font-size: 13px;
     line-height: 1.7;
     color: #1e293b;
@@ -498,17 +499,17 @@ export function generateReportHtml(
 <body>
 
 <div class="cover">
-  <div class="cover-tag">Sandbox Map · 대화 보고서</div>
+  <div class="cover-tag">Strata Sync · Conversation Report</div>
   <div class="cover-title">${escapeHtml(title)}</div>
-  <div class="cover-date">${dateRange} · 총 ${nonEmpty.length}개 메시지</div>
+  <div class="cover-date">${dateRange} · ${nonEmpty.length} messages</div>
   <div class="persona-chips">${personaSummary}</div>
 </div>
 
 <div class="body">
-  <div class="section-title">대화 내용</div>
+  <div class="section-title">Conversation</div>
   ${messagesHtml}
   <div class="footer">
-    Sandbox Map — ${new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })} 생성
+    Strata Sync — Generated ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
   </div>
 </div>
 

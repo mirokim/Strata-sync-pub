@@ -48,49 +48,49 @@ export default function ProjectTab() {
     <div className="flex flex-col gap-6">
       <section>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>프로젝트 정보</h3>
-          <button style={uploadBtnStyle} onClick={() => projectFileRef.current?.click()} title="프로젝트 .md 파일에서 불러오기">
-            <Upload size={10} /> MD 불러오기
+          <h3 className="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Project Info</h3>
+          <button style={uploadBtnStyle} onClick={() => projectFileRef.current?.click()} title="Load from a project .md file">
+            <Upload size={10} /> Load MD
           </button>
           <input ref={projectFileRef} type="file" accept=".md" style={{ display: 'none' }} onChange={handleProjectFile} />
         </div>
         <textarea
           value={projectInfo.rawProjectInfo}
           onChange={e => setProjectInfo({ rawProjectInfo: e.target.value })}
-          placeholder={'# 프로젝트명\n\n게임 엔진, 장르, 플랫폼, 팀 규모, 개요 등\nMD 파일 내용을 그대로 붙여넣으세요.'}
+          placeholder={'# Project Name\n\nGame engine, genre, platform, team size, overview, etc.\nPaste your MD file contents here directly.'}
           rows={10}
           style={{ ...fieldInputStyle, resize: 'vertical', lineHeight: 1.6 }}
         />
       </section>
 
-      {/* 현재 상황 */}
+      {/* Current Situation */}
       <section>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-          <label style={{ ...fieldLabelStyle, marginBottom: 0 }}>현재 상황</label>
-          <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>볼트 데이터와 다른 최신 현실 정보 · MD 형식 지원</span>
+          <label style={{ ...fieldLabelStyle, marginBottom: 0 }}>Current Situation</label>
+          <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>Latest real-world info not in the vault · MD format supported</span>
         </div>
         <textarea
           value={projectInfo.currentSituation}
           onChange={e => setProjectInfo({ currentSituation: e.target.value })}
-          placeholder={'## 현재 스프린트\n- 알파 테스트 진행 중 (2주 남음)\n- 전투 시스템 우선순위\n\n## 최근 결정사항\n- ...'}
+          placeholder={'## Current Sprint\n- Alpha test in progress (2 weeks remaining)\n- Combat system priority\n\n## Recent Decisions\n- ...'}
           rows={7}
           style={{ ...fieldInputStyle, resize: 'vertical', lineHeight: 1.6 }}
         />
       </section>
 
-      {/* 팀원 */}
+      {/* Team Members */}
       <section>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-          <label style={{ ...fieldLabelStyle, marginBottom: 0 }}>팀원</label>
-          <button style={uploadBtnStyle} onClick={() => teamFileRef.current?.click()} title="팀원 .md 파일에서 불러오기">
-            <Upload size={10} /> MD 불러오기
+          <label style={{ ...fieldLabelStyle, marginBottom: 0 }}>Team Members</label>
+          <button style={uploadBtnStyle} onClick={() => teamFileRef.current?.click()} title="Load from a team .md file">
+            <Upload size={10} /> Load MD
           </button>
           <input ref={teamFileRef} type="file" accept=".md" style={{ display: 'none' }} onChange={handleTeamFile} />
         </div>
         <textarea
           value={projectInfo.teamMembers}
           onChange={e => setProjectInfo({ teamMembers: e.target.value })}
-          placeholder={'chief: 홍길동\nart: 이순신, 박민수\nplan: 김철수\nprog: 이영희'}
+          placeholder={'chief: John Smith\nart: Jane Doe, Mike Park\nplan: Alice Kim\nprog: Bob Lee'}
           rows={4}
           style={{ ...fieldInputStyle, resize: 'vertical', lineHeight: 1.6 }}
         />

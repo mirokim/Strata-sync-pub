@@ -32,7 +32,7 @@ export const useBotStore = create<BotStore>((set) => ({
       set({ running: true })
       return { ok: true }
     }
-    return { ok: false, error: result?.error ?? '알 수 없는 오류' }
+    return { ok: false, error: result?.error ?? 'Unknown error' }
   },
 
   stopBot: async () => {

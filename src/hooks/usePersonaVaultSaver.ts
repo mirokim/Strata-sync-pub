@@ -2,7 +2,7 @@
  * usePersonaVaultSaver
  *
  * Watches persona-related settings changes and debounce-saves them to
- * {vaultPath}/.rembrandt/personas.md whenever a vault is active.
+ * {vaultPath}/.strata-sync/personas.md whenever a vault is active.
  *
  * This makes persona config per-project: each vault stores its own config file.
  */
@@ -43,9 +43,9 @@ export function usePersonaVaultSaver() {
       const configPath = `${vaultPath}/${PERSONA_CONFIG_PATH}`
       try {
         await window.vaultAPI!.saveFile(configPath, content)
-        logger.debug('[persona] vault 설정 저장됨:', configPath)
+        logger.debug('[persona] vault config saved:', configPath)
       } catch (err) {
-        logger.warn('[persona] vault 설정 저장 실패:', err)
+        logger.warn('[persona] vault config save failed:', err)
       }
     }, DEBOUNCE_MS)
 

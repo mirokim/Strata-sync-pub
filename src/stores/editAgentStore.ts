@@ -7,7 +7,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-// ── Log types ──────────────────────────────────────────────────────────────────
+// Log types
 
 export type EditAgentLogAction =
   | 'wake'
@@ -28,7 +28,7 @@ export interface EditAgentLogEntry {
   tokensUsed?: number
 }
 
-// ── Chat message types ─────────────────────────────────────────────────────────
+// Chat message types
 
 export type AgentChatRole = 'user' | 'agent' | 'system' | 'tool'
 
@@ -51,7 +51,7 @@ export interface AgentChatMessage {
   collapsed?: boolean
 }
 
-// ── Store state ────────────────────────────────────────────────────────────────
+// Store state
 
 export interface EditAgentState {
   /** Whether the autonomous wake cycle is active */
@@ -76,7 +76,7 @@ export interface EditAgentState {
   /** Increments each time countdown is armed — used to detect re-arm in EditAgentPanel */
   vaultRefreshSession: number
 
-  // ── Actions ────────────────────────────────────────────────────────────────
+  // Actions
   setIsRunning: (running: boolean) => void
   setLastWakeAt: (ts: number) => void
   setPendingQueue: (files: string[]) => void

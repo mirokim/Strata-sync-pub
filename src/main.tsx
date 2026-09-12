@@ -10,12 +10,6 @@ import App from './App'
 import ErrorBoundary from '@/components/shared/ErrorBoundary'
 import './index.css'
 
-// Prevent unhandled promise rejections from crashing the renderer process
-window.addEventListener('unhandledrejection', (event) => {
-  console.error('[renderer] Unhandled promise rejection:', event.reason)
-  event.preventDefault()
-})
-
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>

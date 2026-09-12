@@ -29,18 +29,20 @@ vi.mock('framer-motion', () => {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function resetStore() {
+function resetStore(panelOpen = false) {
   useSettingsStore.setState({
     personaModels: { ...DEFAULT_PERSONA_MODELS },
   })
-  useUIStore.setState({ centerTab: 'settings' })
+  useUIStore.setState({
+    centerTab: panelOpen ? 'settings' : 'graph',
+  })
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 describe('SettingsPanel', () => {
   beforeEach(() => {
-    resetStore()
+    resetStore(false)
     // Reset vault store so VaultSelector renders in clean state
     useVaultStore.setState({
       vaultPath: null,
@@ -52,39 +54,52 @@ describe('SettingsPanel', () => {
 
   // ── Visibility ─────────────────────────────────────────────────────────────
 
-  it('always renders settings-panel when mounted', () => {
+  it('does not render when centerTab is not settings', () => {
+    resetStore(false)
+    render(<SettingsPanel />)
+    expect(screen.queryByTestId('settings-panel')).not.toBeInTheDocument()
+  })
+
+  it('renders when centerTab is settings', () => {
+    resetStore(true)
     render(<SettingsPanel />)
     expect(screen.getByTestId('settings-panel')).toBeInTheDocument()
   })
 
   // ── Persona rows ───────────────────────────────────────────────────────────
 
-  it('renders 1 persona row (PM only)', () => {
-    resetStore()
+  it('renders 5 persona rows', () => {
+    resetStore(true)
     render(<SettingsPanel />)
     const rows = screen.getAllByTestId(/^persona-row-/)
-    expect(rows).toHaveLength(1)
-    expect(rows[0]).toHaveAttribute('data-testid', 'persona-row-chief_director')
+    expect(rows).toHaveLength(5)
   })
 
-  it('renders a model select for PM only', () => {
-    resetStore()
+  it('renders a model select for each persona', () => {
+    resetStore(true)
     render(<SettingsPanel />)
     const selects = screen.getAllByTestId(/^model-select-/)
-    expect(selects).toHaveLength(1)
+    expect(selects).toHaveLength(5)
   })
 
   it('shows default model for chief_director', () => {
-    resetStore()
+    resetStore(true)
     render(<SettingsPanel />)
     const select = screen.getByTestId('model-select-chief_director') as HTMLSelectElement
     expect(select.value).toBe(DEFAULT_PERSONA_MODELS.chief_director)
   })
 
+  it('shows default model for art_director', () => {
+    resetStore(true)
+    render(<SettingsPanel />)
+    const select = screen.getByTestId('model-select-art_director') as HTMLSelectElement
+    expect(select.value).toBe(DEFAULT_PERSONA_MODELS.art_director)
+  })
+
   // ── Interactions ───────────────────────────────────────────────────────────
 
   it('changing a model select updates settingsStore', () => {
-    resetStore()
+    resetStore(true)
     render(<SettingsPanel />)
     const select = screen.getByTestId('model-select-chief_director') as HTMLSelectElement
     fireEvent.change(select, { target: { value: 'gpt-4o' } })
@@ -97,6 +112,7 @@ describe('SettingsPanel', () => {
     useSettingsStore.setState({
       personaModels: { ...DEFAULT_PERSONA_MODELS, chief_director: 'gpt-4o' },
     })
+    useUIStore.setState({ centerTab: 'settings' })
     render(<SettingsPanel />)
 
     fireEvent.click(screen.getByTestId('settings-reset'))
@@ -105,44 +121,60 @@ describe('SettingsPanel', () => {
     expect(personaModels.chief_director).toBe(DEFAULT_PERSONA_MODELS.chief_director)
   })
 
-  it('clicking close button navigates away from settings', () => {
-    resetStore()
+  it('clicking close button sets centerTab away from settings', () => {
+    resetStore(true)
     render(<SettingsPanel />)
     fireEvent.click(screen.getByTestId('settings-close'))
-    expect(useUIStore.getState().centerTab).toBe('graph')
+    expect(useUIStore.getState().centerTab).not.toBe('settings')
   })
 
-  it('clicking save button navigates away from settings', () => {
-    resetStore()
+  it('clicking save button closes the panel', () => {
+    resetStore(true)
     render(<SettingsPanel />)
     fireEvent.click(screen.getByTestId('settings-save'))
-    expect(useUIStore.getState().centerTab).toBe('graph')
+    expect(useUIStore.getState().centerTab).not.toBe('settings')
+  })
+
+  it('clicking backdrop closes the panel', () => {
+    resetStore(true)
+    render(<SettingsPanel />)
+    fireEvent.click(screen.getByTestId('settings-backdrop'))
+    expect(useUIStore.getState().centerTab).not.toBe('settings')
   })
 
   // ── Content ────────────────────────────────────────────────────────────────
 
-  it('shows PM speaker label', () => {
-    resetStore()
+  it('shows all 5 speaker labels', () => {
+    resetStore(true)
     render(<SettingsPanel />)
-    expect(screen.getByText('PM')).toBeInTheDocument()
+    // Labels from SPEAKER_CONFIG: STRATA BOT, Art, Design, Level, Tech
+    expect(screen.getByText('STRATA BOT')).toBeInTheDocument()
+    expect(screen.getByText('Art')).toBeInTheDocument()
+    expect(screen.getByText('Design')).toBeInTheDocument()
+    expect(screen.getByText('Level')).toBeInTheDocument()
+    expect(screen.getByText('Tech')).toBeInTheDocument()
   })
 
-  // ── VaultSelector section (in '일반' tab) ────────────────────────────────────
+  // ── VaultSelector section (in 'General' tab) ─────────────────────────────
 
-  it('renders the vault-selector in 볼트 관리자 tab', () => {
-    resetStore()
+  it('renders the vault section after switching to General tab', () => {
+    resetStore(true)
     render(<SettingsPanel />)
-    fireEvent.click(screen.getByText('볼트 관리자'))
+    fireEvent.click(screen.getByText('General'))
+    expect(screen.getByTestId('vault-section')).toBeInTheDocument()
+  })
+
+  it('renders the vault-selector within the General tab', () => {
+    resetStore(true)
+    render(<SettingsPanel />)
+    fireEvent.click(screen.getByText('General'))
     expect(screen.getByTestId('vault-selector')).toBeInTheDocument()
   })
 
-  it('renders vault-select-btn in 볼트 관리자 tab (Electron)', () => {
-    // vault-select-btn is shown only in Electron (window.vaultAPI set)
-    ;(window as any).vaultAPI = {}
-    resetStore()
+  it('renders vault-select-btn in General tab', () => {
+    resetStore(true)
     render(<SettingsPanel />)
-    fireEvent.click(screen.getByText('볼트 관리자'))
+    fireEvent.click(screen.getByText('General'))
     expect(screen.getByTestId('vault-select-btn')).toBeInTheDocument()
-    delete (window as any).vaultAPI
   })
 })

@@ -25,7 +25,7 @@ export interface FolderGroup {
 }
 
 export interface TagGroup {
-  tag: string  // '' = 태그 없음
+  tag: string  // '' = no tag
   docs: AnyDoc[]
 }
 

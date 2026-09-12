@@ -16,7 +16,7 @@ export function calcBodyCharCount(content: string): number {
     const end = text.indexOf('\n---\n', 4)
     text = end !== -1 ? text.slice(end + 5) : text
   }
-  text = text.replace(/^#\s+.+/gm, '').replace(/^>\s*원본\s*:.*/gm, '').replace(/\s+/g, '')
+  text = text.replace(/^#\s+.+/gm, '').replace(/^>\s*Source\s*:.*/gm, '').replace(/\s+/g, '')
   return text.length
 }
 

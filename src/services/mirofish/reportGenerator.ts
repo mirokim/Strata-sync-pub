@@ -1,5 +1,5 @@
 /**
- * reportGenerator.ts — 시뮬레이션 피드를 분석해 마크다운 보고서 생성
+ * reportGenerator.ts — Analyze simulation feed and generate a markdown report
  */
 
 import { getProviderForModel, MODEL_OPTIONS } from '@/lib/modelConfig'
@@ -7,21 +7,21 @@ import { getApiKey } from '@/stores/settingsStore'
 import type { MirofishPost } from './types'
 
 const SYSTEM_PROMPT = `
-당신은 시장 조사 및 여론 분석 전문가입니다.
-시뮬레이션 피드를 분석하여 통찰력 있는 보고서를 작성합니다.
-마크다운 형식으로 체계적으로 작성하세요.
+You are an expert in market research and sentiment analysis.
+Analyze the simulation feed and produce an insightful report.
+Write in a structured markdown format.
 `.trim()
 
 function buildReportPrompt(topic: string, feed: MirofishPost[]): string {
   const feedText = feed
     .map(p => {
-      const action = p.actionType === 'repost' ? ' ↩️' : ''
-      const shift  = p.stanceShifted ? ` 🔄${p.prevStance}→${p.stance}` : ''
+      const action = p.actionType === 'repost' ? ' [repost]' : ''
+      const shift  = p.stanceShifted ? ` [shifted: ${p.prevStance}->${p.stance}]` : ''
       return `[R${p.round}] [${p.personaName}/${p.stance}${shift}]${action} ${p.content}`
     })
     .join('\n')
 
-  // 라운드별 stance 분포 집계
+  // Per-round stance distribution
   const rounds = [...new Set(feed.map(p => p.round))].sort((a, b) => a - b)
   const roundTrend = rounds.map(r => {
     const posts = feed.filter(p => p.round === r)
@@ -30,10 +30,10 @@ function buildReportPrompt(topic: string, feed: MirofishPost[]): string {
     const pct = (n: number) => total ? Math.round(n / total * 100) : 0
     const sp = cnt('supportive'), op = cnt('opposing'), ne = cnt('neutral'), ob = cnt('observer')
     const shifts = posts.filter(p => p.stanceShifted).length
-    return `R${r}: 지지 ${sp}(${pct(sp)}%) / 반대 ${op}(${pct(op)}%) / 중립 ${ne}(${pct(ne)}%) / 관찰 ${ob}(${pct(ob)}%)${shifts ? ` | 입장변화 ${shifts}건` : ''}`
+    return `R${r}: supportive ${sp}(${pct(sp)}%) / opposing ${op}(${pct(op)}%) / neutral ${ne}(${pct(ne)}%) / observer ${ob}(${pct(ob)}%)${shifts ? ` | stance shifts: ${shifts}` : ''}`
   }).join('\n')
 
-  // 참여 지표 집계
+  // Engagement metrics
   const engagementMap = new Map<string, { likes: number; reposts: number }>()
   for (const p of feed) {
     if (!engagementMap.has(p.personaName)) {
@@ -46,64 +46,64 @@ function buildReportPrompt(topic: string, feed: MirofishPost[]): string {
   const topEngaged = [...engagementMap.entries()]
     .sort((a, b) => (b[1].likes + b[1].reposts) - (a[1].likes + a[1].reposts))
     .slice(0, 10)
-    .map(([name, s]) => `- ${name}: 좋아요 ${s.likes}, 리포스트 ${s.reposts}`)
-    .join('\n') || '(집계 없음)'
+    .map(([name, s]) => `- ${name}: likes ${s.likes}, reposts ${s.reposts}`)
+    .join('\n') || '(no data)'
 
-  // 입장 변화 페르소나 목록
+  // Stance shift list
   const stanceShifts = feed.filter(p => p.stanceShifted)
-    .map(p => `- R${p.round} ${p.personaName}: ${p.prevStance} → ${p.stance}`)
-    .join('\n') || '(없음)'
+    .map(p => `- R${p.round} ${p.personaName}: ${p.prevStance} -> ${p.stance}`)
+    .join('\n') || '(none)'
 
-  // 감정 강도 분포
+  // Emotion intensity distribution
   const intensityPosts = feed.filter(p => p.intensity !== undefined)
   const avgIntensity = intensityPosts.length
     ? (intensityPosts.reduce((s, p) => s + p.intensity!, 0) / intensityPosts.length).toFixed(1)
     : 'N/A'
   const highIntensity = intensityPosts.filter(p => (p.intensity ?? 0) >= 4)
-    .map(p => `- [R${p.round}] ${p.personaName}(강도${p.intensity}): ${p.content.slice(0, 60)}…`)
-    .slice(0, 5).join('\n') || '(없음)'
+    .map(p => `- [R${p.round}] ${p.personaName}(intensity ${p.intensity}): ${p.content.slice(0, 60)}...`)
+    .slice(0, 5).join('\n') || '(none)'
 
   return `
-다음 OASIS 소셜 시뮬레이션 결과를 분석하여 보고서를 작성하세요.
+Analyze the following OASIS social simulation results and write a report.
 
-주제: "${topic}"
+Topic: "${topic}"
 
-[라운드별 여론 흐름]
+[Per-Round Sentiment Trend]
 ${roundTrend}
 
-[입장 변화]
+[Stance Shifts]
 ${stanceShifts}
 
-[감정 강도]
-평균 강도: ${avgIntensity}/5
-강도 4-5 반응:
+[Emotion Intensity]
+Average intensity: ${avgIntensity}/5
+High-intensity responses (4-5):
 ${highIntensity}
 
-[참여 지표 (상위 10)]
+[Engagement Metrics (Top 10)]
 ${topEngaged}
 
-[시뮬레이션 피드]
+[Simulation Feed]
 ${feedText}
 
-아래 섹션을 포함한 마크다운 보고서를 작성하세요:
+Write a markdown report including these sections:
 
-## 시뮬레이션 요약
-(주제, 참여 페르소나, 총 라운드, 총 게시물 수 등 기본 정보)
+## Simulation Summary
+(Topic, participating personas, total rounds, total posts, etc.)
 
-## 여론 흐름 분석
-(라운드별 지지/반대 비율 변화, 분위기가 어떻게 전개됐는지)
+## Sentiment Trend Analysis
+(Per-round supportive/opposing ratio changes, how the mood evolved)
 
-## 주요 합의점
-(여러 페르소나가 공통적으로 동의한 내용)
+## Key Consensus Points
+(Common ground across multiple personas)
 
-## 핵심 반대 의견
-(가장 강하게 제기된 비판이나 우려)
+## Critical Dissent
+(Strongest criticisms or concerns raised)
 
-## 주목할 입장 변화
-(시뮬레이션 중 입장이 바뀐 페르소나와 그 이유 — 없으면 생략)
+## Notable Stance Shifts
+(Personas who changed stance during the simulation and why — omit if none)
 
-## 결론 및 시사점
-(이 시뮬레이션 결과가 실제 출시/의사결정에 시사하는 점)
+## Conclusions & Implications
+(What this simulation means for actual launch/decision-making)
 `.trim()
 }
 
@@ -112,7 +112,7 @@ export async function generateReport(
   feed: MirofishPost[],
   modelId: string,
 ): Promise<string> {
-  if (feed.length === 0) return '시뮬레이션 결과가 없습니다.'
+  if (feed.length === 0) return 'No simulation results available.'
 
   const provider = getProviderForModel(modelId)
   if (!provider) return fallbackReport(topic, feed)
@@ -148,7 +148,7 @@ export async function generateReport(
     }
     return report || fallbackReport(topic, feed)
   } catch (err) {
-    console.error('[reportGenerator] 보고서 생성 실패:', err)
+    console.error('[reportGenerator] Report generation failed:', err)
     return fallbackReport(topic, feed)
   }
 }
@@ -159,7 +159,7 @@ function fallbackReport(topic: string, feed: MirofishPost[]): string {
     return acc
   }, {})
 
-  const lines = Object.entries(byStance).map(([s, n]) => `- ${s}: ${n}개`)
+  const lines = Object.entries(byStance).map(([s, n]) => `- ${s}: ${n}`)
 
-  return `## 시뮬레이션 보고서\n\n**주제**: ${topic}\n\n**총 반응 수**: ${feed.length}개\n\n**입장 분포**:\n${lines.join('\n')}`
+  return `## Simulation Report\n\n**Topic**: ${topic}\n\n**Total responses**: ${feed.length}\n\n**Stance distribution**:\n${lines.join('\n')}`
 }

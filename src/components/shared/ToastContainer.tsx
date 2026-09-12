@@ -30,8 +30,6 @@ function Toast({ toast }: { toast: ToastItem }) {
   return (
     <div
       style={{
-        position: 'relative',
-        overflow: 'hidden',
         display: 'flex',
         alignItems: 'flex-start',
         gap: 8,
@@ -66,19 +64,6 @@ function Toast({ toast }: { toast: ToastItem }) {
       >
         <X size={12} />
       </button>
-      {/* Progress bar — shrinks from 100% to 0% over durationMs */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          height: 2,
-          background: cfg.iconColor,
-          opacity: 0.5,
-          borderRadius: '0 0 8px 8px',
-          animation: `toastProgress ${toast.durationMs}ms linear forwards`,
-        }}
-      />
     </div>
   )
 }
