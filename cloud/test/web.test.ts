@@ -242,6 +242,16 @@ describe('callTool', () => {
     expect((await callTool(mdeps, 'vault_write', { path: '.strata-sync/x.md', content: 'v' })).isError).toBe(true)
   })
 
+  it('vault_write and vault_promote report written rows through onWrite (review queue hook)', async () => {
+    const written: string[] = []
+    const hooked: McpDeps = { ...mdeps, onWrite: row => written.push(`${row.path}@${row.seq}`) }
+    await callTool(hooked, 'vault_write', { path: 'active/Hooked.md', content: 'v1' })
+    await callTool(hooked, 'vault_write', { path: 'active/Hooked.md', content: 'v1' }) // unchanged → no hook
+    const a = parse(await callTool(hooked, 'vault_propose', { title: 'Promote me', body: 'body' })) // proposals are not reviewed
+    await callTool(hooked, 'vault_promote', { path: a.path, destFolder: 'active' })
+    expect(written.map(w => w.split('@')[0])).toEqual(['active/Hooked.md', 'active/promote-me.md'])
+  })
+
   it('unknown tools return an error result instead of throwing', async () => {
     const r = await callTool(mdeps, 'nope', {})
     expect(r.isError).toBe(true)
@@ -336,6 +346,8 @@ describe('routes', () => {
     expect(res.docs[0].content).toBeNull()
     expect((await call('/v1/docs?after=-1')).status).toBe(400)
     expect((await call('/v1/docs?after=abc')).status).toBe(400)
+    expect((await call('/v1/docs?limit=abc')).status).toBe(200) // falls back to the default page size
+    expect(((await (await call('/v1/docs?limit=9999')).json()) as { docs: unknown[] }).docs.length).toBeLessThanOrEqual(500)
   })
 
   it('POST /v1/propose stores a proposal attributed to X-Author and validates input', async () => {
@@ -353,6 +365,22 @@ describe('routes', () => {
 
     expect((await call('/v1/propose', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'x' }) })).status).toBe(400)
     expect((await call('/v1/propose', { method: 'POST', headers: { 'content-type': 'application/json' }, body: 'garbage' })).status).toBe(400)
+  })
+
+  it('MCP writes into reviewable folders are queued for director review like PUT /v1/file', async () => {
+    const sent: { path: string; etag: string }[] = []
+    const envQ = { ...env, REVIEW_QUEUE: { send: async (m: { path: string; etag: string }) => { sent.push(m) } } } as unknown as Env
+    const waited: Promise<unknown>[] = []
+    const ctxQ = { waitUntil: (p: Promise<unknown>) => { waited.push(p) }, passThroughOnException() {}, props: {} } as unknown as ExecutionContext
+    const mcp = (name: string, args: unknown) => route(new Request('https://w/mcp', {
+      method: 'POST', headers: { ...auth, 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
+    }), envQ, ctxQ, deps)
+    await mcp('vault_write', { path: 'active/Reviewed.md', content: '# Reviewed\n\n' + 'A design paragraph long enough to be worth a review. '.repeat(12) })
+    await mcp('vault_write', { path: '_agent/not-reviewed.md', content: 'x' })
+    await Promise.all(waited)
+    expect(sent.map(m => m.path)).toEqual(['active/Reviewed.md'])
+    expect(sent[0].etag).toBe(meta.rows.get('active/Reviewed.md')!.etag)
   })
 
   it('/mcp is reachable through the router with the same token', async () => {

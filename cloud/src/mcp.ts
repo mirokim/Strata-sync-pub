@@ -13,8 +13,8 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { runLint, reportToMarkdown, ALL_RULES, type LintRuleId, type LintSeverity, type LintSnapshot } from '../../mcp/src/lint/index.js'
 import { buildProposal, isProposalPath, stripProposalFrontmatter, promotedPath, PROPOSAL_FOLDER } from '../../mcp/src/proposals.js'
-import { deleteFile, getFile, putFile, normalizeVaultPath, type SyncDeps } from './sync.js'
-import { loadVaultView, invalidateVaultView, Bm25 } from './vaultIndex.js'
+import { deleteFile, getFile, putFile, normalizeVaultPath, type FileRow, type SyncDeps } from './sync.js'
+import { loadVaultView, invalidateVaultView } from './vaultIndex.js'
 import { SNAPSHOT_KEY } from './nightly.js'
 import type { SearchHit } from './nightly.js'
 
@@ -22,6 +22,8 @@ export interface McpDeps extends SyncDeps {
   /** Semantic search when Vectorize is configured; otherwise BM25 only. */
   semanticSearch?: (query: string, topK: number) => Promise<SearchHit[]>
   author?: string
+  /** Called after a document is created/replaced (vault_write, vault_promote) — the router queues director reviews here. */
+  onWrite?: (row: FileRow) => void
 }
 
 const enc = new TextEncoder()
@@ -72,7 +74,7 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       if (!query) return fail('query required')
       const topK = Math.min(Math.max(Number(args.topK) || 8, 1), 30)
       const view = await loadVaultView(deps)
-      const bm25 = new Bm25(view.docs).search(query, topK)
+      const bm25 = view.bm25().search(query, topK)
       const semantic = deps.semanticSearch ? await deps.semanticSearch(query, topK).catch(() => []) : []
       // Rank fusion: rank-based so the two score scales do not fight
       const rank = new Map<string, number>()
@@ -102,7 +104,7 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       if (!q) return fail('text required')
       const view = await loadVaultView(deps)
       const exclude = new Set([...view.docs.entries()].filter(([, d]) => isProposalPath(d.folderPath)).map(([p]) => p))
-      const hits = new Bm25(view.docs).search(q, Math.min(Math.max(Number(args.topK) || 5, 1), 20), exclude)
+      const hits = view.bm25().search(q, Math.min(Math.max(Number(args.topK) || 5, 1), 20), exclude)
       return text({ suggestions: hits.map(h => ({ path: h.path, title: h.title, docId: h.docId, score: Number(h.score.toFixed(3)) })) })
     }
     case 'vault_propose': {
@@ -137,6 +139,7 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       if (existing && !existing.deleted) return fail(`destination already exists: ${dest}`)
       const written = await putFile(deps, { path: dest, body: enc.encode(stripProposalFrontmatter(dec.decode(current.bytes))), mtime: Date.now(), author, createOnly: true })
       if (written.status >= 400) return fail(`could not write ${dest} (${written.status})`)
+      if (written.body) deps.onWrite?.(written.body as FileRow)
       const etag = (current.headers?.ETag ?? '').replace(/^"|"$/g, '')
       await deleteFile(deps, rel, etag || undefined, author)
       invalidateVaultView()
@@ -148,6 +151,7 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       const content = String(args.content ?? '')
       const r = await putFile(deps, { path: rel, body: enc.encode(content), mtime: Date.now(), author })
       if (r.status >= 400) return fail(`write failed (${r.status})`)
+      if (r.body) deps.onWrite?.(r.body as FileRow)
       invalidateVaultView()
       return text({ path: rel, status: r.status === 201 ? 'created' : r.status === 204 ? 'unchanged' : 'replaced' })
     }

@@ -14,6 +14,8 @@ export interface VaultView {
   head: number
   docs: Map<string, ParsedVaultDoc>
   rows: Map<string, FileRow>
+  /** BM25 over `docs`, built on first use and shared by every search on this view. */
+  bm25(): Bm25
 }
 
 let _cache: { view: VaultView; builtAt: number } | null = null
@@ -41,7 +43,8 @@ export async function loadVaultView(deps: SyncDeps, force = false): Promise<Vaul
     if (!bytes) continue
     docs.set(row.path, parseVaultDoc(row.path, dec.decode(bytes), row.mtime))
   }
-  const view = { head, docs, rows: rowMap }
+  let index: Bm25 | null = null
+  const view: VaultView = { head, docs, rows: rowMap, bm25: () => (index ??= new Bm25(docs)) }
   _cache = { view, builtAt: now }
   return view
 }

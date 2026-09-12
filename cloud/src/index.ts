@@ -10,7 +10,7 @@
  * Every /v1 route requires `Authorization: Bearer <TEAM_TOKEN>`.
  */
 import { D1MetaStore, R2BlobStore } from './stores.js'
-import { getManifest, getFile, putFile, deleteFile, parseIfMatch, type SyncDeps } from './sync.js'
+import { getManifest, getFile, putFile, deleteFile, parseIfMatch, type FileRow, type SyncDeps } from './sync.js'
 import { runNightly, semanticSearch, type NightlyDeps, type VectorStore, type VectorQuery } from './nightly.js'
 import { applyR2Events, type R2EventMessage } from './r2events.js'
 import { reviewDocument, shouldEnqueueReview, type ReviewJob, type LlmCall } from './review.js'
@@ -170,21 +170,30 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
       const semantic = env.AI && env.VECTORS
         ? (q: string, k: number) => semanticSearch(embedder(env.AI!), vectorQuery(env.VECTORS!), q, k)
         : undefined
-      return handleMcpRequest(req, { ...deps, semanticSearch: semantic, author: decodeHeader(req.headers.get('x-author')) || 'mcp' })
+      return handleMcpRequest(req, {
+        ...deps, semanticSearch: semantic,
+        author: decodeHeader(req.headers.get('x-author')) || 'mcp',
+        onWrite: row => enqueueReview(env, ctx, row),
+      })
     }
 
     // ── Web client: documents with content, paged by sequence ─────────────────
     if (url.pathname === '/v1/docs' && req.method === 'GET') {
       const after = Number(url.searchParams.get('after') ?? '0')
-      const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? '200'), 1), 500)
+      const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 200, 1), 500)
       if (!Number.isFinite(after) || after < 0) return json(400, { error: 'after must be a non-negative integer' })
       const rows = await deps.meta.listSince(Math.floor(after), limit)
       const head = await deps.meta.head()
-      const docs = []
-      for (const row of rows) {
-        if (row.deleted || !row.path.toLowerCase().endsWith('.md')) { docs.push({ ...row, content: null }); continue }
-        const bytes = await deps.blobs.get(row.path)
-        docs.push({ ...row, content: bytes ? new TextDecoder().decode(bytes) : null })
+      // Markdown content is inlined; tombstones and binaries (images) carry `content: null`.
+      const docs: (FileRow & { content: string | null })[] = []
+      const BATCH = 25
+      for (let i = 0; i < rows.length; i += BATCH) {
+        const part = await Promise.all(rows.slice(i, i + BATCH).map(async row => {
+          if (row.deleted || !row.path.toLowerCase().endsWith('.md')) return { ...row, content: null }
+          const bytes = await deps.blobs.get(row.path)
+          return { ...row, content: bytes ? new TextDecoder().decode(bytes) : null }
+        }))
+        docs.push(...part)
       }
       const next = rows.length === limit ? rows[rows.length - 1].seq : null
       return json(200, { head, next, docs })
@@ -242,12 +251,7 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
           author,
         })
         // A new version of a design document → queue a director review (fire-and-forget)
-        if ((result.status === 200 || result.status === 201) && env.REVIEW_QUEUE && result.body) {
-          const row = result.body as { path: string; etag: string; deleted: boolean; size: number; author: string }
-          if (shouldEnqueueReview(row, reviewFolders(env))) {
-            ctx.waitUntil(env.REVIEW_QUEUE.send({ path: row.path, etag: row.etag }).catch(e => console.error('[review] enqueue failed', e)))
-          }
-        }
+        if ((result.status === 200 || result.status === 201) && result.body) enqueueReview(env, ctx, result.body as FileRow)
         return toResponse(result)
       }
       if (req.method === 'DELETE') return toResponse(await deleteFile(deps, path, parseIfMatch(req.headers.get('if-match')), author))
@@ -258,6 +262,12 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
     console.error('[sync] unhandled', e)
     return json(500, { error: 'internal error' })
   }
+}
+
+/** Queue a director review for a freshly written document when the queue exists and the folder qualifies. */
+function enqueueReview(env: Env, ctx: ExecutionContext, row: FileRow): void {
+  if (!env.REVIEW_QUEUE || !shouldEnqueueReview(row, reviewFolders(env))) return
+  ctx.waitUntil(env.REVIEW_QUEUE.send({ path: row.path, etag: row.etag }).catch(e => console.error('[review] enqueue failed', e)))
 }
 
 function baseDeps(env: Env): SyncDeps {
