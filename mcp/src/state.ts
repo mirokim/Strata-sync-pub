@@ -5,6 +5,8 @@ import type { LoadedDocument } from './parser.js'
 import { loadVaultDocuments } from './vault.js'
 import { getConfig, getApiKey, getConfigPath } from './config.js'
 import { expandTerms, SYNONYM_MAP } from './synonyms.js'
+import { normalizeWikiLink } from './lint/graph.js'
+import { detectCommunities } from './lint/community.js'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { createHash } from 'crypto'
 import { resolve, dirname } from 'path'
@@ -683,7 +685,8 @@ function buildGraph() {
   for (const doc of _documents) {
     const allLinks = [...doc.links, ...doc.sections.flatMap(s => s.wikiLinks)]
     for (const link of allLinks) {
-      const targetId = filenameToId.get(link.toLowerCase())
+      // [[Doc|alias]], [[Doc#heading]] and [[folder/Doc]] all resolve to Doc
+      const targetId = filenameToId.get(normalizeWikiLink(link))
       if (!targetId || targetId === doc.id) continue
       const key = [doc.id, targetId].sort().join('::')
       if (linkSet.has(key)) continue
@@ -755,58 +758,37 @@ export function computePageRank(topK = 20): { docId: string; filename: string; s
 
 /** Cluster detection (Union-Find) */
 export function detectClusters(): { clusterId: number; docIds: string[]; topTerms: string[] }[] {
-  const parent = new Map<string, string>()
-  function find(x: string): string {
-    if (!parent.has(x)) parent.set(x, x)
-    if (parent.get(x) !== x) parent.set(x, find(parent.get(x)!))
-    return parent.get(x)!
-  }
-  function union(a: string, b: string) { parent.set(find(a), find(b)) }
-
-  for (const node of _nodes) find(node.id)
-  for (const link of _links) union(link.source, link.target)
-
-  const clusters = new Map<string, string[]>()
-  for (const node of _nodes) {
-    const root = find(node.id)
-    if (!clusters.has(root)) clusters.set(root, [])
-    clusters.get(root)!.push(node.id)
-  }
-
-  return [...clusters.values()]
+  // Louvain communities rather than connected components: a vault with a hub page is one giant
+  // component, which says nothing about topic structure (and makes "bridges" impossible).
+  return detectCommunities(buildAdjacency()).communities
     .filter(ids => ids.length >= 2)
-    .sort((a, b) => b.length - a.length)
     .map((docIds, i) => ({ clusterId: i, docIds, topTerms: [] }))
 }
 
-/** Find bridge nodes (nodes connecting multiple clusters) */
-export function findBridgeNodes(topK = 10): { docId: string; filename: string; clusterCount: number }[] {
-  const clusterOf = new Map<string, number>()
-  const clusters = detectClusters()
-  clusters.forEach((c, i) => c.docIds.forEach(id => clusterOf.set(id, i)))
-
-  const bridges: { docId: string; filename: string; clusterCount: number }[] = []
+function buildAdjacency(): Map<string, Set<string>> {
   const adj = new Map<string, Set<string>>()
+  for (const node of _nodes) adj.set(node.id, new Set())
   for (const link of _links) {
-    if (!adj.has(link.source)) adj.set(link.source, new Set())
-    if (!adj.has(link.target)) adj.set(link.target, new Set())
-    adj.get(link.source)!.add(link.target)
-    adj.get(link.target)!.add(link.source)
+    adj.get(link.source)?.add(link.target)
+    adj.get(link.target)?.add(link.source)
   }
+  return adj
+}
 
+/** Documents whose neighbours span two or more Louvain communities (their own included). */
+export function findBridgeNodes(topK = 10): { docId: string; filename: string; clusterCount: number; degree: number }[] {
+  const adj = buildAdjacency()
+  const { membership } = detectCommunities(adj)
   const idToFilename = new Map(_documents.map(d => [d.id, d.filename]))
+  const bridges: { docId: string; filename: string; clusterCount: number; degree: number }[] = []
   for (const [nodeId, neighbors] of adj) {
-    const neighborClusters = new Set<number>()
-    for (const nb of neighbors) {
-      const c = clusterOf.get(nb)
-      if (c !== undefined) neighborClusters.add(c)
-    }
-    if (neighborClusters.size >= 2) {
-      bridges.push({ docId: nodeId, filename: idToFilename.get(nodeId) ?? nodeId, clusterCount: neighborClusters.size })
-    }
+    const own = membership.get(nodeId)
+    if (own === undefined || neighbors.size === 0) continue
+    const clusters = new Set<number>([own])
+    for (const nb of neighbors) { const c = membership.get(nb); if (c !== undefined) clusters.add(c) }
+    if (clusters.size >= 2) bridges.push({ docId: nodeId, filename: idToFilename.get(nodeId) ?? nodeId, clusterCount: clusters.size, degree: neighbors.size })
   }
-
-  return bridges.sort((a, b) => b.clusterCount - a.clusterCount).slice(0, topK)
+  return bridges.sort((a, b) => b.clusterCount - a.clusterCount || b.degree - a.degree).slice(0, topK)
 }
 
 // ── Implicit links (BM25 cosine) ─────────────────────────────────────────────

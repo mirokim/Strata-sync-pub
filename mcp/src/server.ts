@@ -16,6 +16,8 @@ import {
   computePageRank, detectClusters, findBridgeNodes, findImplicitLinks,
 } from './state.js'
 import { chat, chatDetailed, chatWithPersona, getUsageSummary, getUsageLog } from './llm/client.js'
+import { runLint, reportToMarkdown, ALL_RULES, type LintRuleId, type LintSeverity } from './lint/index.js'
+import { readSnapshot, writeSnapshot } from './lint/snapshot.js'
 import { join, resolve, normalize } from 'path'
 
 /** External API call timeout (30 s) — prevents fetch from hanging on slow/down servers */
@@ -80,10 +82,19 @@ const TOOLS = [
   // ─── Graph Analysis ───
   { name: 'graph_stats', description: 'Get graph statistics (node count, link count, clusters)', inputSchema: { type: 'object' as const, properties: {} } },
   { name: 'graph_pagerank', description: 'Compute PageRank — find most important documents', inputSchema: { type: 'object' as const, properties: { topK: { type: 'number', description: 'Top N results (default 20)' } } } },
-  { name: 'graph_clusters', description: 'Detect document clusters (connected components)', inputSchema: { type: 'object' as const, properties: {} } },
-  { name: 'graph_bridges', description: 'Find bridge nodes connecting multiple clusters', inputSchema: { type: 'object' as const, properties: { topK: { type: 'number', description: 'Top N (default 10)' } } } },
+  { name: 'graph_clusters', description: 'Detect topic clusters (Louvain communities over the wikilink graph)', inputSchema: { type: 'object' as const, properties: {} } },
+  { name: 'graph_bridges', description: 'Find bridge documents whose links span two or more topic clusters', inputSchema: { type: 'object' as const, properties: { topK: { type: 'number', description: 'Top N (default 10)' } } } },
   { name: 'graph_implicit_links', description: 'Find implicit links via BM25 cosine similarity', inputSchema: { type: 'object' as const, properties: { minScore: { type: 'number' }, topK: { type: 'number' } } } },
   { name: 'graph_neighbors', description: 'Get direct neighbors of a document', inputSchema: { type: 'object' as const, properties: { docId: { type: 'string' } }, required: ['docId'] } },
+  { name: 'graph_lint', description: 'Lint the vault link graph and return structural findings with severity: phantom-hot (missing documents linked from many places, ranked), bridge-spof (documents whose removal disconnects others), orphan, stale-hub (important but untouched), near-duplicate (similar unlinked pairs), cluster-drift (topic clusters that changed since the last run). Run this before editing or creating documents to see what the vault needs.', inputSchema: { type: 'object' as const, properties: {
+    rules: { type: 'array', items: { type: 'string', enum: [...ALL_RULES] }, description: 'Rules to run (default: all)' },
+    minSeverity: { type: 'string', enum: ['error', 'warn', 'info'], description: 'Drop findings below this severity (default: info = keep all)' },
+    limitPerRule: { type: 'number', description: 'Max findings per rule (default 50)' },
+    phantomMinRefs: { type: 'number', description: 'phantom-hot: minimum referring documents (default 3)' },
+    staleDays: { type: 'number', description: 'stale-hub: days without change (default 90)' },
+    format: { type: 'string', enum: ['json', 'markdown'], description: 'json (default) or a markdown report with wikilinks' },
+    saveSnapshot: { type: 'boolean', description: 'Persist the clusters of this run to <vault>/.strata-sync/lint-snapshot.json so the next run can report cluster-drift (default true)' },
+  } } },
 
   // ─── Chat / LLM ───
   { name: 'chat', description: 'Chat with any LLM model (raw)', inputSchema: { type: 'object' as const, properties: { model: { type: 'string', description: 'Model ID (e.g. claude-sonnet-4-6)' }, system: { type: 'string', description: 'System prompt' }, messages: { type: 'array', items: { type: 'object', properties: { role: { type: 'string' }, content: { type: 'string' } } }, description: 'Message history' } }, required: ['model', 'messages'] } },
@@ -235,6 +246,31 @@ async function handleTool(name: string, args: Args): Promise<ToolResult> {
       const docs = getDocuments()
       const idToFilename = new Map(docs.map(d => [d.id, d.filename]))
       return ok([...neighbors].map(id => ({ docId: id, filename: idToFilename.get(id) ?? id })))
+    }
+    case 'graph_lint': {
+      if (!vaultPath) return err('vaultPath not configured')
+      const docs = getDocuments()
+      if (docs.length === 0) return err('vault not loaded — call vault_reload first')
+      const rules = Array.isArray(args.rules) ? (args.rules as string[]).filter((r): r is LintRuleId => (ALL_RULES as readonly string[]).includes(r)) : undefined
+      const wantsDuplicates = !rules || rules.includes('near-duplicate')
+      // Implicit-link memo is global top pairs; anything ≥0.5 comfortably covers the 0.92 default
+      const similarPairs = wantsDuplicates ? findImplicitLinks(0.5, 2000) : undefined
+      const report = runLint(
+        { docs, similarPairs, previousSnapshot: readSnapshot(vaultPath) },
+        {
+          rules,
+          minSeverity: args.minSeverity as LintSeverity | undefined,
+          limitPerRule: args.limitPerRule as number | undefined,
+          phantomMinRefs: args.phantomMinRefs as number | undefined,
+          staleDays: args.staleDays as number | undefined,
+        },
+      )
+      if (args.saveSnapshot !== false) {
+        try { writeSnapshot(vaultPath, report.snapshot) } catch (e) { console.error('[graph_lint] snapshot write failed:', e) }
+      }
+      if (args.format === 'markdown') return { content: [{ type: 'text' as const, text: reportToMarkdown(report) }] }
+      const { snapshot: _snapshot, ...withoutSnapshot } = report
+      return ok(withoutSnapshot)
     }
 
     // ─── Chat / LLM ───

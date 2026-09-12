@@ -337,6 +337,23 @@ Claude Code / Cursor 등 외부 에이전트와 볼트를 연동합니다.
 cd mcp && npm install && npm start
 ```
 
+#### 볼트 린트 (`graph_lint`)
+링크 그래프의 구조적 문제를 심각도와 함께 돌려주는 툴입니다. 에이전트가 문서를 만들거나 고치기 전에 호출하도록 설계했습니다.
+
+| 규칙 | 잡는 것 |
+|------|---------|
+| `phantom-hot` | 여러 문서(기본 3개 이상)가 링크하는데 존재하지 않는 문서 — 참조 수 순위 = "만들어야 할 문서" 순위 |
+| `bridge-spof` | 지우면 다른 문서들이 고립되는 문서(단절점), 그리고 링크 두 개로 두 토픽 클러스터를 잇는 문서 |
+| `orphan` | 들어오는 링크도 나가는 링크도 없는 문서 (깨진 링크만 있는 경우 따로 표시) |
+| `stale-hub` | PageRank 상위 10%인데 90일 이상 안 바뀐 문서 |
+| `near-duplicate` | 코사인 유사도 0.92 이상인데 서로 링크가 없는 문서 쌍 |
+| `cluster-drift` | 직전 실행의 토픽 클러스터가 이번엔 흩어진 경우 (`.strata-sync/lint-snapshot.json` 비교) |
+
+토픽 클러스터는 연결 요소가 아니라 Louvain 커뮤니티로 계산합니다(`graph_clusters`, `graph_bridges`도 같은 기준). CLI로도 돌릴 수 있어 CI에 넣을 수 있습니다:
+```bash
+npm run lint:vault -- --vault <path> --format md --fail-on error
+```
+
 ---
 
 ## 볼트 도구
@@ -777,6 +794,23 @@ cd backend && pip install -r requirements.txt && python main.py
 Connects external agents (Claude Code / Cursor) to your vault.
 ```bash
 cd mcp && npm install && npm start
+```
+
+#### Vault lint (`graph_lint`)
+Returns structural problems in the link graph with a severity. Designed to be called by an agent before it creates or edits documents.
+
+| Rule | What it catches |
+|------|-----------------|
+| `phantom-hot` | A document that does not exist but is linked from several (default ≥3) documents — ranked by referrers, i.e. "what to write next" |
+| `bridge-spof` | Documents whose removal strands others (cut vertices), plus two-link documents joining two topic clusters |
+| `orphan` | No links in or out (broken-links-only is reported separately) |
+| `stale-hub` | Top-10% PageRank documents untouched for 90+ days |
+| `near-duplicate` | Pairs with cosine similarity ≥ 0.92 that do not link each other |
+| `cluster-drift` | Topic clusters from the previous run that dissolved (compares `.strata-sync/lint-snapshot.json`) |
+
+Topic clusters are Louvain communities, not connected components (`graph_clusters` and `graph_bridges` use the same). The CLI form runs in CI:
+```bash
+npm run lint:vault -- --vault <path> --format md --fail-on error
 ```
 
 ---
