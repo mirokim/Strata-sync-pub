@@ -430,7 +430,7 @@ export const useSettingsStore = create<SettingsState>()(
       personaPromptOverrides: {},
       disabledPersonaIds: [],
       editorDefaultLocked: false,
-      paragraphRenderQuality: 'fast' as ParagraphRenderQuality,
+      paragraphRenderQuality: 'high' as ParagraphRenderQuality,
       showNodeLabels: false,
       tagPresets: [],
       tagColors: {},

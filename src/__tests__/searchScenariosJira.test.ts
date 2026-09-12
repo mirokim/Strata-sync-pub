@@ -12,7 +12,9 @@ import type { LoadedDocument } from '@/types'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useGraphStore } from '@/stores/graphStore'
 
-const VAULT = 'C:/dev2/refined_vault'
+// Real-vault search QA. Point STRATA_TEST_VAULT at a refined vault to run; skipped otherwise.
+const VAULT = process.env.STRATA_TEST_VAULT ?? 'C:/dev2/refined_vault'
+const HAS_VAULT = fs.existsSync(VAULT)
 let allDocs: LoadedDocument[] = []
 let tfidf: TfIdfIndex
 
@@ -80,7 +82,7 @@ function chk(label: string, ok: boolean) { console.log(`  ${ok ? '✅' : '❌'} 
 
 // ── 100 Jira Scenarios (201-300) ─────────────────────────────────────────
 
-describe('Jira 검색 시나리오 100건 (201-300)', () => {
+describe.skipIf(!HAS_VAULT)('Jira 검색 시나리오 100건 (201-300)', () => {
 
   // ━━━ Epic 직접 검색 (201-215) ━━━
 

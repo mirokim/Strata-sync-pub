@@ -12,7 +12,9 @@ import type { LoadedDocument, VaultFile } from '@/types'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useGraphStore } from '@/stores/graphStore'
 
-const VAULT = 'C:/dev2/refined_vault'
+// Real-vault search QA. Point STRATA_TEST_VAULT at a refined vault to run; skipped otherwise.
+const VAULT = process.env.STRATA_TEST_VAULT ?? 'C:/dev2/refined_vault'
+const HAS_VAULT = fs.existsSync(VAULT)
 let allDocs: LoadedDocument[] = []
 let tfidf: TfIdfIndex
 
@@ -74,7 +76,7 @@ function chk(label: string, ok: boolean) { console.log(`  ${ok ? '✅' : '❌'} 
 
 // ── 100 Scenarios ───────────────────────────────────────────────────────────
 
-describe('100 scenarios large-scale verification', () => {
+describe.skipIf(!HAS_VAULT)('100 scenarios large-scale verification', () => {
 
   // ━━━ Characters (1-15) ━━━
 

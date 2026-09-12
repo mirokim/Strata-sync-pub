@@ -6,6 +6,7 @@ import {
   invalidateVectorEmbedCache,
 } from '@/lib/vectorEmbedCache'
 import { rrfScore, vectorEmbedIndex } from '@/lib/vectorEmbedIndex'
+import { CHUNKER_VERSION } from '@/lib/markdownParser'
 
 // ── vaultAPI mock ─────────────────────────────────────────────────────────────
 
@@ -20,8 +21,9 @@ Object.defineProperty(window, 'vaultAPI', { value: mockVaultAPI, writable: true 
 
 const VAULT = '/test/vault'
 
-function makeV5Cache(entries: Record<string, { embedding: number[]; docId: string; mtime: number }>) {
-  return JSON.stringify({ version: 5, entries })
+function makeV6Cache(entries: Record<string, { embedding: number[]; docId: string; mtime: number }>) {
+  // provider must match the active one ('gemini' when no local server was probed) or the loader forces a full rebuild
+  return JSON.stringify({ version: 6, chunkerVersion: CHUNKER_VERSION, provider: 'gemini', dim: 8, entries })
 }
 
 const mockDoc = (id: string, mtime: number, sectionCount: number): LoadedDocument => ({
@@ -63,8 +65,8 @@ describe('vectorEmbedCache', () => {
       expect(staleDocIds).toEqual(new Set(['doc1', 'doc2']))
     })
 
-    it('restores only entries with matching mtime from v5 cache', async () => {
-      const cacheData = makeV5Cache({
+    it('restores only entries with matching mtime from v6 cache', async () => {
+      const cacheData = makeV6Cache({
         'doc1#sec0': { embedding: [1, 2, 3], docId: 'doc1', mtime: 100 },
         'doc2#sec0': { embedding: [4, 5, 6], docId: 'doc2', mtime: 200 },
       })
@@ -80,7 +82,7 @@ describe('vectorEmbedCache', () => {
     })
 
     it('mtime mismatch → included in staleDocIds', async () => {
-      const cacheData = makeV5Cache({
+      const cacheData = makeV6Cache({
         'doc1#sec0': { embedding: [1, 2, 3], docId: 'doc1', mtime: 100 },
       })
       mockVaultAPI.readFile.mockResolvedValue(cacheData)
@@ -94,7 +96,7 @@ describe('vectorEmbedCache', () => {
     })
 
     it('deleted document (not in docMtimes) → not included in cached', async () => {
-      const cacheData = makeV5Cache({
+      const cacheData = makeV6Cache({
         'deleted#sec0': { embedding: [1, 2, 3], docId: 'deleted', mtime: 100 },
         'alive#sec0': { embedding: [4, 5, 6], docId: 'alive', mtime: 200 },
       })
@@ -136,10 +138,11 @@ describe('vectorEmbedCache', () => {
 
       expect(mockVaultAPI.saveFile).toHaveBeenCalledOnce()
       const [path, json] = mockVaultAPI.saveFile.mock.calls[0]
-      expect(path).toContain('.vector_cache_v5.json')
+      expect(path).toContain('.vector_cache_v6.json')
 
       const parsed = JSON.parse(json)
-      expect(parsed.version).toBe(5)
+      expect(parsed.version).toBe(6)
+      expect(parsed.chunkerVersion).toBe(CHUNKER_VERSION)
       expect(parsed.entries['doc1#sec0'].embedding).toEqual([1, 2, 3])
       expect(parsed.entries['doc1#sec0'].docId).toBe('doc1')
       expect(parsed.entries['doc1#sec0'].mtime).toBe(100)
@@ -166,15 +169,15 @@ describe('vectorEmbedCache', () => {
   })
 
   describe('invalidateVectorEmbedCache', () => {
-    it('calls delete for both v5 and v4 files', async () => {
+    it('calls delete for both the v6 and legacy v5 files', async () => {
       mockVaultAPI.deleteFile.mockResolvedValue(undefined)
 
       await invalidateVectorEmbedCache(VAULT)
 
       expect(mockVaultAPI.deleteFile).toHaveBeenCalledTimes(2)
       const paths = mockVaultAPI.deleteFile.mock.calls.map((c: unknown[]) => c[0])
+      expect(paths.some((p: string) => p.includes('v6'))).toBe(true)
       expect(paths.some((p: string) => p.includes('v5'))).toBe(true)
-      expect(paths.some((p: string) => p.includes('v4'))).toBe(true)
     })
   })
 })
@@ -218,7 +221,7 @@ describe('vectorEmbedIndex.buildIncremental', () => {
         mtime: 100,
       }
     }
-    mockVaultAPI.readFile.mockResolvedValue(makeV5Cache(cacheEntries))
+    mockVaultAPI.readFile.mockResolvedValue(makeV6Cache(cacheEntries))
 
     // fetch must not be called
     const fetchSpy = vi.fn()
@@ -244,7 +247,7 @@ describe('vectorEmbedIndex.buildIncremental', () => {
         mtime: 100,
       }
     }
-    mockVaultAPI.readFile.mockResolvedValue(makeV5Cache(cacheEntries))
+    mockVaultAPI.readFile.mockResolvedValue(makeV6Cache(cacheEntries))
     mockVaultAPI.saveFile.mockResolvedValue(undefined)
 
     const fetchCalls: string[] = []

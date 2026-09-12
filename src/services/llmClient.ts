@@ -82,6 +82,20 @@ function getLastUserIdx(history: ChatMessage[]): number {
   return idxs.length === 0 ? -1 : idxs[idxs.length - 1]
 }
 
+/**
+ * Index of the history entry that duplicates the current turn, or -1.
+ *
+ * chatStore appends the user's message to `messages` before snapshotting `history`, so the
+ * current turn is normally the last user entry and must not be sent twice. Callers that pass a
+ * history *without* the current turn (Slack bot, tests) must keep their last user message, so
+ * only drop it when its content actually matches the message being sent.
+ */
+function currentTurnIdx(history: { role: string; content: string }[], userMessage: string): number {
+  const idx = getLastUserIdx(history as ChatMessage[])
+  if (idx < 0) return -1
+  return history[idx].content.trim() === userMessage.trim() ? idx : -1
+}
+
 /** Factual compliance guideline block — shared by streamMessage/streamMessageWithTools/generateSlackAnswer
  *  citationMode=true  → includes vault citation markers
  *  citationMode=false → "retrieved documents" wording only
@@ -1335,8 +1349,8 @@ export async function generateSlackAnswer(
       content: sanitize(m.content),
     }))
 
-  // Remove the last user message (the current turn is added separately as a new message, avoids duplication)
-  const _lastUserIdxSlack = getLastUserIdx(historyMessages as ChatMessage[])
+  // Drop the history entry that is the current turn (it is added separately below, avoids duplication)
+  const _lastUserIdxSlack = currentTurnIdx(historyMessages, query)
   const filteredHistory = historyMessages.filter((_, i) => i !== _lastUserIdxSlack)
 
   // Convert image attachments to an Attachment array (the format shared by providers)
@@ -1555,8 +1569,8 @@ export async function streamMessage(
     fullUserMessage = `${combinedCtx}The above materials were collected via ${srcLabel}.\nDo not simply list these materials; cross-analyze document dates and context to point out connections and risks the user may not be aware of.\n\n---\n\n${fullUserMessage}`
   }
 
-  // Build message history, excluding only the last user message (= current turn being sent)
-  const _lastUserIdx = getLastUserIdx(history)
+  // Build message history, excluding the entry that is the current turn being sent
+  const _lastUserIdx = currentTurnIdx(history, userMessage)
   let historyMessages = toHistoryMessages(
     history.filter((_, i) => i !== _lastUserIdx)
   )
@@ -1833,8 +1847,8 @@ export async function streamMessageWithTools(
     fullUserMessage = `${combinedCtx}The above materials were collected via ${srcLabel}.\nDo not simply list these materials; cross-analyze document dates and context to point out connections and risks the user may not be aware of.\n\n---\n\n${fullUserMessage}`
   }
 
-  // Exclude only the last user message (= current turn being sent)
-  const _lastUserIdxTools = getLastUserIdx(history)
+  // Exclude the history entry that is the current turn being sent
+  const _lastUserIdxTools = currentTurnIdx(history, userMessage)
   const historyMessages: AgentMsg[] = toHistoryMessages(
     history.filter((_, i) => i !== _lastUserIdxTools)
   ).map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }) as AgentMsg)

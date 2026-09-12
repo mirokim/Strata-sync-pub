@@ -15,7 +15,9 @@ import type { LoadedDocument } from '@/types'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useGraphStore } from '@/stores/graphStore'
 
-const VAULT = 'C:/dev2/refined_vault'
+// Real-vault search QA. Point STRATA_TEST_VAULT at a refined vault to run; skipped otherwise.
+const VAULT = process.env.STRATA_TEST_VAULT ?? 'C:/dev2/refined_vault'
+const HAS_VAULT = fs.existsSync(VAULT)
 let allDocs: LoadedDocument[] = []
 let tfidf: TfIdfIndex
 
@@ -88,7 +90,7 @@ function chk(label: string, ok: boolean) { console.log(`  ${ok ? '✅' : '❌'} 
 //   [엔진차이] = vitest에선 찾지만 MCP에선 못 찾음 (토크나이저 차이)
 //   [vitest약점] = MCP에선 찾지만 vitest에선 못 찾음
 
-describe('검색 약점 시나리오 50건 (301-350)', () => {
+describe.skipIf(!HAS_VAULT)('검색 약점 시나리오 50건 (301-350)', () => {
 
   it('301 [강점확인] 음향 효과 → 사운드 관련 문서', () => {
     const r = S('음향 효과'); P('음향 효과', r)

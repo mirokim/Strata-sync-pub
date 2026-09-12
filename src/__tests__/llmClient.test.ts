@@ -331,8 +331,13 @@ describe('fetchRAGContext()', () => {
     expect(result).toBe('')
   })
 
-    it('directVaultSearch path: strong filename match (score>=0.4) returns pinned content', async () => {
+  it('directVaultSearch path: strong filename match (score>=0.4) returns pinned content', async () => {
+    // A one-document vault is below fullVaultThreshold and would be injected whole; disable that
+    // mode so the direct-search → pinned-content path is the one exercised here.
+    const prevSearchConfig = useSettingsStore.getState().searchConfig
+    useSettingsStore.setState({ searchConfig: { ...prevSearchConfig, fullVaultThreshold: 0 } })
     // Seed vault with a document whose filename contains query terms
+    const feedbackBody = '피드백 내용입니다. '.repeat(12)
     const feedbackDoc = {
       id: 'feedback_2026',
       filename: '[2026.01.28] 피드백 회의.md',
@@ -341,14 +346,16 @@ describe('fetchRAGContext()', () => {
       date: '2026-01-28',
       tags: [],
       links: [],
-      // Korean content is intentional: tests Korean filename matching and particle stripping
-      rawContent: '피드백 내용입니다.',
-      sections: [{ id: 'fb_s1', heading: '피드백', body: '피드백 내용입니다.', wikiLinks: [] }],
+      // Korean content is intentional: tests Korean filename matching and particle stripping.
+      // The body must exceed the 100-char stub threshold or the pinned block is skipped.
+      rawContent: feedbackBody,
+      sections: [{ id: 'fb_s1', heading: '피드백', body: feedbackBody, wikiLinks: [] }],
       mtime: Date.now(),
     }
     useVaultStore.setState({ loadedDocuments: [feedbackDoc] })
     const { fetchRAGContext } = await import('@/services/llmClient')
     const result = await fetchRAGContext('2026 01 28 피드백')
+    useSettingsStore.setState({ searchConfig: prevSearchConfig })
     // Should contain pinned content section header
     expect(result).toContain('Directly Referenced Document')
     expect(result).toContain('피드백 내용입니다.')

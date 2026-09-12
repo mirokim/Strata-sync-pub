@@ -54,5 +54,5 @@ export const BFS_DEFAULT_MAX_DOCS = 20
 
 // ── Backend ──────────────────────────────────────────────────────────────────
 
-/** Default port for the Python FastAPI backend */
-export const BACKEND_DEFAULT_PORT = 7331
+/** Default port for the Python FastAPI backend (not Electron's internal RAG HTTP API on 7331) */
+export const BACKEND_DEFAULT_PORT = 8765

@@ -142,7 +142,7 @@ export async function invalidateVectorEmbedCache(vaultPath: string): Promise<voi
   } catch {
     // silent
   }
-  // Also clean up the legacy v4 cache
+  // Also clean up the legacy v5 cache
   try {
     await window.vaultAPI?.deleteFile(oldCachePath(vaultPath))
   } catch {

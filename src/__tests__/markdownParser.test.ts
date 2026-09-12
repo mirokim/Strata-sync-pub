@@ -50,9 +50,19 @@ describe('parseSections()', () => {
   })
 
   it('splits on ## headings', () => {
-    const content = '## First Section\nContent A\n\n## Second Section\nContent B'
+    // Bodies must exceed the 300-char chunk minimum, otherwise the size policy merges them.
+    const a = 'Content A. '.repeat(40)
+    const b = 'Content B. '.repeat(40)
+    const content = `## First Section\n${a}\n\n## Second Section\n${b}`
     const sections = parseSections(content, 'doc1')
     expect(sections.length).toBeGreaterThanOrEqual(2)
+    expect(sections.map(s => s.heading)).toEqual(['First Section', 'Second Section'])
+  })
+
+  it('merges sections shorter than the chunk minimum into their neighbour', () => {
+    const content = '## First Section\nContent A\n\n## Second Section\nContent B'
+    const sections = parseSections(content, 'doc1')
+    expect(sections.length).toBe(1)
   })
 
   it('each section has id, heading, body, wikiLinks', () => {

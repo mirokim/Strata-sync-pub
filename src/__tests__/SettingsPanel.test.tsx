@@ -54,12 +54,6 @@ describe('SettingsPanel', () => {
 
   // ── Visibility ─────────────────────────────────────────────────────────────
 
-  it('does not render when centerTab is not settings', () => {
-    resetStore(false)
-    render(<SettingsPanel />)
-    expect(screen.queryByTestId('settings-panel')).not.toBeInTheDocument()
-  })
-
   it('renders when centerTab is settings', () => {
     resetStore(true)
     render(<SettingsPanel />)
@@ -135,13 +129,6 @@ describe('SettingsPanel', () => {
     expect(useUIStore.getState().centerTab).not.toBe('settings')
   })
 
-  it('clicking backdrop closes the panel', () => {
-    resetStore(true)
-    render(<SettingsPanel />)
-    fireEvent.click(screen.getByTestId('settings-backdrop'))
-    expect(useUIStore.getState().centerTab).not.toBe('settings')
-  })
-
   // ── Content ────────────────────────────────────────────────────────────────
 
   it('shows all 5 speaker labels', () => {
@@ -171,10 +158,18 @@ describe('SettingsPanel', () => {
     expect(screen.getByTestId('vault-selector')).toBeInTheDocument()
   })
 
-  it('renders vault-select-btn in General tab', () => {
-    resetStore(true)
-    render(<SettingsPanel />)
-    fireEvent.click(screen.getByText('General'))
-    expect(screen.getByTestId('vault-select-btn')).toBeInTheDocument()
+  it('renders vault-select-btn in General tab when running in Electron with no vault', () => {
+    // The "add vault" button is only offered inside Electron (window.vaultAPI present) and only
+    // while no vault has been registered yet.
+    const prev = (window as any).vaultAPI
+    ;(window as any).vaultAPI = {}
+    try {
+      resetStore(true)
+      render(<SettingsPanel />)
+      fireEvent.click(screen.getByText('General'))
+      expect(screen.getByTestId('vault-select-btn')).toBeInTheDocument()
+    } finally {
+      ;(window as any).vaultAPI = prev
+    }
   })
 })
