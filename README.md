@@ -311,7 +311,25 @@ npx wrangler deploy                             # → https://strata-sync-cloud.
 - `.md`와 이미지(`png/jpg/gif/webp/svg/pdf`), `.canvas`만 동기화합니다. 점(`.`)으로 시작하는 폴더·파일(`.obsidian`, `.strata-sync`, 캐시)은 이 PC에만 있습니다. 파일 하나 최대 10MB.
 - 프로토콜: `GET /v1/manifest?since=<seq>`, `GET/PUT/DELETE /v1/file?path=` — sha256 ETag와 `If-Match`로 충돌을 잡습니다. 자세한 건 `cloud/src/sync.ts`.
 
-**아직 안 되는 것**: Obsidian의 Remotely Save로 R2에 직접 쓴 파일은 서버 색인(D1)에 반영되지 않습니다. 팀원 모두 Strata Sync 앱으로 동기화하세요. R2 이벤트 → D1 브릿지는 3단계에서.
+**Obsidian만 쓰는 팀원**: Remotely Save를 S3 호환 모드로 같은 R2 버킷에 연결하면 됩니다. 버킷에 직접 쓴 파일은 R2 이벤트 알림 → Queue → Worker가 해시를 계산해 색인에 넣습니다(작성자 `external`). 한 번만 설정:
+```bash
+npx wrangler queues create strata-vault-events
+npx wrangler r2 bucket notification create strata-vault --event-type object-create --event-type object-delete --queue strata-vault-events
+```
+
+### 새벽 배치 (서버)
+Worker의 Cron Trigger가 매일 04:00(Asia/Seoul)에 돕니다. 로컬 크론과 별개로, 팀 볼트 전체를 한 번만 처리합니다.
+
+- **볼트 린트 리포트** — `graph_lint`와 같은 규칙을 팀 볼트에 돌려 `_reports/lint-YYYY-MM-DD.md`로 씁니다. 일반 문서처럼 동기화되고 위키링크가 있어 그래프에서 바로 보입니다. 클러스터 스냅샷은 R2 `_system/`에 보관(클라이언트엔 안 보임), 30일 지난 리포트는 자동 삭제.
+- **임베딩** — 바뀐 문서만 Workers AI `@cf/baai/bge-m3`(1,024차원, 로컬 서버와 같은 모델)로 임베딩해 Vectorize에 넣습니다. 지운 문서의 벡터는 제거. AI/Vectorize 바인딩이 없으면 이 단계만 건너뜁니다.
+- **시맨틱 검색** — `POST /v1/search {query, topK}`. 앱은 로컬 임베딩 인덱스가 없을 때 이 결과를 검색 2순위로 씁니다(BM25와 RRF 융합, 문서 id 체계가 같아 그대로 매핑).
+- 수동 실행: `POST /v1/lint/run` (팀 토큰 필요).
+
+임베딩을 켜려면:
+```bash
+npx wrangler vectorize create strata-vault-vectors --dimensions=1024 --metric=cosine
+npx wrangler deploy
+```
 
 ## 자동화 (크론)
 
@@ -795,7 +813,25 @@ npx wrangler deploy                             # → https://strata-sync-cloud.
 - Only `.md`, images (`png/jpg/gif/webp/svg/pdf`) and `.canvas` are synced. Dot-folders and dot-files (`.obsidian`, `.strata-sync`, caches) stay local. One file is capped at 10 MB.
 - Protocol: `GET /v1/manifest?since=<seq>`, `GET/PUT/DELETE /v1/file?path=` with sha256 ETags and `If-Match` preconditions. See `cloud/src/sync.ts`.
 
-**Not yet**: files written straight to R2 by Obsidian's Remotely Save are not reflected in the server index (D1). Have everyone sync through the Strata Sync app for now; the R2-event → D1 bridge is Phase 3 work.
+**Obsidian-only teammates**: point Remotely Save (S3-compatible mode) at the same R2 bucket. Files written straight into the bucket are picked up by R2 event notifications → Queue → Worker, which hashes and indexes them (author `external`). One-time setup:
+```bash
+npx wrangler queues create strata-vault-events
+npx wrangler r2 bucket notification create strata-vault --event-type object-create --event-type object-delete --queue strata-vault-events
+```
+
+### Nightly batch (server)
+A Cron Trigger runs in the Worker at 04:00 Asia/Seoul, once for the whole team vault (independent of the local cron).
+
+- **Vault lint report** — the `graph_lint` rules run over the team vault and the result is written to `_reports/lint-YYYY-MM-DD.md`. It syncs like any document and carries wikilinks, so it shows up in the graph. Cluster snapshots live in R2 under `_system/` (invisible to clients); reports older than 30 days are removed.
+- **Embeddings** — only changed documents are embedded with Workers AI `@cf/baai/bge-m3` (1,024 dims, same model as the local server) into Vectorize; vectors of deleted documents are dropped. Without the AI/Vectorize bindings this step is skipped.
+- **Semantic search** — `POST /v1/search {query, topK}`. The app uses it as its second search tier when no local embedding index exists (RRF-fused with BM25; document ids match, so hits map straight onto loaded documents).
+- Manual run: `POST /v1/lint/run` (team token).
+
+To enable embeddings:
+```bash
+npx wrangler vectorize create strata-vault-vectors --dimensions=1024 --metric=cosine
+npx wrangler deploy
+```
 
 ## Automation (cron)
 
