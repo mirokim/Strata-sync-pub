@@ -76,8 +76,8 @@ function isMemberPath(path: string): boolean { return path.startsWith(`${MEMBERS
 function pathOf(d: ParsedVaultDoc): string { return d.folderPath ? `${d.folderPath}/${d.filename}` : d.filename }
 function isSystemPath(path: string): boolean { return path.split('/').some(s => s.startsWith('.')) }
 
-function excerpt(doc: ParsedVaultDoc, max: number): string {
-  const body = doc.body.replace(/\r/g, '').trim()
+function excerpt(text: string, max: number): string {
+  const body = text.replace(/\r/g, '').trim()
   if (body.length <= max) return body
   // Cut at a paragraph boundary when one is near the limit
   const cut = body.lastIndexOf('\n\n', max)
@@ -136,9 +136,10 @@ export async function recall(deps: RecallDeps, options: RecallOptions): Promise<
     // adjacency is undirected: each neighbour once, with whichever direction's reference count applies
     for (const n of graph.adjacency.get(seed.id) ?? []) touch(n, seed, graph.outRefs.get(seed.id)?.get(n) ?? graph.outRefs.get(n)?.get(seed.id) ?? 1)
   }
+  // Candidates are ranked on what is in memory (title, tags, headings); the few that make the cut get their text
   const neighbours = [...cand.entries()].map(([id, c]) => {
     const d = byId.get(id)!
-    const q = scoreText(queryTerms, `${d.title} ${d.body.slice(0, 2000)}`)
+    const q = scoreText(queryTerms, `${d.title} ${d.tags.join(' ')} ${d.sections.map(s => s.heading).join(' ')}`)
     return { d, why: `links with ${[...c.seeds].slice(0, 3).join(', ')}`, score: c.seeds.size * 2 + q * 3 + Math.min(c.links, 5) * 0.2 }
   }).sort((a, b) => b.score - a.score).slice(0, neighbourCount)
 
@@ -146,8 +147,7 @@ export async function recall(deps: RecallDeps, options: RecallOptions): Promise<
   const config = await readMembers(deps)
   const scored: { member: string; heading: string; text: string; score: number }[] = []
   for (const m of config.members.filter(x => x.enabled)) {
-    // Memory notes are vault documents: already in the view, no round trip needed
-    const note = view.contents.get(memberNotePath(m))
+    const note = await view.textOf(memberNotePath(m))
     if (!note) continue
     for (const s of splitNoteSections(note)) {
       const score = scoreText(queryTerms, `${s.heading} ${s.text}`)
@@ -158,14 +158,14 @@ export async function recall(deps: RecallDeps, options: RecallOptions): Promise<
 
   const remarks: RecallResult['remarks'] = []
   const seedPaths = new Set(seeds.map(pathOf))
-  for (const [path, d] of view.docs) {
+  for (const path of view.docs.keys()) {
     if (!isMemberPath(path)) continue
     const rest = path.slice(MEMBERS_FOLDER.length + 1)
     const slash = rest.indexOf('/')
     if (slash < 0) continue                      // the memory notes themselves
     const about = rest.slice(slash + 1)
     if (!seedPaths.has(about)) continue
-    remarks.push({ member: rest.slice(0, slash), about, path, excerpt: excerpt(d, 600) })
+    remarks.push({ member: rest.slice(0, slash), about, path, excerpt: excerpt(await view.bodyOf(path), 600) })
   }
 
   // Budget: seeds get the larger share, neighbours the rest; memory/remarks are capped above
@@ -173,12 +173,12 @@ export async function recall(deps: RecallDeps, options: RecallOptions): Promise<
   const perSeed = seeds.length ? Math.floor(seedShare / seeds.length) : 0
   const perNeighbour = neighbours.length ? Math.floor((budget - seedShare) / neighbours.length) : 0
   const rowOf = (d: ParsedVaultDoc) => view.rows.get(pathOf(d))
-  const toDoc = (d: ParsedVaultDoc, max: number, why?: string): RecallDoc => ({
+  const toDoc = async (d: ParsedVaultDoc, max: number, why?: string): Promise<RecallDoc> => ({
     path: pathOf(d), title: d.title, author: rowOf(d)?.author ?? '', modified: new Date(rowOf(d)?.updatedAt ?? d.mtime ?? 0).toISOString().slice(0, 10),
-    excerpt: excerpt(d, max), proposal: isProposalPath(d.folderPath) ? true : undefined, personal: isPersonalPath(pathOf(d)) ? true : undefined, why,
+    excerpt: excerpt(await view.bodyOf(pathOf(d)), max), proposal: isProposalPath(d.folderPath) ? true : undefined, personal: isPersonalPath(pathOf(d)) ? true : undefined, why,
   })
-  const core = seeds.map(d => toDoc(d, Math.max(perSeed, 400)))
-  const around = neighbours.map(n => toDoc(n.d, Math.max(perNeighbour, 200), n.why))
+  const core = await Promise.all(seeds.map(d => toDoc(d, Math.max(perSeed, 400))))
+  const around = await Promise.all(neighbours.map(n => toDoc(n.d, Math.max(perNeighbour, 200), n.why)))
   const sources = [...core, ...around].map(d => d.path)
 
   return { query, semantic, core, around, memory: memoryTop, remarks, sources, markdown: renderRecall(query, core, around, memoryTop, remarks) }

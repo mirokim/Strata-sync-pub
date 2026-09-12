@@ -110,10 +110,10 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       const topK = Math.min(Math.max(Number(args.topK) || 8, 1), 30)
       const view = await loadVaultView(deps)
       const { hits, semantic } = await fusedSearch(deps, view, query, topK, hiddenFrom(view, deps.viewer))
-      const results = hits.map(h => {
+      const results = await Promise.all(hits.map(async h => {
         const d = view.docs.get(h.path)
-        return { path: h.path, title: h.title, score: h.score, snippet: d ? d.body.replace(/\s+/g, ' ').slice(0, 240) : '', proposal: d && isProposalPath(d.folderPath) ? true : undefined, personal: isPersonalPath(h.path) || undefined }
-      })
+        return { path: h.path, title: h.title, score: h.score, snippet: d ? (await view.bodyOf(h.path)).replace(/\s+/g, ' ').slice(0, 240) : '', proposal: d && isProposalPath(d.folderPath) ? true : undefined, personal: isPersonalPath(h.path) || undefined }
+      }))
       return text({ query, semantic, results })
     }
     case 'vault_recall': {
@@ -247,7 +247,7 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
     case 'images_undescribed': {
       const view = await loadVaultView(deps)
       const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 100)
-      const pending = undescribedImages(view).filter(p => canSee(p.doc, deps.viewer))
+      const pending = (await undescribedImages(view)).filter(p => canSee(p.doc, deps.viewer))
       return text({ count: pending.length, guide: DESCRIBE_GUIDE, images: pending.slice(0, limit).map(p => ({ ...p, since: new Date(p.since).toISOString() })) })
     }
     case 'members_list': {

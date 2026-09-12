@@ -162,6 +162,7 @@ export async function runNightly(deps: NightlyDeps, trigger: 'cron' | 'manual' =
   const view = await loadVaultView(deps, true)
   const allRows = [...view.rows.values()]
   if (!snapshotIsCurrent(view)) await writeVaultSnapshot(deps, view).catch(e => log(`[nightly] snapshot write failed: ${e}`))
+  await deps.blobs.delete('_system/vault-snapshot.json').catch(() => {})   // the pre-NDJSON snapshot, if one is still around
   // Personal documents stay out of the shared lint report and the shared embedding index
   const rows = allRows.filter(r => !isPersonalPath(r.path))
   const docs = new Map([...view.docs].filter(([p]) => !isPersonalPath(p)))
@@ -205,7 +206,7 @@ export async function runNightly(deps: NightlyDeps, trigger: 'cron' | 'manual' =
       for (const [path, row] of liveByPath) {
         const prev = index.docs[path]
         if (prev && prev.etag === row.etag) continue
-        const doc = docs.get(path)
+        const doc = await view.parsed(path)
         if (!doc) continue
         if (doc.graphWeight === 'skip' || path.startsWith(`${REPORT_FOLDER}/`)) {
           // Excluded now — drop whatever an earlier night embedded for it

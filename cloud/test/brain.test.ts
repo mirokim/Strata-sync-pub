@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { putFile, deleteFile, type SyncDeps } from '../src/sync.js'
 import { listVersions, readVersion, previousVersion, diffLines, historyKey, parseHistoryKey, HISTORY_KEEP, HISTORY_PREFIX } from '../src/history.js'
 import { recall, splitNoteSections, fusedSearch } from '../src/recall.js'
-import { loadVaultView, invalidateVaultView } from '../src/vaultIndex.js'
+import { loadVaultView, invalidateVaultView, Bm25 } from '../src/vaultIndex.js'
+import type { ParsedVaultDoc } from '../../mcp/src/lint/vaultDoc.js'
 import { callTool, type McpDeps } from '../src/mcp.js'
 import { memberNotePath, DEFAULT_MEMBER } from '../src/members.js'
 import { reactToSave, type LlmCall } from '../src/reactions.js'
@@ -202,9 +203,9 @@ describe('vault view snapshot', () => {
     await putFile(deps, { path: 'd/3.md', body: enc('# 3\n\nchanged'), mtime: 2, author: 'b' })
     invalidateVaultView(); reads.length = 0
     const v2 = await loadVaultView(spied, true)
-    expect(v2.docs.get('d/3.md')?.body).toContain('changed')
-    expect(reads).toEqual([VAULT_SNAPSHOT_KEY, 'd/3.md'])
-    expect(v2.contents.get('d/3.md')).toContain('changed')
+    expect(await v2.bodyOf('d/3.md')).toContain('changed')
+    expect(reads.slice(0, 2)).toEqual([VAULT_SNAPSHOT_KEY, 'd/3.md'])       // the body read above is the third
+    expect(v2.bm25().search('changed').map(h => h.path)).toEqual(['d/3.md'])
   })
 })
 
@@ -238,13 +239,13 @@ describe('image documents', () => {
     await putFile({ ...deps, now: () => 2_000 }, { path: 'attachments/paste.md', body: enc(renderImageDoc({ imagePath: 'attachments/paste.jpg', pastedInto: 'design/Menu.md' })), mtime: 1, author: 'kim' })
     expect(await ensureImageDoc(deps, 'attachments/paste.jpg')).toBe('exists')
     invalidateVaultView()
-    const pending = undescribedImages(await loadVaultView(deps, true))
+    const pending = await undescribedImages(await loadVaultView(deps, true))
     expect(pending.map(p => [p.doc, p.image, p.pastedInto])).toEqual([['attachments/shot.md', 'attachments/shot.png', undefined], ['attachments/paste.md', 'attachments/paste.jpg', 'design/Menu.md']])
     // Once described (by a client over vault_write) it drops off the list
     const described = renderImageDoc({ imagePath: 'attachments/shot.png' }).replace(DESCRIBING_PLACEHOLDER, '검은 배경 위의 파란 아이콘. 텍스트 없음.\nTags: icon, blue')
     await putFile(deps, { path: 'attachments/shot.md', body: enc(described), mtime: 3, author: 'kim' })
     invalidateVaultView()
-    expect(undescribedImages(await loadVaultView(deps, true)).map(p => p.doc)).toEqual(['attachments/paste.md'])
+    expect((await undescribedImages(await loadVaultView(deps, true))).map(p => p.doc)).toEqual(['attachments/paste.md'])
     const r = parse(await callTool({ ...deps, author: 'kim' }, 'images_undescribed', {}))
     expect(r.count).toBe(1)
     expect(r.guide).toContain('vault_write')
@@ -265,6 +266,13 @@ describe('image documents', () => {
   })
 })
 
+/** What the view does between two heads: drop documents that vanished or changed, add the new versions. */
+function applyDelta(index: Bm25, before: Map<string, ParsedVaultDoc>, after: Map<string, ParsedVaultDoc>): Bm25 {
+  for (const [path, d] of before) if (after.get(path) !== d) index.remove(path)
+  for (const [path, d] of after) if (before.get(path) !== d) index.add(path, d, d.body)
+  return index
+}
+
 describe('incremental BM25', () => {
   it('re-tokenises only changed documents and keeps scores identical to a fresh index', async () => {
     const { Bm25 } = await import('../src/vaultIndex.js')
@@ -276,7 +284,7 @@ describe('incremental BM25', () => {
     v2.set('b.md', parseVaultDoc('b.md', '# B\n\n배터리 팩 공급사', 2))   // changed
     v2.delete('c.md')                                                       // removed
     v2.set('d.md', parseVaultDoc('d.md', '# D\n\n소음 측정 리포트', 2))     // added
-    const incremental = new Bm25(v2, base)
+    const incremental = applyDelta(Bm25.from(base), v1, v2)
     const fresh = new Bm25(v2)
     for (const q of ['배터리', '소음', '수명 결정', '공급사']) {
       expect(incremental.search(q, 5).map(h => [h.path, Number(h.score.toFixed(6))])).toEqual(fresh.search(q, 5).map(h => [h.path, Number(h.score.toFixed(6))]))
@@ -479,7 +487,7 @@ describe('image document edge cases', () => {
     }
     await putFile({ ...deps, now: () => 500 }, { path: 'notes/plain.md', body: enc('# plain\n\n## Description\n\n'), mtime: 1, author: 'kim' })
     invalidateVaultView()
-    const pending = undescribedImages(await loadVaultView(deps, true))
+    const pending = await undescribedImages(await loadVaultView(deps, true))
     expect(pending.map(p => p.doc)).toEqual(['attachments/early.md', 'attachments/mid.md', 'attachments/late.md'])
     expect(pending.map(p => p.since)).toEqual([1_000, 2_000, 3_000])
   })
@@ -507,24 +515,23 @@ describe('vault view edge cases', () => {
     invalidateVaultView()
     const v1 = await loadVaultView(deps, true)
     expect(v1.docs.size).toBe(3)
-    const rewritten = JSON.parse(await decodeSnapshot(blobs.objects.get(VAULT_SNAPSHOT_KEY)!)) as { version: number; docs: { path: string }[] }
-    expect(rewritten.version).toBe(1)
-    expect(rewritten.docs.map(d => d.path).sort()).toEqual(['d/0.md', 'd/1.md', 'd/2.md'])
+    const rewritten = await decodeSnapshot(blobs.objects.get(VAULT_SNAPSHOT_KEY)!)
+    expect(rewritten.map(d => d.path).sort()).toEqual(['d/0.md', 'd/1.md', 'd/2.md'])
     // A snapshot of a future format is not trusted either: everything is read from R2 again
-    blobs.objects.set(VAULT_SNAPSHOT_KEY, enc(JSON.stringify({ version: 2, head: 3, docs: [{ path: 'd/0.md', etag: (await meta.get('d/0.md'))!.etag, content: 'STALE' }] })))
+    blobs.objects.set(VAULT_SNAPSHOT_KEY, enc(JSON.stringify({ version: 99, head: 3 }) + '\n' + JSON.stringify({ path: 'd/0.md', etag: (await meta.get('d/0.md'))!.etag, content: 'STALE' }) + '\n'))
     invalidateVaultView()
     const reads: string[] = []
     const spied = { ...deps, blobs: Object.assign(Object.create(blobs), { get: async (p: string) => { reads.push(p); return blobs.get(p) } }) as MemoryBlobs }
     const v2 = await loadVaultView(spied, true)
-    expect(v2.docs.get('d/0.md')?.body).toContain('body 0')
     expect(reads.filter(p => p.startsWith('d/'))).toHaveLength(3)
+    expect(await v2.bodyOf('d/0.md')).toContain('body 0')
     // A snapshot entry with a stale hash is not used for that document
-    blobs.objects.set(VAULT_SNAPSHOT_KEY, enc(JSON.stringify({ version: 1, head: 3, docs: [{ path: 'd/0.md', etag: 'stale', content: 'STALE' }, { path: 'd/1.md', etag: (await meta.get('d/1.md'))!.etag, content: 'from snapshot' }] })))
+    blobs.objects.set(VAULT_SNAPSHOT_KEY, enc(JSON.stringify({ version: 2, head: 3 }) + '\n' + JSON.stringify({ path: 'd/0.md', etag: 'stale', content: 'STALE' }) + '\n' + JSON.stringify({ path: 'd/1.md', etag: (await meta.get('d/1.md'))!.etag, content: '# 1\n\nfrom snapshot' }) + '\n'))
     invalidateVaultView(); reads.length = 0
     const v3 = await loadVaultView(spied, true)
-    expect(v3.docs.get('d/0.md')?.body).toContain('body 0')
-    expect(v3.contents.get('d/1.md')).toBe('from snapshot')
     expect(reads.filter(p => p.startsWith('d/')).sort()).toEqual(['d/0.md', 'd/2.md'])
+    expect(v3.bm25().search('snapshot').map(h => h.path)).toEqual(['d/1.md'])   // indexed from the snapshot text
+    expect(await v3.bodyOf('d/0.md')).toContain('body 0')
   })
 
   it('caps R2 reads per load at 800 and catches up on the next forced load', async () => {
@@ -554,14 +561,14 @@ describe('vault view edge cases', () => {
     const v1 = new Map([mk('a.md', '# A\n\nalpha beta'), mk('b.md', '# B\n\nbeta gamma'), mk('c.md', '# C\n\ngamma delta')])
     const i1 = new Bm25(v1)
     const v2 = new Map(v1); v2.delete('c.md')
-    const i2 = new Bm25(v2, i1)
+    const i2 = applyDelta(Bm25.from(i1), v1, v2)
     expect(i2.search('delta')).toEqual([])
     const v3 = new Map(v2); v3.set('c.md', parseVaultDoc('c.md', '# C\n\ngamma delta', 2))
-    const i3 = new Bm25(v3, i2)
+    const i3 = applyDelta(Bm25.from(i2), v2, v3)
     const fresh = new Bm25(v3)
     const scores = (idx: InstanceType<typeof Bm25>, q: string) => idx.search(q).map(h => [h.path, Number(h.score.toFixed(6))])
     for (const q of ['gamma', 'delta', 'beta', 'alpha']) expect(scores(i3, q)).toEqual(scores(fresh, q))
-    expect(scores(new Bm25(v3, i1), 'gamma')).toEqual(scores(fresh, 'gamma'))   // skipping a generation is fine too
+    expect(scores(applyDelta(Bm25.from(i1), v1, v3), 'gamma')).toEqual(scores(fresh, 'gamma'))   // skipping a generation is fine too
     expect(i3.search('')).toEqual([])
     expect(i3.search('beta', 10, new Set(['a.md'])).map(h => h.path)).toEqual(['b.md'])
   })
