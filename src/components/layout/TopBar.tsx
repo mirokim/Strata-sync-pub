@@ -1,48 +1,9 @@
-import { Monitor, Settings, Terminal, PanelLeft, PanelRight, Type, Bot, Pencil, ScrollText } from 'lucide-react'
+import { Monitor, Settings, Terminal, PanelLeft, PanelRight, Type, Bot, ScrollText } from 'lucide-react'
 import { useUIStore } from '@/stores/uiStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useBotStore } from '@/stores/botStore'
-import { useChatStore } from '@/stores/chatStore'
-import { MODEL_OPTIONS } from '@/lib/modelConfig'
 import { cn } from '@/lib/utils'
 import VaultTabs from './VaultTabs'
-
-// ── Connection mode badge ──────────────────────────────────────────────────
-
-function ConnectionBadge() {
-  // Currently the GUI always uses direct API calls.
-  // When MCP-relay mode is added later, this will switch.
-  const mode: 'api' | 'mcp' = 'api'
-  const isApi = mode === 'api'
-
-  return (
-    <span
-      style={{
-        fontSize: 9, fontWeight: 700, letterSpacing: '0.07em',
-        color: isApi ? 'var(--color-success)' : 'var(--color-info)',
-        background: isApi ? 'var(--color-success-bg)' : 'var(--color-info-bg)',
-        border: `1px solid ${isApi ? 'var(--color-success-border)' : 'var(--color-info-border)'}`,
-        borderRadius: 3, padding: '1px 5px',
-        cursor: 'default',
-      }}
-      title={isApi ? 'API mode — direct LLM calls' : 'MCP mode — via Claude Code'}
-    >
-      {isApi ? 'API' : 'MCP'}
-    </span>
-  )
-}
-
-/** Map full model ID → compact display label (e.g. "Sonnet 4.6") */
-const MODEL_SHORT: Record<string, string> = Object.fromEntries(
-  MODEL_OPTIONS.map(m => {
-    const short = m.label
-      .replace('Claude ', '')
-      .replace('GPT-', 'GPT-')
-      .replace('Gemini ', 'Gemini ')
-      .replace('Grok ', 'Grok ')
-    return [m.id, short]
-  })
-)
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -52,7 +13,6 @@ export default function TopBar() {
     leftPanelCollapsed, rightPanelCollapsed,
     setGraphMode, setCenterTab,
     toggleLeftPanel, toggleRightPanel,
-    editAgentPanelVisible, toggleEditAgentPanel,
     toggleSettingsPanel,
   } = useUIStore()
   const { toggleNodeLabels } = useSettingsStore()
@@ -60,12 +20,6 @@ export default function TopBar() {
   const showNodeLabels = useSettingsStore(s => s.showNodeLabels)
   const slackConfigured = useSettingsStore(s => !!(s.slackBotConfig?.botToken && s.slackBotConfig?.appToken))
   const { running: botRunning, startBot, stopBot } = useBotStore()
-
-  // Current chat model badge
-  const activePersona    = useChatStore(s => s.activePersonas[0])
-  const personaModels    = useSettingsStore(s => s.personaModels)
-  const chatModelId      = activePersona ? (personaModels[activePersona as keyof typeof personaModels] ?? '') : ''
-  const chatModelShort   = MODEL_SHORT[chatModelId] ?? chatModelId.split('-').slice(0, 2).join('-')
 
   const isElectron =
     typeof window !== 'undefined' && window.electronAPI?.isElectron === true
@@ -106,26 +60,6 @@ export default function TopBar() {
 
       {/* Right: controls — no-drag so buttons are clickable */}
       <div className="flex items-center gap-0.5 px-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-
-        {/* ── Group 1: connection + model info (read-only badges) ── */}
-        <ConnectionBadge />
-
-        {chatModelShort && (
-          <span style={{
-            fontSize: 10, fontWeight: 500, letterSpacing: '0.02em',
-            color: 'var(--color-text-muted)',
-            padding: '1px 6px',
-            border: '1px solid var(--color-border)',
-            borderRadius: 3,
-            marginLeft: 4,
-            cursor: 'default',
-          }} title={`Current chat model: ${chatModelId}`}>
-            {chatModelShort}
-          </span>
-        )}
-
-        {/* ── Divider ── */}
-        <div style={{ width: 1, height: 14, background: 'var(--color-border)', margin: '0 6px' }} />
 
         {/* ── Group 2: view controls ── */}
 
@@ -235,16 +169,6 @@ export default function TopBar() {
           aria-label="Toggle right panel"
         >
           <PanelRight size={14} />
-        </button>
-
-        <button
-          onClick={toggleEditAgentPanel}
-          className={cn('flex items-center justify-center w-7 h-7 rounded transition-colors', 'hover:bg-[var(--color-bg-hover)]')}
-          style={{ color: editAgentPanelVisible ? 'var(--color-accent)' : 'var(--color-text-muted)' }}
-          title={editAgentPanelVisible ? 'Close edit agent' : 'Open edit agent'}
-          aria-label="Toggle edit agent panel"
-        >
-          <Pencil size={13} />
         </button>
 
       </div>

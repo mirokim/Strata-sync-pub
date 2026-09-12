@@ -11,8 +11,8 @@ import {
   X, BarChart2, Trash2,
   Settings, Cpu, GitMerge, Keyboard, Info,
   Layers, Clock,
-  Users, Tag, Download, Bot, Database, Search, Fish, Pencil, Coins, Send,
-  Link2, Wand2, HardDrive, Sparkles, Cloud,
+  Users, Tag, Download, Bot, Database, Search, Fish, Coins, Send,
+  Link2, HardDrive, Sparkles, Cloud,
 } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
@@ -34,7 +34,6 @@ import TeamSyncTab from './tabs/TeamSyncTab'
 import SearchTab from './tabs/SearchTab'
 import VectorEmbedTab from './tabs/VectorEmbedTab'
 import MirofishTab from './tabs/MirofishTab'
-import EditAgentTab from './tabs/EditAgentTab'
 import UsageTab from './tabs/UsageTab'
 import JiraDispatchTab from './tabs/JiraDispatchTab'
 import ConfluencePublishTab from './tabs/ConfluencePublishTab'
@@ -70,7 +69,6 @@ const NAV: NavGroup[] = [
   {
     label: 'Agents',
     items: [
-      { id: 'edit-agent', icon: Wand2, label: 'Edit Agent' },
       { id: 'cron-jobs',  icon: Clock, label: 'Cron Jobs' },
       { id: 'mirofish',   icon: Fish,  label: 'MiroFish' },
     ],
@@ -114,7 +112,7 @@ const NAV: NavGroup[] = [
  */
 const ELECTRON_ONLY: ReadonlySet<SettingsTab> = new Set<SettingsTab>([
   'confluence', 'confluence-publish', 'jira', 'jira-dispatch', 'slack-bot',
-  'edit-agent', 'cron-jobs', 'mirofish', 'vault-manager', 'team-sync', 'trash',
+  'cron-jobs', 'mirofish', 'vault-manager', 'team-sync', 'trash',
 ])
 
 export function visibleNav(web = isWebMode()): NavGroup[] {
@@ -149,7 +147,6 @@ function renderTabContent(tab: SettingsTab) {
     case 'team-sync':     return <TeamSyncTab />
     case 'server':        return <ServerTab />
     case 'mirofish':   return <MirofishTab />
-    case 'edit-agent': return <EditAgentTab />
     case 'cron-jobs':  return <CronJobTab />
     case 'usage':      return <UsageTab />
     case 'about':      return <AboutTab />

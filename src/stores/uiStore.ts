@@ -70,7 +70,7 @@ export const useUIStore = create<UIState>()(
       leftPanelCollapsed: false,
       rightPanelCollapsed: false,
       compareVaultId: null,
-      editAgentPanelVisible: true,
+      editAgentPanelVisible: false,
       editAgentSubTab: 'chat',
       leftPanelWidth: 250,
       rightPanelWidth: 680,

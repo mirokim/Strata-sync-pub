@@ -3,16 +3,14 @@
  * Always visible; shows live counts even at zero.
  */
 import { useUsageStore } from '@/stores/usageStore'
-import { useEditAgentStore } from '@/stores/editAgentStore'
 import { formatTokens, formatCost } from '@/lib/formatUtils'
-import { RotateCcw, Zap, Coins } from 'lucide-react'
+import { RotateCcw, Coins } from 'lucide-react'
 
 export default function StatusBar() {
   const totalInputTokens  = useUsageStore(s => s.totalInputTokens)
   const totalOutputTokens = useUsageStore(s => s.totalOutputTokens)
   const totalCostUsd      = useUsageStore(s => s.totalCostUsd)
   const resetSession      = useUsageStore(s => s.resetSession)
-  const isAgentRunning    = useEditAgentStore(s => s.isRunning)
 
   return (
     <div style={{
@@ -28,20 +26,6 @@ export default function StatusBar() {
       height: 26,
       flexShrink: 0,
     }}>
-      {/* Edit agent indicator */}
-      {isAgentRunning && (
-        <span style={{
-          display: 'flex', alignItems: 'center', gap: 4,
-          color: 'var(--color-success)',
-          paddingRight: 12,
-          borderRight: '1px solid rgba(255,255,255,0.07)',
-          marginRight: 12,
-        }}>
-          <Zap size={10} />
-          Edit Agent running
-        </span>
-      )}
-
       {/* Spacer */}
       <div style={{ flex: 1 }} />
 

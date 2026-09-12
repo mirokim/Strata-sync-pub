@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback } from 'react'
 import { motion } from 'framer-motion'
 import TopBar from './TopBar'
 import ResizeHandle from './ResizeHandle'
@@ -16,7 +16,7 @@ import StatusBar from './StatusBar'
 import ToastContainer from '@/components/shared/ToastContainer'
 import CommandPalette from '@/components/shared/CommandPalette'
 import ErrorBoundary from '@/components/shared/ErrorBoundary'
-import { useUIStore, RIGHT_PANEL_AGENT_MIN } from '@/stores/uiStore'
+import { useUIStore } from '@/stores/uiStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 
 const LEFT_MIN = 140
@@ -32,7 +32,6 @@ const NO_TRANSITION = { duration: 0 } as const
 export default function MainLayout() {
   const {
     centerTab, editingDocId, leftPanelCollapsed, rightPanelCollapsed,
-    editAgentPanelVisible,
     leftPanelWidth: leftWidth, rightPanelWidth: rightWidth,
     setLeftPanelWidth, setRightPanelWidth,
   } = useUIStore()
@@ -46,14 +45,6 @@ export default function MainLayout() {
     background: 'var(--color-bg-secondary)',
     overflow: 'hidden' as const,
   }
-
-  // Auto-expand right panel when edit agent opens, if currently too narrow
-  useEffect(() => {
-    if (editAgentPanelVisible) {
-      const w = useUIStore.getState().rightPanelWidth
-      if (w < RIGHT_PANEL_AGENT_MIN) setRightPanelWidth(RIGHT_PANEL_AGENT_MIN)
-    }
-  }, [editAgentPanelVisible, setRightPanelWidth])
 
   const handleLeftResize = useCallback((delta: number) => {
     const w = useUIStore.getState().leftPanelWidth
@@ -203,7 +194,7 @@ export default function MainLayout() {
             </div>
           )}
 
-          {/* Right panel — Chat + EditAgent */}
+          {/* Right panel — Chat */}
           <motion.div
             initial={isFast ? false : { x: rightWidth, opacity: 0 }}
             animate={{

@@ -8,8 +8,6 @@ import { useRagApi } from '@/hooks/useRagApi'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useBotStore } from '@/stores/botStore'
 import { useSyncStore } from '@/stores/syncStore'
-import { useEditAgent } from '@/hooks/useEditAgent'
-import { useEditAgentStore } from '@/stores/editAgentStore'
 import { useCronExecutor } from '@/hooks/useCronExecutor'
 import LaunchPage from '@/components/launch/LaunchPage'
 import MainLayout from '@/components/layout/MainLayout'
@@ -33,7 +31,6 @@ export default function App() {
   useVaultWatcher()
   usePersonaVaultSaver()
   useRagApi()
-  useEditAgent()
   useCronExecutor()
   const vaultLoaded = useRef(false)
   const appReady = useRef(false)
@@ -47,8 +44,6 @@ export default function App() {
   const { setRunning, startBot } = useBotStore()
   const { notification, dismissNotification } = useSyncStore()
   const { watchDiff, setWatchDiff } = useVaultStore()
-  const vaultRefreshCountdown = useEditAgentStore(s => s.vaultRefreshCountdown)
-  const { cancelVaultRefreshCountdown } = useEditAgentStore()
 
   // Skip launch animation when vault is already set (crash recovery / normal restart)
   // LaunchPage is only shown on first use (no vault selected yet)
@@ -192,76 +187,6 @@ export default function App() {
           >
             ×
           </button>
-        </div>
-      )}
-
-      {/* Edit Agent vault auto-refresh countdown banner */}
-      {vaultRefreshCountdown !== null && (
-        <div style={{
-          position: 'fixed',
-          bottom: 24,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 10001,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 10,
-          padding: '12px 16px',
-          borderRadius: 10,
-          background: 'var(--color-bg-surface)',
-          border: '1px solid var(--color-border)',
-          boxShadow: '0 6px 24px rgba(0,0,0,0.45)',
-          minWidth: 300,
-          maxWidth: 380,
-        }}>
-          {/* Top: icon + text + buttons */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 16, flexShrink: 0 }}>✏️</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)' }}>
-                Edit Agent modified files
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
-                The vault will auto-refresh in {vaultRefreshCountdown}s
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-              <button
-                onClick={() => { cancelVaultRefreshCountdown(); if (vaultPath) void loadVault(vaultPath) }}
-                style={{
-                  padding: '4px 10px', borderRadius: 5, fontSize: 11, fontWeight: 600,
-                  background: 'var(--color-accent)', color: '#fff',
-                  border: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
-                }}
-              >
-                Now
-              </button>
-              <button
-                onClick={cancelVaultRefreshCountdown}
-                style={{
-                  padding: '4px 10px', borderRadius: 5, fontSize: 11,
-                  background: 'transparent', color: 'var(--color-text-muted)',
-                  border: '1px solid var(--color-border)', cursor: 'pointer',
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-          {/* Progress bar */}
-          <div style={{
-            height: 3, borderRadius: 2,
-            background: 'var(--color-border)',
-            overflow: 'hidden',
-          }}>
-            <div style={{
-              height: '100%',
-              width: `${(vaultRefreshCountdown / 30) * 100}%`,
-              background: 'var(--color-accent)',
-              borderRadius: 2,
-              transition: 'width 0.9s linear',
-            }} />
-          </div>
         </div>
       )}
 

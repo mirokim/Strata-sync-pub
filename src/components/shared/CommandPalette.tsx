@@ -6,8 +6,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useUIStore } from '@/stores/uiStore'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useGraphStore } from '@/stores/graphStore'
-import { File, Settings, PanelLeft, PanelRight, Pencil, RotateCcw, Search, Zap } from 'lucide-react'
-import { runEditAgentCycle } from '@/services/editAgentRunner'
+import { File, Settings, PanelLeft, PanelRight, RotateCcw, Search } from 'lucide-react'
 
 interface PaletteItem {
   id: string
@@ -22,7 +21,6 @@ export default function CommandPalette() {
   const setOpen           = useUIStore(s => s.setCommandPaletteOpen)
   const toggleLeft        = useUIStore(s => s.toggleLeftPanel)
   const toggleRight       = useUIStore(s => s.toggleRightPanel)
-  const toggleAgent       = useUIStore(s => s.toggleEditAgentPanel)
   const toggleSettings    = useUIStore(s => s.toggleSettingsPanel)
   const openInEditor      = useUIStore(s => s.openInEditor)
   const setFocusNode      = useGraphStore(s => s.setFocusNode)
@@ -52,21 +50,11 @@ export default function CommandPalette() {
       action: () => { toggleRight(); setOpen(false) },
     },
     {
-      id: 'cmd:agent-panel', label: 'Toggle Edit Agent Panel', sub: 'Toggle edit agent',
-      icon: <Pencil size={14} />,
-      action: () => { toggleAgent(); setOpen(false) },
-    },
-    {
-      id: 'cmd:run-agent', label: 'Run Edit Agent Now', sub: 'Run edit agent cycle now',
-      icon: <Zap size={14} />,
-      action: () => { runEditAgentCycle(); setOpen(false) },
-    },
-    {
       id: 'cmd:reload', label: 'Reload Page', sub: 'Reload',
       icon: <RotateCcw size={14} />,
       action: () => { window.location.reload() },
     },
-  ], [toggleSettings, toggleLeft, toggleRight, toggleAgent, setOpen])
+  ], [toggleSettings, toggleLeft, toggleRight, setOpen])
 
   // Vault file items
   const fileItems: PaletteItem[] = useMemo(() => {
