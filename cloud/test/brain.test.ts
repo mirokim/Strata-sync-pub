@@ -8,6 +8,7 @@ import { memberNotePath, DEFAULT_MEMBER } from '../src/members.js'
 import { reactToSave, type LlmCall } from '../src/reactions.js'
 import { route, type Env } from '../src/index.js'
 import { MemoryMeta, MemoryBlobs, enc, dec } from './fakes.js'
+import { renderImageDoc, setDescription, tagsFrom, describeImage, isImagePath, imageDocPath, describedImageEtag, DESCRIBING_PLACEHOLDER } from '../src/images.js'
 
 let deps: SyncDeps
 let meta: MemoryMeta
@@ -202,5 +203,72 @@ describe('vault view snapshot', () => {
     expect(v2.docs.get('d/3.md')?.body).toContain('changed')
     expect(reads).toEqual([VAULT_SNAPSHOT_KEY, 'd/3.md'])
     expect(v2.contents.get('d/3.md')).toContain('changed')
+  })
+})
+
+describe('image documents', () => {
+  const png = () => enc('\x89PNG fake bytes')
+
+  it('paths, tags and the client-side placeholder document', () => {
+    expect(isImagePath('attachments/2026-09/pasted.PNG')).toBe(true)
+    expect(isImagePath('_system/x.png')).toBe(false)
+    expect(isImagePath('notes/a.md')).toBe(false)
+    expect(imageDocPath('attachments/a b.jpeg')).toBe('attachments/a b.md')
+    expect(tagsFrom('blah\nTags: UI, Login Screen, #dark-mode, ui')).toEqual(['ui', 'login-screen', 'dark-mode'])
+    const doc = renderImageDoc({ imagePath: 'attachments/pasted-1.png', pastedInto: 'design/Menu.md' })
+    expect(doc).toContain('type: image')
+    expect(doc).toContain('image: "pasted-1.png"')
+    expect(doc).toContain('![[pasted-1.png]]')
+    expect(doc).toContain('Pasted into [[Menu]]')
+    expect(doc).toContain(`## Description\n\n${DESCRIBING_PLACEHOLDER}`)
+  })
+
+  it('setDescription replaces only the Description section and stamps the frontmatter', () => {
+    const before = renderImageDoc({ imagePath: 'a.png', pastedInto: 'b.md' }) + '\n## Notes\n\nkeep me\n'
+    const after = setDescription(before, 'A login screen.\nText: Sign in\nTags: ui, login', { by: 'test-model', at: 1_000, imageEtag: 'e1' })
+    expect(after).toContain('described_by: "test-model"')
+    expect(after).toContain('described_image_etag: "e1"')
+    expect(after).toContain('tags: [image, ui, login]')
+    expect(after).toContain('pasted_into: "b.md"')
+    expect(after).toContain('## Description\n\nA login screen.\nText: Sign in\nTags: ui, login\n\n## Notes\n\nkeep me')
+    expect(after).not.toContain(DESCRIBING_PLACEHOLDER)
+    expect(describedImageEtag(after)).toBe('e1')
+  })
+
+  it('describeImage writes a new document, updates a client placeholder, and is idempotent per image version', async () => {
+    const calls: string[] = []
+    const ddeps = { ...deps, now: () => 7_000, model: 'm', describe: async (_b: Uint8Array, mime: string, prompt: string) => { calls.push(mime); return prompt.includes('search index') ? 'Two buttons on a dark screen.\nTags: ui, buttons' : '' } }
+    await putFile(deps, { path: 'attachments/shot.png', body: png(), mtime: 1, author: 'kim' })
+    expect(await describeImage(ddeps, { kind: 'describe', path: 'attachments/shot.png' })).toMatchObject({ status: 'described', doc: 'attachments/shot.md' })
+    const created = dec(blobs.objects.get('attachments/shot.md')!)
+    expect(created).toContain('Two buttons on a dark screen.')
+    expect(created).toContain('tags: [image, ui, buttons]')
+    expect(meta.rows.get('attachments/shot.md')!.author).toBe('strata-bot')
+    expect(calls).toEqual(['image/png'])
+    expect(await describeImage(ddeps, { kind: 'describe', path: 'attachments/shot.png' })).toEqual({ status: 'skipped', reason: 'already described' })
+    // A placeholder written by the app at paste time is completed in place
+    await putFile(deps, { path: 'attachments/paste.jpg', body: png(), mtime: 1, author: 'kim' })
+    await putFile(deps, { path: 'attachments/paste.md', body: enc(renderImageDoc({ imagePath: 'attachments/paste.jpg', pastedInto: 'design/Menu.md' })), mtime: 1, author: 'kim' })
+    expect((await describeImage(ddeps, { kind: 'describe', path: 'attachments/paste.jpg' })).status).toBe('described')
+    const updated = dec(blobs.objects.get('attachments/paste.md')!)
+    expect(updated).toContain('Pasted into [[Menu]]')
+    expect(updated).not.toContain(DESCRIBING_PLACEHOLDER)
+    expect(await describeImage(ddeps, { kind: 'describe', path: 'attachments/paste.jpg', etag: 'old' })).toEqual({ status: 'skipped', reason: 'superseded by a newer upload' })
+    expect(await describeImage(ddeps, { kind: 'describe', path: 'notes/x.md' })).toEqual({ status: 'skipped', reason: 'not an image' })
+  })
+
+  it('vault_read returns the image and its document; PUT of an image queues a describe job', async () => {
+    await putFile(deps, { path: 'attachments/shot.png', body: png(), mtime: 1, author: 'kim' })
+    const r = await callTool({ ...deps, author: 'kim' }, 'vault_read', { path: 'attachments/shot.png' })
+    expect(r.content[0]).toMatchObject({ type: 'image', mimeType: 'image/png' })
+    expect((r.content[1] as { text: string }).text).toContain('no image document yet')
+    const sent: unknown[] = []
+    const env = { TEAM_TOKEN: 'secret', REACTION_QUEUE: { send: async (m: unknown) => { sent.push(m) } } } as unknown as Env
+    const waited: Promise<unknown>[] = []
+    const ctx = { waitUntil: (p: Promise<unknown>) => { waited.push(p) }, passThroughOnException() {}, props: {} } as unknown as ExecutionContext
+    const res = await route(new Request('https://w/v1/file?path=attachments%2Fnew.png', { method: 'PUT', headers: { authorization: 'Bearer secret', 'x-mtime': '5', 'x-author': 'kim' }, body: png() }), env, ctx, deps)
+    expect(res.status).toBe(201)
+    await Promise.all(waited)
+    expect(sent).toEqual([{ kind: 'describe', path: 'attachments/new.png', etag: meta.rows.get('attachments/new.png')!.etag }])
   })
 })

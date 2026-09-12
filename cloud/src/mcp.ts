@@ -20,6 +20,7 @@ import { readMembers, recordRoutineRun, dueRoutines, findMember, renderMemberPro
 import type { SearchHit } from './nightly.js'
 import { recall, fusedSearch } from './recall.js'
 import { listVersions, readVersion, previousVersion, diffLines } from './history.js'
+import { isImagePath, imageDocPath, mimeOf } from './images.js'
 
 export interface McpDeps extends SyncDeps {
   /** Semantic search when Vectorize is configured; otherwise BM25 only. */
@@ -34,7 +35,7 @@ const dec = new TextDecoder()
 
 const TOOLS = [
   { name: 'vault_list', description: 'List documents in the team vault (path, title, tags, modified). Optional folder prefix filter.', inputSchema: { type: 'object' as const, properties: { folder: { type: 'string', description: 'Only paths under this folder' }, limit: { type: 'number', description: 'Max entries (default 200)' } } } },
-  { name: 'vault_read', description: 'Read a document by vault path (e.g. "active/Combat System.md").', inputSchema: { type: 'object' as const, properties: { path: { type: 'string' } }, required: ['path'] } },
+  { name: 'vault_read', description: 'Read a document by vault path (e.g. "active/Combat System.md"). For an image path (png/jpg/webp/gif) returns the image itself plus its image document (the description written for it) — refine that document with vault_write when the description is wrong or thin.', inputSchema: { type: 'object' as const, properties: { path: { type: 'string' } }, required: ['path'] } },
   { name: 'vault_search', description: 'Search the vault. Uses the semantic index when available and BM25 keyword search always; returns paths with scores and a snippet. For "what do we know about X" prefer vault_recall.', inputSchema: { type: 'object' as const, properties: { query: { type: 'string' }, topK: { type: 'number', description: 'default 8' } }, required: ['query'] } },
   { name: 'vault_recall', description: 'What the team knows about a topic, as one bundle: the matching documents (excerpts), the documents linked around them, what the AI members remember about it, and what members said when those documents were saved. Use this before answering any question about the team\'s work; cite the paths it lists.', inputSchema: { type: 'object' as const, properties: { query: { type: 'string' }, budget: { type: 'number', description: 'Characters of document text to include (default 16000, max 60000)' }, seeds: { type: 'number', description: 'Matching documents (default 5)' }, neighbours: { type: 'number', description: 'Linked documents around them (default 8)' }, format: { type: 'string', enum: ['markdown', 'json'], description: 'default markdown' } }, required: ['query'] } },
   { name: 'vault_history', description: 'How a document changed: its archived versions (who saved, when) and a line diff — by default between the previous version and the current one, or from a given version etag to now. Use it to answer "when did we change our mind about X" or to see what a save actually altered.', inputSchema: { type: 'object' as const, properties: { path: { type: 'string' }, etag: { type: 'string', description: 'Compare this archived version with the current one (default: the previous version)' }, limit: { type: 'number', description: 'Versions to list (default 10)' }, diff: { type: 'boolean', description: 'Include the diff (default true)' } }, required: ['path'] } },
@@ -51,6 +52,12 @@ const TOOLS = [
 ]
 
 type Args = Record<string, unknown>
+
+function toBase64(bytes: Uint8Array): string {
+  let bin = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(bin)
+}
 
 function text(data: unknown): CallToolResult {
   return { content: [{ type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data, null, 2) }] }
@@ -74,8 +81,15 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       return text({ count: items.length, total: view.docs.size, items })
     }
     case 'vault_read': {
-      const r = await getFile(deps, String(args.path ?? ''))
-      if (r.status !== 200 || !('bytes' in r) || !r.bytes) return fail(`${args.path}: ${r.status === 404 ? 'not found' : 'cannot read'}`)
+      const path = String(args.path ?? '')
+      const r = await getFile(deps, path)
+      if (r.status !== 200 || !('bytes' in r) || !r.bytes) return fail(`${path}: ${r.status === 404 ? 'not found' : 'cannot read'}`)
+      if (isImagePath(path)) {
+        const docPath = imageDocPath(normalizeVaultPath(path) ?? path)
+        const doc = await getFile(deps, docPath)
+        const docText = doc.status === 200 && 'bytes' in doc && doc.bytes ? dec.decode(doc.bytes) : `(no image document yet — write one at ${docPath} with vault_write)`
+        return { content: [{ type: 'image', data: toBase64(r.bytes), mimeType: mimeOf(path) }, { type: 'text', text: `Image document: ${docPath}\n\n${docText}` }] }
+      }
       return text(dec.decode(r.bytes))
     }
     case 'vault_search': {

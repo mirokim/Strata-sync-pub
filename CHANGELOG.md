@@ -6,6 +6,24 @@ The product is a shared brain for a team, not a wiki maintenance tool: one vault
 into, a graph over it, and AI members who read it through a role of their own.
 
 ### Added
+- **Around this document** — the editor's Brain panel: what the AI members said when it was
+  saved, its version history with diffs, which documents link here and which it links to,
+  proposals citing it, documents in the same neighbourhood (`src/lib/brain.ts`, `BrainPanel`).
+- **Recall** — MCP `vault_recall`: matching documents, the documents linked around them, what
+  members remember and what they said, in one bundle within a character budget
+  (`cloud/src/recall.ts`). `vault_search` uses the same rank fusion.
+- **Version history** — every replaced or deleted document version is archived under
+  `_system/history/` (20 per document); `GET /v1/history`, MCP `vault_history` with a line
+  diff. Member reactions now respond to the diff, not the whole document.
+- **Activity heat** — graph colour mode "Activity": recent edits, remarks and proposals warm a
+  document; untouched ones stay grey.
+- **Image documents** — paste or drop an image into the editor: it is uploaded to
+  `attachments/` with a placeholder document linking back; the server's vision model
+  (Workers AI, `VISION_MODEL`) writes the description, visible text and tags into it, so the
+  image is searchable, linkable and recallable. MCP `vault_read` on an image returns the image
+  and its document for a client to refine (`cloud/src/images.ts`).
+- Vault snapshot (`_system/vault-snapshot.json`) so a cold Worker isolate reads the vault in one
+  request instead of one per document.
 - **AI members** (Settings → AI Members) replace Reviewers and Jobs. A member is a role, a scope
   (folders, tags), routines on a cadence, and its own memory note `_members/<Name> (memory).md`.
   A Librarian ships by default; Designer, Editor, Researcher, Product lead and Continuity are
@@ -15,6 +33,12 @@ into, a graph over it, and AI members who read it through a role of their own.
 - **Reactions on save** (`cloud/src/reactions.ts`) — one LLM call per member whose scope covers
   the saved document, remark at `_members/<Name>/<document path>` linked to the document and the
   memory note. Queue `strata-reactions`, `REACTION_MODEL` / `REACTION_FOLDERS`.
+- **Product-development seed vault** (`scripts/seed-product.mjs`): an invented Korean robot-vacuum
+  start-up ("온다 로보틱스", S1 → S3, 2024-06 … 2026-09). ~3,900 documents at `--scale 1`
+  (~5,700 at `--scale 2`): numbered decision records (some 폐기 yet still cited), features, parts,
+  ECRs, weekly meeting notes per team, gate reviews, issues, test reports, firmware/app releases,
+  interviews, VOC, competitors, suppliers, certifications, people, glossary, index (MOC) notes.
+  Six phantom links, five orphan memos. `--wipe` also removes the PEP/RFC and game-world seeds.
 - Real seed data (`scripts/seed_vault.py`, stdlib only): Python PEPs + Rust RFCs as a decision
   corpus, a Korean Wikipedia crawl as an encyclopedia corpus; `wipe` clears a server.
 - Settings → Server shows the nightly batch log (embedding progress per run); `GET /v1/batch`.

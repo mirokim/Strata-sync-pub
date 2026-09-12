@@ -25,7 +25,9 @@ const codeBox: React.CSSProperties = {
 
 const TOOLS: [string, string][] = [
   ['vault_search', 'Search the vault (BM25 + semantic, fused by rank)'],
-  ['vault_read', 'Read a document by path'],
+  ['vault_recall', 'What the team knows about a topic — matching documents, the documents linked around them, member memory and remarks, in one bundle'],
+  ['vault_read', 'Read a document by path; an image path returns the image and its image document'],
+  ['vault_history', 'How a document changed — archived versions and a diff to now'],
   ['vault_list', 'List documents, optionally under a folder'],
   ['graph_lint', 'Structural lint: phantom links, single points of failure, orphans, stale hubs, near-duplicates'],
   ['graph_suggest_links', 'Documents a piece of text should link to'],

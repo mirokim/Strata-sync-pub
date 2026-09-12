@@ -381,6 +381,23 @@ describe('images', () => {
     await vault.poll()
     expect(await vault.api.readImage(A('assets/logo.png'))).not.toBe(url)
   })
+
+  it('pasteImage uploads the bytes plus a placeholder image document linking back, and announces the document', async () => {
+    await vault.api.loadFiles(vault.vaultPath)
+    const seen: string[] = []
+    vault.api.onChanged(e => { seen.push(e.changedFile ?? '*') })
+    const { imageRel, docRel, embed } = await vault.pasteImage(new TextEncoder().encode('PNG!'), 'png', A('active/Combat System.md'))
+    expect(imageRel).toBe('attachments/2026-09/pasted-20260912-1030-00.png')
+    expect(docRel).toBe('attachments/2026-09/pasted-20260912-1030-00.md')
+    expect(embed).toBe('![[pasted-20260912-1030-00.png]]')
+    expect(server.rows.get(imageRel)?.author).toBe('미로')
+    const doc = new TextDecoder().decode(server.blobs.get(docRel)!)
+    expect(doc).toContain('pasted_into: "active/Combat System.md"')
+    expect(doc).toContain('Pasted into [[Combat System]]')
+    expect(doc).toContain('![[pasted-20260912-1030-00.png]]')
+    expect(seen).toEqual([docRel])
+    expect(vault.imageRegistry()[imageRel.split('/').pop()!.toLowerCase()]?.relativePath ?? Object.values(vault.imageRegistry()).some(r => r.relativePath === imageRel)).toBeTruthy()
+  })
 })
 
 describe('watch (polling)', () => {

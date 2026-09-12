@@ -15,6 +15,7 @@ import { remoteVaultPath, saveWebConfig, type WebConfig } from './config'
 import { RemoteClient, RemoteError, type FetchLike } from './remoteClient'
 import { RemoteCache, defaultCacheBackend, type CacheBackend, type CachedRow } from './remoteCache'
 import { conflictName, numberedName } from '@/lib/conflictCopy'
+import { pastedImagePath, imageDocPath, renderImageDoc } from '@/lib/imageDoc'
 
 export { conflictName }
 
@@ -108,6 +109,20 @@ export class RemoteVault {
 
   /** Dot-folders and dot-files (`.strata-sync/`, `.obsidian/`, caches) never leave the browser — same rule as the desktop engine and the server. */
   private isPrivate(rel: string): boolean { return rel.split('/').some(seg => seg.startsWith('.')) }
+
+  /**
+   * Upload a pasted image and the placeholder image document next to it. The server's vision
+   * model completes the description; the app learns about both files on the next pull, so the
+   * document is announced here right away for the tree and the graph.
+   */
+  async pasteImage(bytes: Uint8Array, ext: string, pastedInto: string): Promise<{ imageRel: string; docRel: string; embed: string }> {
+    const imageRel = pastedImagePath(ext, new Date(this.now()))
+    const docRel = imageDocPath(imageRel)
+    await this.write(imageRel, bytes, { createOnly: true })
+    await this.write(docRel, enc.encode(renderImageDoc({ imagePath: imageRel, pastedInto: this.rel(pastedInto) })), { createOnly: true })
+    this.emitChanged(docRel)
+    return { imageRel, docRel, embed: `![[${imageRel.split('/').pop()}]]` }
+  }
 
   // ── Sync core ──────────────────────────────────────────────────────────────
 

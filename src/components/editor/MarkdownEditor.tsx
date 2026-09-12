@@ -32,6 +32,9 @@ import { invalidateTfIdfCache } from '@/lib/tfidfCache'
 import { MOCK_DOCUMENTS } from '@/data/mockDocuments'
 import { conflictName } from '@/lib/conflictCopy'
 import { loadWebConfig } from '@/web/config'
+import { currentRemoteVault } from '@/web/remoteVault'
+import { imageFileFrom, imageExtension } from '@/lib/imageDoc'
+import { docPath } from '@/lib/brain'
 import { showToast } from '@/stores/toastStore'
 import ProposalBanner from './ProposalBanner'
 import BrainPanel from './BrainPanel'
@@ -420,6 +423,28 @@ export default function MarkdownEditor() {
     if (target) openInEditor(target.id)
   }, [openInEditor])
 
+  // ── Image paste / drop → attachments/ + image document (web build) ──────────────
+  const handleImagePaste = useCallback(async (file: File, view: EditorView) => {
+    const remote = currentRemoteVault()
+    const current = loadedDocsRef.current?.find(d => d.id === editingDocId)
+    if (!remote || !current) { showToast('Pasting images needs the team server (web app).', 'warn'); return }
+    const ext = imageExtension(file.type)
+    if (!ext) return
+    if (file.size > 6 * 1024 * 1024) { showToast('Image is larger than 6 MB — resize it first.', 'warn'); return }
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      const { embed } = await remote.pasteImage(bytes, ext, docPath(current))
+      const pos = view.state.selection.main.head
+      view.dispatch({ changes: { from: pos, insert: `${embed}
+` }, selection: { anchor: pos + embed.length + 1 } })
+      showToast('Image saved — the description is on its way.', 'success')
+    } catch (e) {
+      showToast(`Image upload failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
+  }, [editingDocId])
+  const handleImagePasteRef = useRef(handleImagePaste)
+  handleImagePasteRef.current = handleImagePaste
+
   const handleLinkClickRef = useRef(handleLinkClick)
   handleLinkClickRef.current = handleLinkClick
 
@@ -560,6 +585,22 @@ export default function MarkdownEditor() {
           wikiPlugin,
           buildHighlightPlugin(),
           buildCommentPlugin(),
+          EditorView.domEventHandlers({
+            paste: (event, view) => {
+              const file = imageFileFrom(event.clipboardData)
+              if (!file) return false
+              event.preventDefault()
+              void handleImagePasteRef.current(file, view)
+              return true
+            },
+            drop: (event, view) => {
+              const file = imageFileFrom(event.dataTransfer)
+              if (!file) return false
+              event.preventDefault()
+              void handleImagePasteRef.current(file, view)
+              return true
+            },
+          }),
           vaultTheme,
           EditorView.lineWrapping,
           readOnlyCompartment.current.of([]),

@@ -316,7 +316,7 @@ npm run build:web && npx vite preview --mode web # 브라우저에서 http://127
 ```bash
 claude mcp add --transport http strata https://<worker>/mcp --header "Authorization: Bearer <팀 토큰>"
 ```
-툴: `vault_list`, `vault_read`, `vault_search`(BM25 + 시맨틱 RRF), `graph_lint`, `graph_suggest_links`, `vault_propose`, `vault_proposals`, `vault_promote`, `vault_write`, `vault_changes`, `members_list`, `member_remember`, `member_report`; 프롬프트 `member`. 쓰기는 앱에서 저장한 것과 똑같이 AI 팀원 반응을 일으킵니다.
+툴: `vault_recall`(주제에 대해 팀이 아는 것 한 묶음), `vault_search`(BM25 + 시맨틱 RRF), `vault_read`(이미지 경로면 이미지 + 이미지 문서), `vault_history`(버전과 diff), `vault_list`, `graph_lint`, `graph_suggest_links`, `vault_propose`, `vault_proposals`, `vault_promote`, `vault_write`, `vault_changes`, `members_list`, `member_remember`, `member_report`; 프롬프트 `member`. 쓰기는 앱에서 저장한 것과 똑같이 AI 팀원 반응을 일으킵니다.
 
 **봇** — Slack/Telegram 봇의 `/propose`는 데스크톱 앱이 꺼져 있어도 `STRATA_SERVER_URL`·`STRATA_TEAM_TOKEN`이 있으면 Worker의 `POST /v1/propose`로 기록합니다(`bot/.env.example`). 봇의 `/ask` RAG는 아직 로컬 볼트(데스크톱 앱)가 필요합니다.
 
@@ -873,7 +873,7 @@ npm run build:web && npx vite preview --mode web # connect the browser to http:/
 ```bash
 claude mcp add --transport http strata https://<worker>/mcp --header "Authorization: Bearer <team token>"
 ```
-Tools: `vault_list`, `vault_read`, `vault_search` (BM25 + semantic, RRF), `graph_lint`, `graph_suggest_links`, `vault_propose`, `vault_proposals`, `vault_promote`, `vault_write`, `vault_changes`, `members_list`, `member_remember`, `member_report`; prompt `member`. Writes trigger member reactions exactly like saves from the app.
+Tools: `vault_recall` (what the team knows about a topic, one bundle), `vault_search` (BM25 + semantic, RRF), `vault_read` (an image path returns the image and its image document), `vault_history` (versions and a diff), `vault_list`, `graph_lint`, `graph_suggest_links`, `vault_propose`, `vault_proposals`, `vault_promote`, `vault_write`, `vault_changes`, `members_list`, `member_remember`, `member_report`; prompt `member`. Writes trigger member reactions exactly like saves from the app.
 
 **Bots** — the Slack/Telegram `/propose` command records to the Worker's `POST /v1/propose` when the desktop app is not running and `STRATA_SERVER_URL` / `STRATA_TEAM_TOKEN` are set (`bot/.env.example`). The bots' `/ask` RAG still needs a local vault (the desktop app).
 

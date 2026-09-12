@@ -23,6 +23,7 @@ import OAuthProvider from '@cloudflare/workers-oauth-provider'
 import { handleAuth, SCOPE, type AuthEnv, type Identity } from './auth.js'
 import { readMembers, saveMemberDefinitions, validateMembers, TEMPLATES, type MembersConfig } from './members.js'
 import { listVersions, readVersion, diffLines } from './history.js'
+import { describeImage, isImagePath, type DescribeJob } from './images.js'
 
 export interface Env extends AuthEnv {
   VAULT: R2Bucket
@@ -34,8 +35,10 @@ export interface Env extends AuthEnv {
   VECTORS?: VectorizeIndex
   /** IANA zone for report file names (default Asia/Seoul). */
   REPORT_TIMEZONE?: string
-  /** Optional — AI members react to saves in their scope. Needs the queue producer binding and the API key secret. */
-  REACTION_QUEUE?: Queue<ReactionJob>
+  /** Optional — AI members react to saves in their scope; images get described. Needs the queue producer binding (reactions also need the API key secret). */
+  REACTION_QUEUE?: Queue<ReactionJob | DescribeJob>
+  /** Workers AI vision model for image descriptions (default @cf/llava-hf/llava-1.5-7b-hf). */
+  VISION_MODEL?: string
   ANTHROPIC_API_KEY?: string
   /** Model for member reactions (default claude-opus-5). */
   REACTION_MODEL?: string
@@ -137,14 +140,28 @@ export default {
    *   strata-vault-events  — R2 event notifications: index files written outside the API
    *   strata-reactions     — AI member reactions to freshly saved documents
    */
-  async queue(batch: MessageBatch<R2EventMessage | ReactionJob>, env: Env): Promise<void> {
+  async queue(batch: MessageBatch<R2EventMessage | ReactionJob | DescribeJob>, env: Env): Promise<void> {
     if (batch.queue.includes('reaction')) {
       const llm = anthropicLlm(env)
-      if (!llm) { console.warn('[reactions] ANTHROPIC_API_KEY not set — dropping reaction jobs'); for (const m of batch.messages) m.ack(); return }
-      const deps = { ...baseDeps(env), llm, log: (msg: string) => console.log(msg), reactFolders: reactionFolders(env) }
+      const describe = visionDescribe(env)
+      const deps = { ...baseDeps(env), log: (msg: string) => console.log(msg), reactFolders: reactionFolders(env) }
       for (const m of batch.messages) {
+        // Image descriptions ride the same queue; they need Workers AI, not the Anthropic key
+        if ((m.body as DescribeJob).kind === 'describe') {
+          if (!describe) { console.warn('[images] AI binding missing — dropping describe job'); m.ack(); continue }
+          try {
+            const outcome = await describeImage({ ...deps, describe, model: visionModel(env) }, m.body as DescribeJob)
+            console.log('[images]', (m.body as DescribeJob).path, JSON.stringify(outcome))
+            m.ack()
+          } catch (e) {
+            console.error('[images] failed', (m.body as DescribeJob).path, e)
+            m.retry({ delaySeconds: 120 })
+          }
+          continue
+        }
+        if (!llm) { console.warn('[reactions] ANTHROPIC_API_KEY not set — dropping reaction job'); m.ack(); continue }
         try {
-          const outcome = await reactToSave(deps, m.body as ReactionJob)
+          const outcome = await reactToSave({ ...deps, llm }, m.body as ReactionJob)
           console.log('[reactions]', (m.body as ReactionJob).path, JSON.stringify(outcome))
           if (outcome.status === 'deferred') {
             // Inside the cooldown: come back when it ends (Queues cap a retry delay at 12 hours)
@@ -169,15 +186,31 @@ export default {
         const key = ev.object?.key ?? ''
         if (shouldEnqueueReaction({ path: key, deleted: false, size: ev.object?.size ?? 0, author: 'external' }, reactionFolders(env))) {
           await env.REACTION_QUEUE.send({ path: key }).catch(e => console.error('[reactions] enqueue failed', e))
+        } else if (isImagePath(key)) {
+          await env.REACTION_QUEUE.send({ kind: 'describe', path: key }).catch(e => console.error('[images] enqueue failed', e))
         }
       }
     }
     for (const m of batch.messages) m.ack()
   },
-} satisfies ExportedHandler<Env, R2EventMessage | ReactionJob>
+} satisfies ExportedHandler<Env, R2EventMessage | ReactionJob | DescribeJob>
 
 function reactionFolders(env: Env): string[] {
   return (env.REACTION_FOLDERS ?? '').split(',').map(s => s.trim()).filter(Boolean)
+}
+
+const DEFAULT_VISION_MODEL = '@cf/llava-hf/llava-1.5-7b-hf'
+function visionModel(env: Env): string { return env.VISION_MODEL || DEFAULT_VISION_MODEL }
+
+/** Image → description through Workers AI; null without the AI binding. */
+function visionDescribe(env: Env): ((bytes: Uint8Array, mime: string, prompt: string) => Promise<string>) | null {
+  if (!env.AI) return null
+  const ai = env.AI
+  const model = visionModel(env)
+  return async (bytes, _mime, prompt) => {
+    const out = await ai.run(model as Parameters<Ai['run']>[0], { image: [...bytes], prompt, max_tokens: 512 } as never) as { description?: string; response?: string }
+    return (out.description ?? out.response ?? '').trim()
+  }
 }
 
 /** Member-reaction LLM via the Anthropic SDK; null when the key secret is missing. */
@@ -353,9 +386,14 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
   }
 }
 
-/** Queue member reactions for a freshly written document when the queue exists and the folder qualifies. */
+/** Queue member reactions (documents) or a description (images) for a freshly written file. */
 function enqueueReaction(env: Env, ctx: ExecutionContext, row: FileRow): void {
-  if (!env.REACTION_QUEUE || !shouldEnqueueReaction(row, reactionFolders(env))) return
+  if (!env.REACTION_QUEUE) return
+  if (isImagePath(row.path) && !row.deleted) {
+    ctx.waitUntil(env.REACTION_QUEUE.send({ kind: 'describe', path: row.path, etag: row.etag }).catch(e => console.error('[images] enqueue failed', e)))
+    return
+  }
+  if (!shouldEnqueueReaction(row, reactionFolders(env))) return
   ctx.waitUntil(env.REACTION_QUEUE.send({ path: row.path, etag: row.etag }).catch(e => console.error('[reactions] enqueue failed', e)))
 }
 

@@ -30,6 +30,8 @@ MAX_FILE_BYTES = "10485760"
 REPORT_TIMEZONE = "Asia/Seoul"
 REACTION_MODEL = "claude-opus-5"
 REACTION_FOLDERS = ""
+# Workers AI vision model that describes uploaded images into image documents (needs the [ai] binding).
+VISION_MODEL = "@cf/llava-hf/llava-1.5-7b-hf"
 # Documents (re)embedded per nightly run; the index is checkpointed so a cut-off run resumes next time.
 EMBED_MAX_DOCS = "150"
 # Browser origins of the web app (Vercel). `*` while the API is token-protected and origins are not final.
