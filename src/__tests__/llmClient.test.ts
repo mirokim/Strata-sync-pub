@@ -268,13 +268,40 @@ describe('llmClient — streamMessage', () => {
     ]
 
     const { streamMessage } = await import('@/services/llmClient')
-    await streamMessage('chief_director', 'new question', history, () => {})
+    // This history holds previous turns only, so say so — the default assumes chatStore's shape
+    // where the current message is already the last history entry.
+    await streamMessage('chief_director', 'new question', history, () => {},
+      undefined, undefined, undefined, undefined, { historyIncludesCurrentTurn: false })
 
     const [, options] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
     const body = JSON.parse((options as RequestInit).body as string)
 
     expect(body.messages).toContainEqual({ role: 'user', content: 'previous question' })
     expect(body.messages).toContainEqual({ role: 'assistant', content: 'previous response' })
+    expect(body.messages.filter((m: { role: string }) => m.role === 'user')).toHaveLength(2)
+  })
+
+  it('drops the current turn from history by default (chatStore shape)', async () => {
+    vi.stubEnv('VITE_ANTHROPIC_API_KEY', 'test-key')
+    mockFetch(makeAnthropicStream(['response']))
+
+    const history: ChatMessage[] = [
+      { id: 'h1', persona: 'chief_director', role: 'user', content: 'previous question', timestamp: 1000 },
+      { id: 'h2', persona: 'chief_director', role: 'assistant', content: 'previous response', timestamp: 1001 },
+      { id: 'h3', persona: 'chief_director', role: 'user', content: 'new question', timestamp: 1002 },
+    ]
+
+    const { streamMessage } = await import('@/services/llmClient')
+    await streamMessage('chief_director', 'new question', history, () => {})
+
+    const [, options] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+    const body = JSON.parse((options as RequestInit).body as string)
+
+    const userTurns = body.messages.filter((m: { role: string }) => m.role === 'user')
+    expect(userTurns).toHaveLength(2)
+    expect(userTurns[0].content).toBe('previous question')
+    // the current turn appears once, as the final (RAG-enriched) user message
+    expect(userTurns[1].content).toContain('new question')
     expect(body.messages).toContainEqual({ role: 'user', content: 'new question' })
   })
 })

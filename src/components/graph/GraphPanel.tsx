@@ -177,6 +177,9 @@ export default function GraphPanel() {
         },
         undefined,
         context,
+        undefined,
+        undefined,
+        { historyIncludesCurrentTurn: false },
       )
     } catch {
       if (!aborted) {

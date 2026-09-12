@@ -189,11 +189,12 @@ export const useChatStore = create<ChatState>()((set, get) => {
 
       // LLM streaming — receives the report content as markdown
       try {
+        // `history` was snapshotted before userMsg was appended — it holds previous turns only
         await streamMessage(reportPersona, trimmed, history, (chunk) => {
           get().appendChunk(reportMsgId, chunk)
         }, undefined, undefined, (chunk) => {
           get().appendThinkingChunk(reportMsgId, chunk)
-        }, signal)
+        }, signal, { historyIncludesCurrentTurn: false })
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {
           get().appendChunk(reportMsgId, '\n\n[Stopped]')

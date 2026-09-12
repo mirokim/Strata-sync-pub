@@ -82,18 +82,21 @@ function getLastUserIdx(history: ChatMessage[]): number {
   return idxs.length === 0 ? -1 : idxs[idxs.length - 1]
 }
 
-/**
- * Index of the history entry that duplicates the current turn, or -1.
- *
- * chatStore appends the user's message to `messages` before snapshotting `history`, so the
- * current turn is normally the last user entry and must not be sent twice. Callers that pass a
- * history *without* the current turn (Slack bot, tests) must keep their last user message, so
- * only drop it when its content actually matches the message being sent.
- */
-function currentTurnIdx(history: { role: string; content: string }[], userMessage: string): number {
-  const idx = getLastUserIdx(history as ChatMessage[])
-  if (idx < 0) return -1
-  return history[idx].content.trim() === userMessage.trim() ? idx : -1
+export interface StreamOptions {
+  /**
+   * Whether `history` already contains the message being sent as its last user entry.
+   * chatStore appends the user's message to `messages` before snapshotting `history`, so this
+   * defaults to true and the entry is removed to avoid sending the turn twice. Callers that pass
+   * only *previous* turns (report generation, Slack bot, node analysis) must set it to false.
+   */
+  historyIncludesCurrentTurn?: boolean
+}
+
+/** History without the current turn — see StreamOptions.historyIncludesCurrentTurn. */
+function priorTurns<T extends { role: string }>(history: T[], includesCurrentTurn: boolean): T[] {
+  if (!includesCurrentTurn) return history
+  const idx = getLastUserIdx(history as unknown as ChatMessage[])
+  return idx < 0 ? history : history.filter((_, i) => i !== idx)
 }
 
 /** Factual compliance guideline block — shared by streamMessage/streamMessageWithTools/generateSlackAnswer
@@ -1349,9 +1352,8 @@ export async function generateSlackAnswer(
       content: sanitize(m.content),
     }))
 
-  // Drop the history entry that is the current turn (it is added separately below, avoids duplication)
-  const _lastUserIdxSlack = currentTurnIdx(historyMessages, query)
-  const filteredHistory = historyMessages.filter((_, i) => i !== _lastUserIdxSlack)
+  // The bot stores a turn only after answering it, so this history never contains the current query
+  const filteredHistory = priorTurns(historyMessages, false)
 
   // Convert image attachments to an Attachment array (the format shared by providers)
   const attachments: import('@/types').Attachment[] = (images ?? []).map((img, i) => ({
@@ -1450,6 +1452,7 @@ export async function streamMessage(
   overrideRagContext?: string,   // bypasses keyword search — used for node-selection AI analysis, etc.
   onThinkingChunk?: (chunk: string) => void,
   signal?: AbortSignal,
+  opts: StreamOptions = {},
 ): Promise<void> {
   const { personaModels, projectInfo, directorBios, customPersonas, personaPromptOverrides, responseInstructions, ragInstruction, personaDocumentIds, sensitiveKeywords, webSearch: webSearchEnabled, citationMode, reasoningConfig: _rc } = useSettingsStore.getState()
 
@@ -1569,10 +1572,9 @@ export async function streamMessage(
     fullUserMessage = `${combinedCtx}The above materials were collected via ${srcLabel}.\nDo not simply list these materials; cross-analyze document dates and context to point out connections and risks the user may not be aware of.\n\n---\n\n${fullUserMessage}`
   }
 
-  // Build message history, excluding the entry that is the current turn being sent
-  const _lastUserIdx = currentTurnIdx(history, userMessage)
+  // Build message history without the current turn (it is appended separately below)
   let historyMessages = toHistoryMessages(
-    history.filter((_, i) => i !== _lastUserIdx)
+    priorTurns(history, opts.historyIncludesCurrentTurn ?? true)
   )
 
   // ── Context compaction: if the history is too long, summarize older messages and inject into the system prompt ──
@@ -1729,6 +1731,7 @@ export async function streamMessageWithTools(
   overrideRagContext?: string,
   onThinkingChunk?: (chunk: string) => void,
   signal?: AbortSignal,
+  opts: StreamOptions = {},
 ): Promise<void> {
   const {
     personaModels, projectInfo, directorBios, customPersonas,
@@ -1755,7 +1758,7 @@ export async function streamMessageWithTools(
 
   // Non-Anthropic: tools not supported — fall back to regular streaming
   if (provider !== 'anthropic') {
-    await streamMessage(persona, userMessage, history, onChunk, attachments, overrideRagContext, onThinkingChunk, signal)
+    await streamMessage(persona, userMessage, history, onChunk, attachments, overrideRagContext, onThinkingChunk, signal, opts)
     return
   }
 
@@ -1847,10 +1850,9 @@ export async function streamMessageWithTools(
     fullUserMessage = `${combinedCtx}The above materials were collected via ${srcLabel}.\nDo not simply list these materials; cross-analyze document dates and context to point out connections and risks the user may not be aware of.\n\n---\n\n${fullUserMessage}`
   }
 
-  // Exclude the history entry that is the current turn being sent
-  const _lastUserIdxTools = currentTurnIdx(history, userMessage)
+  // Message history without the current turn (it is appended separately below)
   const historyMessages: AgentMsg[] = toHistoryMessages(
-    history.filter((_, i) => i !== _lastUserIdxTools)
+    priorTurns(history, opts.historyIncludesCurrentTurn ?? true)
   ).map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }) as AgentMsg)
 
   await runAgentLoop({
