@@ -14,6 +14,8 @@
     "test:coverage": "vitest run --coverage",
     "test:mcp": "vitest run --root mcp --config vitest.config.ts",
     "test:cloud": "vitest run --root cloud --config vitest.config.ts",
+    "test:electron": "vitest run --root electron --config vitest.config.ts",
+    "test:all": "npm test && npm run test:mcp && npm run test:cloud && npm run test:electron",
     "lint:vault": "npm run build --prefix mcp && node mcp/dist/src/cli/lint.js",
     "electron:dev": "concurrently -k \"vite\" \"wait-on http://localhost:5277 && cross-env VITE_DEV_SERVER_URL=http://localhost:5277 node electron/launch.cjs .\"",
     "electron:build": "npx vite build && npx electron-builder --config electron-builder.config.cjs"

@@ -147,6 +147,19 @@ contextBridge.exposeInMainWorld('settingsAPI', {
   write: (filename, data) => ipcRenderer.invoke('settings:write', filename, data),
 })
 
+// ── syncAPI (Team vault sync via Cloudflare) ─────────────────────────────────
+contextBridge.exposeInMainWorld('syncAPI', {
+  getState: () => ipcRenderer.invoke('sync:get-state'),
+  updateConfig: (patch) => ipcRenderer.invoke('sync:update-config', patch),
+  syncNow: () => ipcRenderer.invoke('sync:now'),
+  testConnection: (url, token) => ipcRenderer.invoke('sync:test-connection', url, token),
+  onStatus: (callback) => {
+    const listener = (_event, state) => callback(state)
+    ipcRenderer.on('sync:status', listener)
+    return () => ipcRenderer.removeListener('sync:status', listener)
+  },
+})
+
 // ── cronAPI (Cron Job Scheduler) ─────────────────────────────────────────────
 contextBridge.exposeInMainWorld('cronAPI', {
   getState: () => ipcRenderer.invoke('cron:get-state'),

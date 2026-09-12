@@ -1,9 +1,10 @@
-const { app, BrowserWindow, shell, session, ipcMain, dialog, protocol, net } = require('electron')
+const { app, BrowserWindow, shell, session, ipcMain, dialog, protocol, net, safeStorage } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const crypto = require('crypto')
 const { spawn } = require('child_process')
 const cronScheduler = require('./cronScheduler.cjs')
+const teamSync = require('./sync/manager.cjs')
 
 // ── C1: RAG HTTP server auth token (generated once per process) ───────────
 // Bound to 127.0.0.1, but other local processes can still reach it, so a random token is required.
@@ -449,8 +450,10 @@ function registerVaultIpcHandlers() {
       throw new Error(`Vault path does not exist: ${resolvedVault}`)
     }
 
+    const vaultSwitched = currentVaultPath !== resolvedVault
     currentVaultPath = resolvedVault
     loadedVaultPaths.add(resolvedVault)
+    if (vaultSwitched) teamSync.onVaultChanged().catch(err => console.error('[sync] vault switch failed:', err))
     const { files: filePaths, folders: folderRelPaths, images: imagePaths } =
       await collectVaultContents(resolvedVault, resolvedVault)
     console.log(`[vault] Found ${filePaths.length} .md files, ${folderRelPaths.length} folders, ${imagePaths.length} images (${resolvedVault})`)
@@ -561,9 +564,11 @@ function registerVaultIpcHandlers() {
     if (!vaultPath || typeof vaultPath !== 'string') return false
     const resolved = path.resolve(vaultPath)
     try { fs.accessSync(resolved) } catch { return false }
+    const vaultSwitched = currentVaultPath !== resolved
     currentVaultPath = resolved
     loadedVaultPaths.clear()
     loadedVaultPaths.add(resolved)
+    if (vaultSwitched) teamSync.onVaultChanged().catch(err => console.error('[sync] vault switch failed:', err))
     return true
   })
 
@@ -2211,6 +2216,19 @@ function startRagApiServer() {
       }
     })()
 
+    // ── Team sync (Cloudflare) ───────────────────────────────────────────────
+    teamSync.init({
+      userDataDir: app.getPath('userData'),
+      safeStorage,
+      getVaultPath: () => currentVaultPath,
+      send: (channel, payload) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload) },
+      log: msg => console.log(msg),
+    }).catch(err => console.error('[sync] init failed:', err))
+    ipcMain.handle('sync:get-state', () => teamSync.getState())
+    ipcMain.handle('sync:update-config', (_event, patch) => teamSync.updateConfig(patch && typeof patch === 'object' ? patch : {}))
+    ipcMain.handle('sync:now', () => teamSync.syncNow())
+    ipcMain.handle('sync:test-connection', (_event, url, token) => teamSync.testConnection(url, token))
+
     ipcMain.handle('cron:get-state', () => cronScheduler.getFullState())
     ipcMain.handle('cron:update-config', async (_event, jobId, patch) => {
       cronScheduler.updateJobConfig(jobId, patch)
@@ -2242,6 +2260,7 @@ function startRagApiServer() {
   })
 
   app.on('before-quit', () => {
+    teamSync.shutdown()
     cronScheduler.shutdown()
     stopPythonBackend()
     stopSlackBot()

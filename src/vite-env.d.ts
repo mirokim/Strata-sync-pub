@@ -14,6 +14,17 @@ export interface RagDocResult {
 }
 
 declare global {
+  interface TeamSyncState {
+    config: { enabled: boolean; url: string; token: string; author: string; pullIntervalMs: number; hasToken: boolean }
+    status: {
+      enabled: boolean; inFlight: boolean; lastSyncAt: number | null; lastSeq: number; pending: number
+      conflicts: { path: string; keptAs: string; at: number; remoteAuthor: string }[]
+      errors: { path: string; message: string; at: number }[]
+      lastError: string | null
+    }
+    vaultPath: string | null
+  }
+
   interface Window {
     electronAPI?: {
       isElectron: boolean
@@ -63,6 +74,15 @@ declare global {
     settingsAPI?: {
       read(filename: string): Promise<Record<string, unknown> | null>
       write(filename: string, data: Record<string, unknown>): Promise<{ ok: boolean }>
+    }
+
+    // ── syncAPI (Team vault sync via Cloudflare) ──────────────────────────────
+    syncAPI?: {
+      getState(): Promise<TeamSyncState>
+      updateConfig(patch: Partial<{ enabled: boolean; url: string; token: string; author: string; pullIntervalMs: number; clearToken: boolean }>): Promise<TeamSyncState>
+      syncNow(): Promise<TeamSyncState>
+      testConnection(url?: string, token?: string): Promise<{ ok: boolean; error?: string; head?: number; files?: number }>
+      onStatus(callback: (state: TeamSyncState) => void): () => void
     }
 
     // ── cronAPI (Cron Job Scheduler) ─────────────────────────────────────────

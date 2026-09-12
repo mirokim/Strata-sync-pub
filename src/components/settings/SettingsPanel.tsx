@@ -12,7 +12,7 @@ import {
   Settings, Cpu, GitMerge, Keyboard, Info,
   Layers, Clock,
   Users, Tag, Download, Bot, Database, Search, Fish, Pencil, Coins, Send,
-  Link2, Wand2, HardDrive, Sparkles,
+  Link2, Wand2, HardDrive, Sparkles, Cloud,
 } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
@@ -30,6 +30,7 @@ import ConfluenceTab from './tabs/ConfluenceTab'
 import SlackBotTab from './tabs/SlackBotTab'
 import JiraTab from './tabs/JiraTab'
 import VaultManagerTab from './tabs/VaultManagerTab'
+import TeamSyncTab from './tabs/TeamSyncTab'
 import SearchTab from './tabs/SearchTab'
 import VectorEmbedTab from './tabs/VectorEmbedTab'
 import MirofishTab from './tabs/MirofishTab'
@@ -45,7 +46,7 @@ type SettingsTab =
   | 'stats' | 'trash'
   | 'general' | 'ai' | 'search' | 'vector-embed' | 'personas' | 'debate' | 'shortcuts' | 'project' | 'tags'
   | 'confluence' | 'confluence-publish' | 'slack-bot' | 'jira' | 'jira-dispatch' | 'vault-manager' | 'mirofish'
-  | 'edit-agent' | 'cron-jobs' | 'usage'
+  | 'edit-agent' | 'cron-jobs' | 'usage' | 'team-sync'
   | 'about'
 
 type NavItem = { id: SettingsTab; icon: React.ElementType; label: string }
@@ -77,6 +78,7 @@ const NAV: NavGroup[] = [
     items: [
       { id: 'stats',         icon: BarChart2, label: 'Statistics' },
       { id: 'vault-manager', icon: HardDrive, label: 'Vault Manager' },
+      { id: 'team-sync',     icon: Cloud,     label: 'Team Sync' },
       { id: 'usage',         icon: Coins,     label: 'Token Usage' },
       { id: 'trash',         icon: Trash2,    label: 'Trash' },
     ],
@@ -126,6 +128,7 @@ function renderTabContent(tab: SettingsTab) {
     case 'jira-dispatch': return <JiraDispatchTab />
     case 'slack-bot':     return <SlackBotTab />
     case 'vault-manager': return <VaultManagerTab />
+    case 'team-sync':     return <TeamSyncTab />
     case 'mirofish':   return <MirofishTab />
     case 'edit-agent': return <EditAgentTab />
     case 'cron-jobs':  return <CronJobTab />
