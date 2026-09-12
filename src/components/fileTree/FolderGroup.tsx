@@ -4,6 +4,7 @@ import type { MockDocument, LoadedDocument } from '@/types'
 import FileTreeItem from './FileTreeItem'
 import type { ContextMenuState } from './ContextMenu'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { useT } from '@/i18n'
 
 interface FolderGroupProps {
   folderPath: string
@@ -19,6 +20,7 @@ export default function FolderGroup({
   isOpenOverride,
   onContextMenu,
 }: FolderGroupProps) {
+  const t = useT()
   const [localOpen, setLocalOpen] = useState(true)
   const { folderColors, setFolderColor } = useSettingsStore()
   const colorInputRef = useRef<HTMLInputElement>(null)
@@ -65,7 +67,7 @@ export default function FolderGroup({
         <label
           onClick={e => e.stopPropagation()}
           onPointerDown={e => e.stopPropagation()}
-          title={`Change color for "${displayName}" folder`}
+          title={t('Change color for "{name}" folder', { name: displayName })}
           style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', width: 14, height: 14, flexShrink: 0 }}
         >
           <span style={{
@@ -93,7 +95,7 @@ export default function FolderGroup({
         <div>
           {docs.length === 0 ? (
             <div style={{ padding: '4px 12px 4px 24px', fontSize: 10, color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-              Empty
+              {t('Empty')}
             </div>
           ) : (
             docs.map(doc => (

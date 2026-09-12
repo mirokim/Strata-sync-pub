@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { useUsageStore, MODEL_PRICING, type UsageLogEntry } from '@/stores/usageStore'
 import { formatTokens, formatCost } from '@/lib/formatUtils'
 import { RotateCcw, Trash2, ChevronDown, ChevronUp, Download } from 'lucide-react'
+import { useT } from '@/i18n'
 
 const CALLER_LABEL: Record<string, string> = {
   chat: 'Chat',
@@ -57,6 +58,7 @@ function getDailySummary(log: UsageLogEntry[]) {
 }
 
 export default function UsageTab() {
+  const t = useT()
   const totalInputTokens  = useUsageStore(s => s.totalInputTokens)
   const totalOutputTokens = useUsageStore(s => s.totalOutputTokens)
   const totalCostUsd      = useUsageStore(s => s.totalCostUsd)
@@ -90,7 +92,7 @@ export default function UsageTab() {
             padding: '14px 16px', background: 'rgba(255,255,255,0.04)',
             borderRadius: 8, border: '1px solid var(--color-bg-tertiary)',
           }}>
-            <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 4 }}>{item.label}</div>
+            <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 4 }}>{t(item.label)}</div>
             <div style={{ fontSize: 20, fontWeight: 600, color: item.color }}>{item.value}</div>
           </div>
         ))}
@@ -99,15 +101,15 @@ export default function UsageTab() {
       {/* Action buttons */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <button onClick={resetSession} style={btnStyle}>
-          <RotateCcw size={12} /> Reset Session
+          <RotateCcw size={12} /> {t('Reset Session')}
         </button>
         {log.length > 0 && (
           <>
             <button onClick={() => exportLogCsv(log)} style={btnStyle}>
-              <Download size={12} /> Export CSV
+              <Download size={12} /> {t('Export CSV')}
             </button>
-            <button onClick={() => { if (confirm('Delete all usage logs.')) clearLog() }} style={btnStyle}>
-              <Trash2 size={12} /> Delete Log
+            <button onClick={() => { if (confirm(t('Delete all usage logs.'))) clearLog() }} style={btnStyle}>
+              <Trash2 size={12} /> {t('Delete Log')}
             </button>
           </>
         )}
@@ -117,7 +119,7 @@ export default function UsageTab() {
       {dailySummary.length > 0 && (
         <div>
           <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)', marginBottom: 10 }}>
-            Daily Usage (cumulative {formatCost(logCostTotal)})
+            {t('Daily Usage (cumulative {cost})', { cost: formatCost(logCostTotal) })}
           </div>
           <div style={{ border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, overflow: 'hidden' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -127,7 +129,7 @@ export default function UsageTab() {
                     <th key={h} style={{
                       textAlign: 'left', padding: '8px 12px', color: 'var(--color-text-muted)',
                       fontWeight: 500, borderBottom: '1px solid var(--color-bg-tertiary)',
-                    }}>{h}</th>
+                    }}>{t(h)}</th>
                   ))}
                 </tr>
               </thead>
@@ -155,7 +157,7 @@ export default function UsageTab() {
             style={{ ...btnStyle, background: 'transparent', padding: '4px 0', color: 'var(--color-text-primary)', fontWeight: 500, fontSize: 13 }}
           >
             {showLog ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            Call Log ({log.length} entries)
+            {t('Call Log ({count} entries)', { count: log.length })}
           </button>
           {showLog && (
             <div style={{ border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, overflow: 'hidden', marginTop: 8, maxHeight: 400, overflowY: 'auto' }}>
@@ -167,7 +169,7 @@ export default function UsageTab() {
                         textAlign: 'left', padding: '6px 8px', color: 'var(--color-text-muted)',
                         fontWeight: 500, borderBottom: '1px solid var(--color-bg-tertiary)',
                         background: 'rgba(255,255,255,0.04)',
-                      }}>{h}</th>
+                      }}>{t(h)}</th>
                     ))}
                   </tr>
                 </thead>
@@ -176,7 +178,7 @@ export default function UsageTab() {
                     <tr key={idx} style={{ background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)' }}>
                       <td style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{formatTime(e.timestamp)}</td>
                       <td style={{ padding: '4px 8px', color: 'var(--color-text-primary)', fontFamily: 'monospace' }}>{shortModel(e.modelId)}</td>
-                      <td style={{ padding: '4px 8px', color: '#94a3b8' }}>{CALLER_LABEL[e.caller] ?? e.caller}</td>
+                      <td style={{ padding: '4px 8px', color: '#94a3b8' }}>{t(CALLER_LABEL[e.caller] ?? e.caller)}</td>
                       <td style={{ padding: '4px 8px', color: '#94a3b8', fontFamily: 'monospace' }}>{formatTokens(e.inputTokens)}</td>
                       <td style={{ padding: '4px 8px', color: '#94a3b8', fontFamily: 'monospace' }}>{formatTokens(e.outputTokens)}</td>
                       <td style={{ padding: '4px 8px', color: 'var(--color-warning)', fontFamily: 'monospace' }}>{formatCost(e.costUsd)}</td>
@@ -196,7 +198,7 @@ export default function UsageTab() {
           style={{ ...btnStyle, background: 'transparent', padding: '4px 0', color: 'var(--color-text-primary)', fontWeight: 500, fontSize: 13 }}
         >
           {showPricing ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          Model Pricing
+          {t('Model Pricing')}
         </button>
         {showPricing && (
           <div style={{ border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, overflow: 'hidden', marginTop: 8 }}>
@@ -207,7 +209,7 @@ export default function UsageTab() {
                     <th key={h} style={{
                       textAlign: 'left', padding: '8px 12px', color: 'var(--color-text-muted)',
                       fontWeight: 500, borderBottom: '1px solid var(--color-bg-tertiary)',
-                    }}>{h}</th>
+                    }}>{t(h)}</th>
                   ))}
                 </tr>
               </thead>
@@ -222,7 +224,7 @@ export default function UsageTab() {
               </tbody>
             </table>
             <div style={{ fontSize: 11, color: 'var(--color-text-muted)', padding: '8px 12px' }}>
-              * USD per 1M tokens, approximate
+              {t('* USD per 1M tokens, approximate')}
             </div>
           </div>
         )}

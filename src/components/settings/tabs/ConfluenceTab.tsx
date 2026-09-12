@@ -7,11 +7,13 @@ import { useState, useEffect, useRef } from 'react'
 import { useSettingsStore, DEFAULT_CONFLUENCE_CONFIG, MIGRATED_CONFIG_KEY, type ConfluenceConfig } from '@/stores/settingsStore'
 import { useVaultStore } from '@/stores/vaultStore'
 import { syncConfluenceToMcp } from '@/lib/syncMcpConfig'
+import { useT } from '@/i18n'
 
 function FieldRow({ label, value, onChange, placeholder, type = 'text', isPassword = false }: {
   label: string; value: string; onChange: (v: string) => void
   placeholder?: string; type?: string; isPassword?: boolean
 }) {
+  const t = useT()
   const [visible, setVisible] = useState(false)
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -43,7 +45,7 @@ function FieldRow({ label, value, onChange, placeholder, type = 'text', isPasswo
               cursor: 'pointer', padding: '1px 4px', borderRadius: 3,
             }}
             tabIndex={-1}
-          >{visible ? 'Hide' : 'Show'}</button>
+          >{visible ? t('Hide') : t('Show')}</button>
         )}
       </div>
     </div>
@@ -61,6 +63,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 type TestStatus = { state: 'idle' } | { state: 'testing' } | { state: 'ok'; name: string } | { state: 'err'; msg: string }
 
 export default function ConfluenceTab() {
+  const t = useT()
   const confluenceConfigs = useSettingsStore(s => s.confluenceConfigs)
   const setConfluenceConfigForVault = useSettingsStore(s => s.setConfluenceConfigForVault)
   const vaults = useVaultStore(s => s.vaults)
@@ -100,9 +103,9 @@ export default function ConfluenceTab() {
         apiToken: cfg.apiToken,
         bypassSSL: cfg.bypassSSL,
       })
-      setTestStatus({ state: 'ok', name: result.displayName || 'Authenticated' })
+      setTestStatus({ state: 'ok', name: result.displayName || t('Authenticated') })
     } catch (e: any) {
-      setTestStatus({ state: 'err', msg: e?.message ?? 'Connection failed' })
+      setTestStatus({ state: 'err', msg: e?.message ?? t('Connection failed') })
     }
   }
 
@@ -114,15 +117,15 @@ export default function ConfluenceTab() {
     <div className="flex flex-col gap-5">
       <section>
         <p style={{ fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.7 }}>
-          Connection settings used when the Edit Agent automatically imports Confluence data.<br />
-          Enable auto-sync under <strong style={{ color: 'var(--color-text-secondary)' }}>Settings › Edit Agent</strong>.
+          {t('Connection settings used when the Edit Agent automatically imports Confluence data.')}<br />
+          {t('Enable auto-sync under')} <strong style={{ color: 'var(--color-text-secondary)' }}>{t('Settings › Edit Agent')}</strong>.
         </p>
       </section>
 
       {/* Vault selector */}
       {vaultEntries.length > 0 && (
         <section>
-          <SectionTitle>Target Vault</SectionTitle>
+          <SectionTitle>{t('Target Vault')}</SectionTitle>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {vaultEntries.map(([id, v]) => {
               const isActive = selectedVaultId === id
@@ -154,15 +157,15 @@ export default function ConfluenceTab() {
 
       {/* Auth */}
       <section>
-        <SectionTitle>Confluence Connection</SectionTitle>
+        <SectionTitle>{t('Confluence Connection')}</SectionTitle>
 
         <div style={{ marginBottom: 16 }}>
-          <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', display: 'block', marginBottom: 6 }}>Auth Method</label>
+          <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', display: 'block', marginBottom: 6 }}>{t('Auth Method')}</label>
           <div style={{ display: 'flex', border: '1px solid var(--color-border)', borderRadius: 2, overflow: 'hidden', width: 'fit-content' }}>
             {([
-              { id: 'cloud',        label: 'Cloud' },
-              { id: 'server_pat',   label: 'Server PAT' },
-              { id: 'server_basic', label: 'Server Basic' },
+              { id: 'cloud',        label: t('Cloud') },
+              { id: 'server_pat',   label: t('Server PAT') },
+              { id: 'server_basic', label: t('Server Basic') },
             ] as const).map((opt, i, arr) => (
               <button
                 key={opt.id}
@@ -178,15 +181,15 @@ export default function ConfluenceTab() {
             ))}
           </div>
           <p style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 5 }}>
-            {cfg.authType === 'cloud'        && 'Atlassian Cloud — email + API token (id.atlassian.com → Security → API tokens)'}
-            {cfg.authType === 'server_pat'   && 'Data Center/Server — Personal Access Token'}
-            {cfg.authType === 'server_basic' && 'Data Center/Server — username + password'}
+            {cfg.authType === 'cloud'        && t('Atlassian Cloud — email + API token (id.atlassian.com → Security → API tokens)')}
+            {cfg.authType === 'server_pat'   && t('Data Center/Server — Personal Access Token')}
+            {cfg.authType === 'server_basic' && t('Data Center/Server — username + password')}
           </p>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 14, borderRadius: 2, background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}>
           <FieldRow
-            label="Base URL"
+            label={t('Base URL')}
             value={cfg.baseUrl}
             onChange={v => {
               try {
@@ -207,25 +210,25 @@ export default function ConfluenceTab() {
           />
           {cfg.authType !== 'server_pat' && (
             <FieldRow
-              label={cfg.authType === 'server_basic' ? 'Username' : 'Email'}
+              label={cfg.authType === 'server_basic' ? t('Username') : t('Email')}
               value={cfg.email} onChange={v => set({ email: v })}
-              placeholder={cfg.authType === 'server_basic' ? 'username' : 'you@company.com'} />
+              placeholder={cfg.authType === 'server_basic' ? t('username') : 'you@company.com'} />
           )}
           <FieldRow
-            label={cfg.authType === 'server_pat' ? 'PAT Token' : cfg.authType === 'server_basic' ? 'Password' : 'API Token'}
+            label={cfg.authType === 'server_pat' ? t('PAT Token') : cfg.authType === 'server_basic' ? t('Password') : t('API Token')}
             value={cfg.apiToken} onChange={v => set({ apiToken: v })}
-            isPassword placeholder="API token or PAT" />
+            isPassword placeholder={t('API token or PAT')} />
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
           <input id="conf-bypass-ssl" type="checkbox" checked={cfg.bypassSSL} onChange={e => set({ bypassSSL: e.target.checked })} style={{ width: 13, height: 13, cursor: 'pointer' }} />
           <label htmlFor="conf-bypass-ssl" style={{ fontSize: 11, color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
-            Bypass SSL certificate verification
-            <span style={{ color: 'var(--color-text-muted)', marginLeft: 4 }}>(for self-signed internal certificates)</span>
+            {t('Bypass SSL certificate verification')}
+            <span style={{ color: 'var(--color-text-muted)', marginLeft: 4 }}>{t('(for self-signed internal certificates)')}</span>
           </label>
         </div>
         {cfg.bypassSSL && (
-          <p style={{ fontSize: 10, color: 'var(--color-warning)', marginTop: 4 }}>⚠ Disabling SSL verification exposes you to man-in-the-middle attacks. Use only on internal networks.</p>
+          <p style={{ fontSize: 10, color: 'var(--color-warning)', marginTop: 4 }}>{t('⚠ Disabling SSL verification exposes you to man-in-the-middle attacks. Use only on internal networks.')}</p>
         )}
 
         {/* Connection test */}
@@ -241,7 +244,7 @@ export default function ConfluenceTab() {
               opacity: canTest ? 1 : 0.5,
             }}
           >
-            {testStatus.state === 'testing' ? 'Checking…' : 'Test Connection'}
+            {testStatus.state === 'testing' ? t('Checking…') : t('Test Connection')}
           </button>
 
           {testStatus.state === 'ok' && (
@@ -262,14 +265,14 @@ export default function ConfluenceTab() {
 
       {/* Space / folder */}
       <section>
-        <SectionTitle>Import Scope</SectionTitle>
+        <SectionTitle>{t('Import Scope')}</SectionTitle>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <FieldRow label="Space Key" value={cfg.spaceKey} onChange={v => set({ spaceKey: v })} placeholder="TEAM (uppercase space key)" />
-          <FieldRow label="Target Folder" value={cfg.targetFolder} onChange={v => set({ targetFolder: v })} placeholder="active" />
-          <FieldRow label="Incremental Start Date" type="date" value={cfg.dateFrom} onChange={v => set({ dateFrom: v })} />
+          <FieldRow label={t('Space Key')} value={cfg.spaceKey} onChange={v => set({ spaceKey: v })} placeholder={t('TEAM (uppercase space key)')} />
+          <FieldRow label={t('Target Folder')} value={cfg.targetFolder} onChange={v => set({ targetFolder: v })} placeholder="active" />
+          <FieldRow label={t('Incremental Start Date')} type="date" value={cfg.dateFrom} onChange={v => set({ dateFrom: v })} />
         </div>
         <p style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 8 }}>
-          Only pages changed after the start date are imported. Each Edit Agent run syncs changes made after this date.
+          {t('Only pages changed after the start date are imported. Each Edit Agent run syncs changes made after this date.')}
         </p>
       </section>
     </div>

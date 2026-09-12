@@ -12,6 +12,7 @@ import { Plus, Trash2, RefreshCw, Loader, CheckCircle, XCircle, Send } from 'luc
 import { useSettingsStore, type JiraTeamMember, MIGRATED_CONFIG_KEY } from '@/stores/settingsStore'
 import { useVaultStore } from '@/stores/vaultStore'
 import { streamMessageRaw } from '@/services/llmClient'
+import { useT } from '@/i18n'
 
 // ── Vault file helpers ─────────────────────────────────────────────────────────
 
@@ -77,6 +78,7 @@ function MemberCard({
   onUpdate: (m: JiraTeamMember) => void
   onDelete: () => void
 }) {
+  const t = useT()
   const inp = (field: keyof JiraTeamMember, value: string) =>
     onUpdate({ ...member, [field]: value })
 
@@ -101,7 +103,7 @@ function MemberCard({
           <input
             value={member.name}
             onChange={e => inp('name', e.target.value)}
-            placeholder="Name"
+            placeholder={t('Name')}
             style={{ ...inputStyle, fontWeight: 600, fontSize: 13 }}
           />
         </div>
@@ -118,11 +120,11 @@ function MemberCard({
 
       {/* accountId */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ fontSize: 10, color: 'var(--color-text-muted)', flexShrink: 0 }}>ID</span>
+        <span style={{ fontSize: 10, color: 'var(--color-text-muted)', flexShrink: 0 }}>{t('ID')}</span>
         <input
           value={member.jiraAccountId}
           onChange={e => inp('jiraAccountId', e.target.value)}
-          placeholder="Jira accountId (filled automatically after fetch)"
+          placeholder={t('Jira accountId (filled automatically after fetch)')}
           style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 10, color: 'var(--color-text-muted)' }}
         />
       </div>
@@ -131,7 +133,7 @@ function MemberCard({
       <input
         value={member.role}
         onChange={e => inp('role', e.target.value)}
-        placeholder="Role (e.g. Art Director)"
+        placeholder={t('Role (e.g. Art Director)')}
         style={{ ...inputStyle }}
       />
 
@@ -139,18 +141,18 @@ function MemberCard({
       <textarea
         value={member.responsibilities}
         onChange={e => inp('responsibilities', e.target.value)}
-        placeholder="Responsibilities (e.g. character concept art review, outsourcing management)"
+        placeholder={t('Responsibilities (e.g. character concept art review, outsourcing management)')}
         rows={2}
         style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5, fontFamily: 'inherit' }}
       />
 
       {/* Component */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ fontSize: 10, color: 'var(--color-text-muted)', flexShrink: 0 }}>Component</span>
+        <span style={{ fontSize: 10, color: 'var(--color-text-muted)', flexShrink: 0 }}>{t('Component')}</span>
         <input
           value={member.component ?? ''}
           onChange={e => inp('component', e.target.value)}
-          placeholder="Jira component (e.g. [V1_Art] Concept Art)"
+          placeholder={t('Jira component (e.g. [V1_Art] Concept Art)')}
           style={{ ...inputStyle, fontSize: 11 }}
         />
       </div>
@@ -161,7 +163,7 @@ function MemberCard({
           position: 'absolute', top: 8, right: 28,
           fontSize: 9, color: 'var(--color-accent)',
           fontWeight: 600, letterSpacing: '0.05em',
-        }}>Mapped</span>
+        }}>{t('Mapped')}</span>
       )}
     </div>
   )
@@ -178,6 +180,7 @@ function DraftCard({
   onPublish: () => void
   publishing: boolean
 }) {
+  const t = useT()
   const inputStyle: React.CSSProperties = {
     fontSize: 12, padding: '4px 8px', borderRadius: 2,
     border: '1px solid var(--color-border)',
@@ -202,21 +205,21 @@ function DraftCard({
       <input
         value={draft.summary}
         onChange={e => onUpdate({ summary: e.target.value })}
-        placeholder="Issue summary"
+        placeholder={t('Issue summary')}
         style={{ ...inputStyle, fontWeight: 600, fontSize: 13, marginBottom: 8 }}
       />
 
       <textarea
         value={draft.description}
         onChange={e => onUpdate({ description: e.target.value })}
-        placeholder="Issue description"
+        placeholder={t('Issue description')}
         rows={3}
         style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6, marginBottom: 8 }}
       />
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
         <div style={{ flex: 1 }}>
-          <label style={{ fontSize: 10, color: 'var(--color-text-muted)', display: 'block', marginBottom: 3 }}>Assignee</label>
+          <label style={{ fontSize: 10, color: 'var(--color-text-muted)', display: 'block', marginBottom: 3 }}>{t('Assignee')}</label>
           <select
             value={draft.assigneeName}
             onChange={e => {
@@ -225,14 +228,14 @@ function DraftCard({
             }}
             style={inputStyle}
           >
-            <option value="">-- Unassigned --</option>
+            <option value="">{t('-- Unassigned --')}</option>
             {teamMembers.map(m => (
               <option key={m.id} value={m.name}>{m.name}{m.role ? ` (${m.role})` : ''}</option>
             ))}
           </select>
         </div>
         <div style={{ width: 120 }}>
-          <label style={{ fontSize: 10, color: 'var(--color-text-muted)', display: 'block', marginBottom: 3 }}>Priority</label>
+          <label style={{ fontSize: 10, color: 'var(--color-text-muted)', display: 'block', marginBottom: 3 }}>{t('Priority')}</label>
           <select
             value={draft.priority}
             onChange={e => onUpdate({ priority: e.target.value as DraftIssue['priority'] })}
@@ -248,7 +251,7 @@ function DraftCard({
       <input
         value={draft.labels.join(', ')}
         onChange={e => onUpdate({ labels: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
-        placeholder="Labels (comma-separated)"
+        placeholder={t('Labels (comma-separated)')}
         style={{ ...inputStyle, marginBottom: 10, fontSize: 11 }}
       />
 
@@ -264,7 +267,7 @@ function DraftCard({
                 display: 'flex', alignItems: 'center', gap: 4,
               }}
             >
-              <CheckCircle size={12} /> Accept
+              <CheckCircle size={12} /> {t('Accept')}
             </button>
             <button
               onClick={() => onUpdate({ accepted: false })}
@@ -275,7 +278,7 @@ function DraftCard({
                 display: 'flex', alignItems: 'center', gap: 4,
               }}
             >
-              <XCircle size={12} /> Reject
+              <XCircle size={12} /> {t('Reject')}
             </button>
           </>
         )}
@@ -293,13 +296,13 @@ function DraftCard({
             }}
           >
             {publishing ? <Loader size={11} className="animate-spin" /> : <Send size={11} />}
-            Publish
+            {t('Publish')}
           </button>
         )}
 
         {isPublished && (
           <span style={{ fontSize: 11, color: '#4ade80', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
-            <CheckCircle size={12} /> {draft.publishedKey} published
+            <CheckCircle size={12} /> {t('{key} published', { key: draft.publishedKey ?? '' })}
           </span>
         )}
         {draft.publishError && (
@@ -319,6 +322,7 @@ export default function JiraDispatchTab() {
   const editAgentConfig = useSettingsStore(s => s.editAgentConfig)
   const activeVaultId = useVaultStore(s => s.activeVaultId)
   const vaultPath = useVaultStore(s => s.vaultPath)
+  const t = useT()
 
   const jiraCfg = (activeVaultId ? jiraConfigs[activeVaultId] : undefined)
     ?? jiraConfigs[MIGRATED_CONFIG_KEY]
@@ -384,12 +388,12 @@ export default function JiraDispatchTab() {
   const handleSync = async () => {
     if (!jiraCfg?.baseUrl || !jiraCfg?.apiToken) {
       setSyncStatus('err')
-      setSyncError('Jira connection is not configured. Set it up under Settings › Jira Import first.')
+      setSyncError(t('Jira connection is not configured. Set it up under Settings › Jira Import first.'))
       return
     }
     if (!jiraCfg.projectKey) {
       setSyncStatus('err')
-      setSyncError('No Project Key. Fetching without a project returns every user in the company, so tasks could be dispatched to the wrong person.')
+      setSyncError(t('No Project Key. Fetching without a project returns every user in the company, so tasks could be dispatched to the wrong person.'))
       return
     }
     setSyncStatus('loading')
@@ -426,7 +430,7 @@ export default function JiraDispatchTab() {
       setSyncStatus('ok')
     } catch (e: any) {
       setSyncStatus('err')
-      setSyncError(e?.message ?? 'Fetch failed')
+      setSyncError(e?.message ?? t('Fetch failed'))
     }
   }
 
@@ -452,7 +456,7 @@ export default function JiraDispatchTab() {
   const handleGenerate = async () => {
     if (!feedbackText.trim()) return
     if (jiraTeamMembers.length === 0) {
-      setGenerateError('No team member cards. Fetch Jira members first.')
+      setGenerateError(t('No team member cards. Fetch Jira members first.'))
       return
     }
     setGenerating(true)
@@ -504,7 +508,7 @@ ${teamRoster}
         }
       }))
     } catch (e: any) {
-      setGenerateError(`Generation failed: ${e?.message ?? 'Unknown error'}. Raw: ${accumulated.slice(0, 200)}`)
+      setGenerateError(t('Generation failed: {error}. Raw: {raw}', { error: e?.message ?? t('Unknown error'), raw: accumulated.slice(0, 200) }))
     } finally {
       setGenerating(false)
     }
@@ -518,7 +522,7 @@ ${teamRoster}
 
   const publishOne = async (draft: DraftIssue) => {
     if (!jiraCfg?.baseUrl || !jiraCfg?.apiToken) {
-      updateDraft(draft.localId, { publishError: 'Jira is not configured.' })
+      updateDraft(draft.localId, { publishError: t('Jira is not configured.') })
       return
     }
     setPublishingIds(prev => new Set(prev).add(draft.localId))
@@ -530,7 +534,7 @@ ${teamRoster}
       )
       updateDraft(draft.localId, { publishedKey: result.key })
     } catch (e: any) {
-      updateDraft(draft.localId, { publishError: e?.message ?? 'Publish failed' })
+      updateDraft(draft.localId, { publishError: e?.message ?? t('Publish failed') })
     } finally {
       setPublishingIds(prev => { const s = new Set(prev); s.delete(draft.localId); return s })
     }
@@ -557,24 +561,24 @@ ${teamRoster}
       {/* ── 1. Team member cards ─────────────────────────────────────── */}
       <section>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <SectionTitle>Team Members {jiraTeamMembers.length > 0 ? `(${jiraTeamMembers.length})` : ''}</SectionTitle>
+          <SectionTitle>{jiraTeamMembers.length > 0 ? t('Team Members ({count})', { count: jiraTeamMembers.length }) : t('Team Members')}</SectionTitle>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             {/* Save status */}
             {saveState === 'saving' && (
               <span style={{ fontSize: 10, color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 3 }}>
-                <Loader size={9} className="animate-spin" /> Saving
+                <Loader size={9} className="animate-spin" /> {t('Saving')}
               </span>
             )}
             {saveState === 'saved' && (
               <span style={{ fontSize: 10, color: '#4ade80', display: 'flex', alignItems: 'center', gap: 3 }}>
-                <CheckCircle size={9} /> Saved
+                <CheckCircle size={9} /> {t('Saved')}
               </span>
             )}
             {/* Jira fetch button */}
             <button
               onClick={handleSync}
               disabled={syncStatus === 'loading' || !canSync}
-              title={!jiraConfigured ? 'Jira setup required' : !projectKey ? 'Project Key required (Settings › Jira Import)' : ''}
+              title={!jiraConfigured ? t('Jira setup required') : !projectKey ? t('Project Key required (Settings › Jira Import)') : ''}
               style={{
                 fontSize: 11, padding: '4px 12px', borderRadius: 2,
                 cursor: canSync ? 'pointer' : 'not-allowed',
@@ -586,8 +590,8 @@ ${teamRoster}
               }}
             >
               {syncStatus === 'loading'
-                ? <><Loader size={10} className="animate-spin" /> Fetching…</>
-                : <><RefreshCw size={10} /> {projectKey ? `Fetch ${projectKey} Members` : 'Fetch Jira Members'}</>}
+                ? <><Loader size={10} className="animate-spin" /> {t('Fetching…')}</>
+                : <><RefreshCw size={10} /> {projectKey ? t('Fetch {project} Members', { project: projectKey }) : t('Fetch Jira Members')}</>}
             </button>
             {/* Reset all */}
             {jiraTeamMembers.length > 0 && (
@@ -598,9 +602,9 @@ ${teamRoster}
                   border: '1px solid var(--color-border)', background: 'transparent',
                   color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 4,
                 }}
-                title="Reset all team member cards (also empties the vault file)"
+                title={t('Reset all team member cards (also empties the vault file)')}
               >
-                <XCircle size={10} /> Reset
+                <XCircle size={10} /> {t('Reset')}
               </button>
             )}
           </div>
@@ -608,12 +612,12 @@ ${teamRoster}
 
         {!jiraConfigured && (
           <p style={{ fontSize: 11, color: 'var(--color-warning)', marginBottom: 10 }}>
-            ⚠ Jira is not configured. Set up the connection under Settings › Jira Import first.
+            {t('⚠ Jira is not configured. Set up the connection under Settings › Jira Import first.')}
           </p>
         )}
         {jiraConfigured && !projectKey && (
           <p style={{ fontSize: 11, color: 'var(--color-warning)', marginBottom: 10 }}>
-            ⚠ Project Key not set. To avoid fetching every user in the company, enter a Project Key under Settings › Jira Import.
+            {t('⚠ Project Key not set. To avoid fetching every user in the company, enter a Project Key under Settings › Jira Import.')}
           </p>
         )}
         {syncStatus === 'err' && (
@@ -621,14 +625,13 @@ ${teamRoster}
         )}
         {syncStatus === 'ok' && (
           <p style={{ fontSize: 11, color: '#4ade80', marginBottom: 10 }}>
-            {jiraTeamMembers.length} members fetched · saved to jira-members.md
+            {t('{count} members fetched · saved to jira-members.md', { count: jiraTeamMembers.length })}
           </p>
         )}
 
         {jiraTeamMembers.length === 0 ? (
           <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 10 }}>
-            Use the "Fetch {projectKey || 'Jira'} Members" button to load project members.
-            Fetched members are saved to the vault and persist across sessions.
+            {t('Use the "Fetch {project} Members" button to load project members. Fetched members are saved to the vault and persist across sessions.', { project: projectKey || 'Jira' })}
           </p>
         ) : (
           <div style={{
@@ -657,7 +660,7 @@ ${teamRoster}
             display: 'flex', alignItems: 'center', gap: 4,
           }}
         >
-          <Plus size={11} /> Add Manually
+          <Plus size={11} /> {t('Add Manually')}
         </button>
       </section>
 
@@ -665,15 +668,15 @@ ${teamRoster}
 
       {/* ── 2. AI task generation ────────────────────────────────────── */}
       <section>
-        <SectionTitle>AI Task Generation</SectionTitle>
+        <SectionTitle>{t('AI Task Generation')}</SectionTitle>
         <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 10, lineHeight: 1.6 }}>
-          Paste feedback, meeting notes or issues and the AI drafts Jira tasks for each team member.
+          {t('Paste feedback, meeting notes or issues and the AI drafts Jira tasks for each team member.')}
         </p>
 
         <textarea
           value={feedbackText}
           onChange={e => setFeedbackText(e.target.value)}
-          placeholder="Paste feedback, meeting notes, issues, etc..."
+          placeholder={t('Paste feedback, meeting notes, issues, etc...')}
           rows={6}
           style={{
             width: '100%', fontSize: 12, padding: '8px 10px', borderRadius: 4,
@@ -697,10 +700,10 @@ ${teamRoster}
               opacity: generating ? 0.7 : 1,
             }}
           >
-            {generating ? <><Loader size={13} className="animate-spin" /> Analyzing…</> : '✦ AI Analysis → Generate Drafts'}
+            {generating ? <><Loader size={13} className="animate-spin" /> {t('Analyzing…')}</> : t('✦ AI Analysis → Generate Drafts')}
           </button>
           <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>
-            Model: {editAgentConfig.modelId || 'claude-sonnet-4-6'}
+            {t('Model: {model}', { model: editAgentConfig.modelId || 'claude-sonnet-4-6' })}
           </span>
         </div>
 
@@ -715,10 +718,10 @@ ${teamRoster}
           <div style={{ borderTop: '1px solid var(--color-border)' }} />
           <section>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <SectionTitle>Review {drafts.length} Drafts</SectionTitle>
+              <SectionTitle>{t('Review {count} Drafts', { count: drafts.length })}</SectionTitle>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-                  Accepted {acceptedCount} / Published {publishedCount}
+                  {t('Accepted {accepted} / Published {published}', { accepted: acceptedCount, published: publishedCount })}
                 </span>
                 {pendingPublish > 0 && (
                   <button
@@ -733,8 +736,8 @@ ${teamRoster}
                     }}
                   >
                     {publishAllRunning
-                      ? <><Loader size={11} className="animate-spin" /> Publishing…</>
-                      : <><Send size={11} /> Publish {pendingPublish} Accepted</>}
+                      ? <><Loader size={11} className="animate-spin" /> {t('Publishing…')}</>
+                      : <><Send size={11} /> {t('Publish {count} Accepted', { count: pendingPublish })}</>}
                   </button>
                 )}
               </div>
@@ -742,7 +745,7 @@ ${teamRoster}
 
             {!jiraConfigured && (
               <p style={{ fontSize: 11, color: 'var(--color-warning)', marginBottom: 10 }}>
-                ⚠ Jira is not configured.
+                {t('⚠ Jira is not configured.')}
               </p>
             )}
 

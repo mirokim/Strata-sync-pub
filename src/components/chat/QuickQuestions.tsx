@@ -1,5 +1,6 @@
 import { useMemo, useCallback } from 'react'
 import { useChatStore } from '@/stores/chatStore'
+import { useT } from '@/i18n'
 
 const QUICK_QUESTIONS = [
   // Tech & Performance
@@ -356,6 +357,7 @@ const BTN_STYLE: React.CSSProperties = {
 }
 
 export default function QuickQuestions() {
+  const t = useT()
   const sendMessage = useChatStore(s => s.sendMessage)
   const question = useMemo(
     () => QUICK_QUESTIONS[Math.floor(Math.random() * QUICK_QUESTIONS.length)],
@@ -371,7 +373,7 @@ export default function QuickQuestions() {
         className="text-xs px-2.5 py-1 rounded-full transition-colors hover:opacity-80"
         style={BTN_STYLE}
       >
-        {question}
+        {t(question)}
       </button>
     </div>
   )

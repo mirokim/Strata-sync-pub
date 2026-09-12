@@ -19,6 +19,7 @@ import {
   getGlobalContextDocIds,
 } from '@/lib/graphRAG'
 import { streamMessage } from '@/services/llmClient'
+import { useT } from '@/i18n'
 
 const COLOR_MODES: { mode: NodeColorMode; label: string }[] = [
   { mode: 'document', label: 'Document' },
@@ -41,6 +42,7 @@ interface AnalysisState {
 const FLOAT_BTN_STYLE: React.CSSProperties = { background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', borderRadius: 2, padding: '5px 7px', cursor: 'pointer', lineHeight: 1, transition: 'color 0.15s' }
 
 export default function GraphPanel() {
+  const t = useT()
   const { graphMode, nodeColorMode, setNodeColorMode, compareVaultId, setCompareVault } = useUIStore()
   // The graph is the full-window background; the file tree, top bar and status bar float over it.
   // Overlay controls are inset past that chrome so they stay visible (values as CSS variables).
@@ -146,14 +148,14 @@ export default function GraphPanel() {
       context = await buildDeepGraphContextFromDocId(selectedNodeId)
       setAiHighlightNodes(getBfsContextDocIds(selectedNodeId))
     } else {
-      nodeName = 'Entire Project'
+      nodeName = t('Entire Project')
       context = await buildGlobalGraphContext(35, 4)
       setAiHighlightNodes(getGlobalContextDocIds(35, 4))
     }
 
     if (!context) {
       setAiHighlightNodes([])
-      setAnalysis({ nodeName, content: 'Please check if the vault is loaded. No documents or connections found.', loading: false })
+      setAnalysis({ nodeName, content: t('Please check if the vault is loaded. No documents or connections found.'), loading: false })
       return
     }
 
@@ -196,7 +198,7 @@ export default function GraphPanel() {
         setAnalysis(prev => {
           if (!prev) return null
           // If error occurs before any chunks, content may be empty — set directly instead of appending
-          const msg = '[An error occurred]'
+          const msg = t('[An error occurred]')
           return { ...prev, content: prev.content ? prev.content + '\n\n' + msg : msg, loading: false, phase: undefined }
         })
         setAiHighlightNodes([])
@@ -297,8 +299,8 @@ export default function GraphPanel() {
               ...FLOAT_BTN_STYLE,
               color: nodeColorMode !== 'speaker' ? 'var(--color-accent)' : 'var(--color-text-muted)',
             }}
-            title={`Node color: ${COLOR_MODES.find(m => m.mode === nodeColorMode)?.label}`}
-            aria-label="Node color mode"
+            title={t('Node color: {mode}', { mode: t(COLOR_MODES.find(m => m.mode === nodeColorMode)?.label ?? '') })}
+            aria-label={t('Node color mode')}
           >
             <Palette size={12} />
           </button>
@@ -338,7 +340,7 @@ export default function GraphPanel() {
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  Color by {label}
+                  {t('Color by {mode}', { mode: t(label) })}
                 </button>
               ))}
             </div>
@@ -353,10 +355,10 @@ export default function GraphPanel() {
             color: showInsights ? 'var(--color-accent)' : 'var(--color-text-muted)',
             display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '5px 10px',
           }}
-          title="Vault graph insights — hubs, isolates, gaps, cluster analysis"
+          title={t('Vault graph insights — hubs, isolates, gaps, cluster analysis')}
         >
           <Lightbulb size={11} />
-          Insights
+          {t('Insights')}
         </button>
 
         {/* Node search button */}
@@ -367,10 +369,10 @@ export default function GraphPanel() {
             color: showSearch ? 'var(--color-accent)' : 'var(--color-text-muted)',
             display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '5px 10px',
           }}
-          title="Search nodes (Ctrl+F)"
+          title={t('Search nodes (Ctrl+F)')}
         >
           <Search size={11} />
-          Search
+          {t('Search')}
         </button>
 
         {/* Compare view button — shown when 2+ vaults are registered */}
@@ -383,10 +385,10 @@ export default function GraphPanel() {
                 color: compareVaultId ? 'var(--color-accent)' : 'var(--color-text-muted)',
                 display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '5px 10px',
               }}
-              title={compareVaultId ? 'Close compare view' : 'Vault compare view'}
+              title={compareVaultId ? t('Close compare view') : t('Vault compare view')}
             >
               <Columns size={11} />
-              Compare
+              {t('Compare')}
             </button>
             {compareOptions.length > 1 && compareVaultId && (
               <div style={{
@@ -439,7 +441,7 @@ export default function GraphPanel() {
               ref={searchInputRef}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search node name..."
+              placeholder={t('Search node name...')}
               style={{
                 flex: 1,
                 background: 'transparent',
@@ -483,7 +485,7 @@ export default function GraphPanel() {
           )}
           {searchQuery.trim() && searchResults.length === 0 && (
             <div style={{ padding: '8px 12px', fontSize: 11, color: 'var(--color-text-muted)' }}>
-              No results
+              {t('No results')}
             </div>
           )}
         </div>
@@ -526,7 +528,7 @@ export default function GraphPanel() {
             </span>
             {analysis.loading && (
               <span style={{ fontSize: 10, color: analysis.phase === 'Exploring' ? 'var(--color-text-secondary)' : 'var(--color-text-muted)' }}>
-                {analysis.phase ?? 'Analyzing'}...
+                {t(`${analysis.phase ?? 'Analyzing'}...`)}
               </span>
             )}
             <button
@@ -550,10 +552,10 @@ export default function GraphPanel() {
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',
           }}>
-            {analysis.content || (analysis.loading ? '' : 'No analysis content')}
+            {analysis.content || (analysis.loading ? '' : t('No analysis content'))}
             {analysis.loading && !analysis.content && (
               <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-                Exploring node connections...
+                {t('Exploring node connections...')}
               </span>
             )}
           </div>

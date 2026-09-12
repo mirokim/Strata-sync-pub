@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { MockDocument } from '@/types'
 import { SPEAKER_CONFIG } from '@/lib/speakerConfig'
+import { useT } from '@/i18n'
 
 interface Props {
   doc: MockDocument
@@ -10,6 +11,7 @@ interface Props {
 export default function FrontmatterBlock({ doc }: Props) {
   const [open, setOpen] = useState(false)
   const speakerMeta = SPEAKER_CONFIG[doc.speaker]
+  const t = useT()
 
   return (
     <div
@@ -33,7 +35,7 @@ export default function FrontmatterBlock({ doc }: Props) {
           ? <ChevronDown size={12} />
           : <ChevronRight size={12} />
         }
-        <span style={{ fontFamily: 'monospace' }}>frontmatter</span>
+        <span style={{ fontFamily: 'monospace' }}>{t('frontmatter')}</span>
         <span style={{ marginLeft: 'auto', color: speakerMeta.color }}>{speakerMeta.label}</span>
       </button>
 
@@ -44,15 +46,15 @@ export default function FrontmatterBlock({ doc }: Props) {
           style={{ fontFamily: 'monospace', lineHeight: 1.7, color: 'var(--color-text-secondary)' }}
           data-testid="frontmatter-body"
         >
-          <div><span style={{ color: 'var(--color-text-muted)' }}>speaker: </span>{doc.speaker}</div>
-          <div><span style={{ color: 'var(--color-text-muted)' }}>date: </span>{doc.date}</div>
+          <div><span style={{ color: 'var(--color-text-muted)' }}>{t('speaker: ')}</span>{doc.speaker}</div>
+          <div><span style={{ color: 'var(--color-text-muted)' }}>{t('date: ')}</span>{doc.date}</div>
           <div>
-            <span style={{ color: 'var(--color-text-muted)' }}>tags: </span>
+            <span style={{ color: 'var(--color-text-muted)' }}>{t('tags: ')}</span>
             {doc.tags.join(', ')}
           </div>
           {doc.links.length > 0 && (
             <div>
-              <span style={{ color: 'var(--color-text-muted)' }}>links: </span>
+              <span style={{ color: 'var(--color-text-muted)' }}>{t('links: ')}</span>
               {doc.links.join(', ')}
             </div>
           )}

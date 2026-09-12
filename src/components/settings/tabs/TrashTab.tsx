@@ -2,16 +2,18 @@ import { useState } from 'react'
 import { RotateCcw, Trash2 } from 'lucide-react'
 import { useTrashStore } from '@/stores/trashStore'
 import { useVaultStore } from '@/stores/vaultStore'
+import { useT } from '@/i18n'
 
-function relativeTime(ms: number): string {
+function relativeTime(ms: number, t: ReturnType<typeof useT>): string {
   const diff = Date.now() - ms
-  if (diff < 60_000) return 'just now'
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
-  return `${Math.floor(diff / 86_400_000)}d ago`
+  if (diff < 60_000) return t('just now')
+  if (diff < 3_600_000) return t('{n}m ago', { n: Math.floor(diff / 60_000) })
+  if (diff < 86_400_000) return t('{n}h ago', { n: Math.floor(diff / 3_600_000) })
+  return t('{n}d ago', { n: Math.floor(diff / 86_400_000) })
 }
 
 export default function TrashTab() {
+  const t = useT()
   const { items, remove, clear } = useTrashStore()
   const vaultPath = useVaultStore(s => s.vaultPath)
   const [restoring, setRestoring] = useState<string | null>(null)
@@ -26,7 +28,7 @@ export default function TrashTab() {
       await window.vaultAPI.saveFile(item.absolutePath, item.content)
       remove(id)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Restore failed')
+      setError(e instanceof Error ? e.message : t('Restore failed'))
     } finally {
       setRestoring(null)
     }
@@ -40,7 +42,7 @@ export default function TrashTab() {
     return (
       <div className="flex flex-col items-center justify-center h-full py-16 gap-2">
         <span style={{ fontSize: 28, opacity: 0.2 }}>🗑️</span>
-        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Please load a vault first</p>
+        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{t('Please load a vault first')}</p>
       </div>
     )
   }
@@ -49,9 +51,9 @@ export default function TrashTab() {
     return (
       <div className="flex flex-col items-center justify-center h-full py-16 gap-2">
         <span style={{ fontSize: 28, opacity: 0.2 }}>🗑️</span>
-        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Trash is empty</p>
+        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{t('Trash is empty')}</p>
         <p className="text-[10px]" style={{ color: 'var(--color-text-muted)', opacity: 0.5 }}>
-          Files deleted during this session are kept here
+          {t('Files deleted during this session are kept here')}
         </p>
       </div>
     )
@@ -63,17 +65,19 @@ export default function TrashTab() {
       {/* Header actions */}
       <div className="flex items-center justify-between">
         <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-          {items.length} file{items.length !== 1 ? 's' : ''} · auto-cleared on session end
+          {items.length === 1
+            ? t('{count} file · auto-cleared on session end', { count: items.length })
+            : t('{count} files · auto-cleared on session end', { count: items.length })}
         </p>
         <button
           onClick={() => {
-            if (window.confirm(`Empty the trash? This action cannot be undone.`)) clear()
+            if (window.confirm(t('Empty the trash? This action cannot be undone.'))) clear()
           }}
           className="flex items-center gap-1 text-[10px] px-2 py-1 rounded transition-colors hover:bg-[var(--color-bg-hover)]"
           style={{ color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}
         >
           <Trash2 size={10} />
-          Empty All
+          {t('Empty All')}
         </button>
       </div>
 
@@ -106,11 +110,11 @@ export default function TrashTab() {
                   </span>
                 )}
                 <span className="text-[10px]" style={{ color: 'var(--color-text-muted)', opacity: 0.5 }}>
-                  {relativeTime(item.deletedAt)}
+                  {relativeTime(item.deletedAt, t)}
                 </span>
               </div>
               <div className="text-[10px] mt-0.5" style={{ color: 'var(--color-text-muted)', opacity: 0.45 }}>
-                {item.content.length.toLocaleString()} chars
+                {t('{count} chars', { count: item.content.length.toLocaleString() })}
               </div>
             </div>
 
@@ -125,10 +129,10 @@ export default function TrashTab() {
                 opacity: restoring === item.id ? 0.5 : 1,
                 cursor: restoring === item.id ? 'wait' : 'pointer',
               }}
-              title="Restore to original location"
+              title={t('Restore to original location')}
             >
               <RotateCcw size={10} />
-              Restore
+              {t('Restore')}
             </button>
 
             {/* Permanent delete */}
@@ -136,7 +140,7 @@ export default function TrashTab() {
               onClick={() => handlePermanentDelete(item.id)}
               className="flex items-center gap-1 text-[10px] px-2 py-1 rounded transition-colors hover:bg-[var(--color-bg-hover)] shrink-0"
               style={{ color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}
-              title="Remove from trash"
+              title={t('Remove from trash')}
             >
               <Trash2 size={10} />
             </button>

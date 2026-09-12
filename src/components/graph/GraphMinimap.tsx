@@ -9,6 +9,7 @@ import { buildNodeColorMap } from '@/lib/nodeColors'
 import { useActivityHeat } from '@/hooks/useActivityHeat'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
+import { useT } from '@/i18n'
 import type { NodeColorMode } from '@/types'
 
 const W = 160
@@ -46,6 +47,7 @@ function computeMinimapTransform(simPositions: SimPos): {
 }
 
 export default function GraphMinimap() {
+  const t = useT()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const nodes          = useGraphStore(s => s.nodes)
   const simPositions   = useGraphStore(s => s.simPositions)
@@ -150,7 +152,7 @@ export default function GraphMinimap() {
         height={H}
         onClick={handleClick}
         style={{ display: 'block', cursor: 'crosshair', width: W, height: H }}
-        title="Minimap — click to focus node"
+        title={t('Minimap — click to focus node')}
       />
     </div>
   )

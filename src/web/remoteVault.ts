@@ -17,6 +17,7 @@ import { RemoteCache, defaultCacheBackend, type CacheBackend, type CachedRow } f
 import { conflictName, numberedName } from '@/lib/conflictCopy'
 import { pastedImagePath, imageDocPath, renderImageDoc } from '@/lib/imageDoc'
 import { PersonalMapper, personalRootFor, isPersonalPath } from './personal'
+import { t } from '@/i18n'
 
 export { conflictName }
 
@@ -139,8 +140,8 @@ export class RemoteVault {
    */
   async setPersonal(appPath: string, personal: boolean): Promise<{ path: string; personal: boolean }> {
     const virtual = this.rel(appPath)
-    if (!virtual) throw new Error('Invalid file path')
-    if (!this.personal.enabled) throw new Error('Sign in with Google to keep personal documents — the team token has no owner')
+    if (!virtual) throw new Error(t('Invalid file path'))
+    if (!this.personal.enabled) throw new Error(t('Sign in with Google to keep personal documents — the team token has no owner'))
     const physical = this.personal.physicalOf(virtual)
     const moved = await this.client.setVisibility(physical, personal)
     const old = this.cache.rows.get(physical)
@@ -217,7 +218,7 @@ export class RemoteVault {
       this.setStatus({ inFlight: false, lastError: message })
       if (e instanceof RemoteError && e.status === 401 && !this.authWarned) {
         this.authWarned = true
-        this.opts.notify(this.config.auth === 'oauth' ? 'Your session expired — sign in again from Settings → Server' : 'The team token was rejected — reconnect in Settings → Server', 'error')
+        this.opts.notify(this.config.auth === 'oauth' ? t('Your session expired — sign in again from Settings → Server') : t('The team token was rejected — reconnect in Settings → Server'), 'error')
       }
       if (this.cache.rows.size === 0) throw e
       return { changed, removed }
@@ -288,7 +289,7 @@ export class RemoteVault {
       }
       this.staleAfterConflict.set(rel, copy)
       this.setStatus({ conflicts: [...this.status.conflicts.slice(-19), { path: rel, keptAs: copy, at: this.now(), remoteAuthor: e.current?.author ?? 'unknown' }] })
-      this.opts.notify(`${rel} was changed by ${e.current?.author || 'someone else'} — your version is kept as "${copy}"`, 'warn')
+      this.opts.notify(t('{path} was changed by {author} — your version is kept as "{copy}"', { path: rel, author: e.current?.author || t('someone else'), copy }), 'warn')
       this.emitChanged(rel)
       return copy
     }
@@ -301,13 +302,13 @@ export class RemoteVault {
     if (idx?.content != null) bytes = enc.encode(idx.content)
     else {
       const remote = await this.client.getFile(srcRel)
-      if (!remote) throw new Error(`File does not exist: ${srcRel}`)
+      if (!remote) throw new Error(t('File does not exist: {path}', { path: srcRel }))
       bytes = remote.bytes
     }
     try {
       await this.write(destRel, bytes, { createOnly: true })
     } catch (e) {
-      if (e instanceof RemoteError && e.status === 409) throw new Error(`Destination already exists: ${destRel}`)
+      if (e instanceof RemoteError && e.status === 409) throw new Error(t('Destination already exists: {path}', { path: destRel }))
       throw e
     }
     await this.client.deleteFile(srcRel, idx?.etag)
@@ -388,7 +389,7 @@ export class RemoteVault {
 
       saveFile: async (filePath, content) => {
         const virtual = this.rel(filePath)
-        if (!virtual) throw new Error('Invalid file path')
+        if (!virtual) throw new Error(t('Invalid file path'))
         if (this.isPrivate(virtual)) { this.privateWrite(virtual, content); return { success: true, path: filePath } }
         const rel = this.personal.physicalOf(virtual)
         try {
@@ -404,7 +405,7 @@ export class RemoteVault {
 
       renameFile: async (absolutePath, newFilename) => {
         const rel = this.personal.physicalOf(this.rel(absolutePath))
-        if (!rel || !newFilename || /[\\/]/.test(newFilename)) throw new Error('Invalid filename')
+        if (!rel || !newFilename || /[\\/]/.test(newFilename)) throw new Error(t('Invalid filename'))
         const dir = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/') + 1) : ''
         const dest = dir + newFilename
         await this.copyThenDelete(rel, dest)
@@ -413,7 +414,7 @@ export class RemoteVault {
 
       deleteFile: async (absolutePath) => {
         const virtual = this.rel(absolutePath)
-        if (!virtual) throw new Error('Invalid path')
+        if (!virtual) throw new Error(t('Invalid path'))
         if (this.isPrivate(virtual)) { try { localStorage.removeItem(`${PRIVATE_KEY}:${this.vaultPath}/${virtual}`) } catch { /* ignore */ } return { success: true } }
         const rel = this.personal.physicalOf(virtual)
         const idx = this.cache.rows.get(rel)
@@ -452,14 +453,14 @@ export class RemoteVault {
 
       createFolder: async (folderPath) => {
         const rel = this.rel(folderPath)
-        if (!rel) throw new Error('Invalid folder path')
+        if (!rel) throw new Error(t('Invalid folder path'))
         this.cache.addEmptyFolder(rel)
         return { success: true, path: this.abs(rel) }
       },
 
       moveFile: async (absolutePath, destFolderPath) => {
         const virtual = this.rel(absolutePath)
-        if (!virtual) throw new Error('Invalid file path')
+        if (!virtual) throw new Error(t('Invalid file path'))
         const rel = this.personal.physicalOf(virtual)
         const folder = this.rel(destFolderPath)
         const name = rel.slice(rel.lastIndexOf('/') + 1)
@@ -529,11 +530,11 @@ export class RemoteVault {
 export async function testConnection(url: string, token: string, fetchImpl?: FetchLike): Promise<{ ok: boolean; error?: string; head?: number; files?: number }> {
   try {
     const client = new RemoteClient({ url, token, author: '' }, fetchImpl)
-    if (!(await client.health())) return { ok: false, error: 'server did not answer /health' }
+    if (!(await client.health())) return { ok: false, error: t('server did not answer /health') }
     const m = await client.manifest(0)
     return { ok: true, head: m.head, files: m.files.filter(f => !f.deleted).length }
   } catch (e) {
-    if (e instanceof RemoteError && e.status === 401) return { ok: false, error: 'team token rejected' }
+    if (e instanceof RemoteError && e.status === 401) return { ok: false, error: t('team token rejected') }
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
 }

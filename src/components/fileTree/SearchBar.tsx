@@ -1,4 +1,5 @@
 import { Search, X } from 'lucide-react'
+import { useT } from '@/i18n'
 
 interface SearchBarProps {
   value: string
@@ -6,6 +7,7 @@ interface SearchBarProps {
 }
 
 export default function SearchBar({ value, onChange }: SearchBarProps) {
+  const t = useT()
   return (
     <div
       className="flex items-center gap-2 px-3 py-2 mx-2 my-1 rounded"
@@ -16,15 +18,15 @@ export default function SearchBar({ value, onChange }: SearchBarProps) {
         type="text"
         value={value}
         onChange={e => onChange(e.target.value)}
-        placeholder="Search documents..."
+        placeholder={t('Search documents...')}
         className="flex-1 bg-transparent outline-none text-xs min-w-0"
         style={{ color: 'var(--color-text-primary)' }}
-        aria-label="Search documents"
+        aria-label={t('Search documents')}
       />
       {value && (
         <button
           onClick={() => onChange('')}
-          aria-label="Clear search"
+          aria-label={t('Clear search')}
           style={{ color: 'var(--color-text-muted)' }}
           className="hover:text-[var(--color-text-secondary)]"
         >

@@ -3,8 +3,10 @@ import { FileText } from 'lucide-react'
 import { useChatStore } from '@/stores/chatStore'
 import { useUIStore } from '@/stores/uiStore'
 import MessageBubble from './MessageBubble'
+import { useT } from '@/i18n'
 
 export default function MessageList() {
+  const t = useT()
   const { messages, isLoading } = useChatStore()
   const { openInEditor } = useUIStore()
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -26,7 +28,7 @@ export default function MessageList() {
           className="flex items-center justify-center h-full text-xs"
           style={{ color: 'var(--color-text-muted)' }}
         >
-          Start a conversation or select a quick question
+          {t('Start a conversation or select a quick question')}
         </div>
       ) : (
         <>
@@ -67,10 +69,10 @@ export default function MessageList() {
                   background: 'var(--color-bg-surface)',
                   cursor: 'pointer',
                 }}
-                title="View conversation as report"
+                title={t('View conversation as report')}
               >
                 <FileText size={10} />
-                View Report
+                {t('View Report')}
               </button>
             </div>
           )}

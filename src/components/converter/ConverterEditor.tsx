@@ -17,6 +17,7 @@ import { SPEAKER_IDS, SPEAKER_CONFIG } from '@/lib/speakerConfig'
 import { convertToObsidianMD } from '@/services/llmClient'
 import { readFileAsText, type ConversionMeta, type ConversionType } from '@/lib/mdConverter'
 import { cn } from '@/lib/utils'
+import { useT } from '@/i18n'
 
 const DOC_TYPES: { value: ConversionType; label: string }[] = [
   { value: 'minutes',  label: 'Meeting Minutes' },
@@ -101,10 +102,11 @@ function StepIndicator({
   stage: Stage
   step2Status: Step2Status
 }) {
+  const t = useT()
   const steps: { key: Stage | 'processing'; label: string }[] = [
-    { key: 'input',      label: '1. Input' },
-    { key: 'processing', label: '2. AI Processing' },
-    { key: 'review',     label: '3. Review & Approve' },
+    { key: 'input',      label: t('1. Input') },
+    { key: 'processing', label: t('2. AI Processing') },
+    { key: 'review',     label: t('3. Review & Approve') },
   ]
 
   return (
@@ -143,9 +145,9 @@ function StepIndicator({
       {stage === 'processing' && (
         <div className="flex items-center gap-3 ml-6">
           {([
-            { key: 'analyze',  label: 'Document analysis' },
-            { key: 'keywords', label: 'Keyword extraction' },
-            { key: 'structure',label: 'MD generation' },
+            { key: 'analyze',  label: t('Document analysis') },
+            { key: 'keywords', label: t('Keyword extraction') },
+            { key: 'structure',label: t('MD generation') },
           ] as const).map(s => (
             <span
               key={s.key}
@@ -170,6 +172,7 @@ interface ConverterEditorProps {
 }
 
 export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
+  const t = useT()
   const { setCenterTab } = useUIStore()
   const { vaultPath } = useVaultStore()
   const customPersonas = useSettingsStore(s => s.customPersonas)
@@ -275,7 +278,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
         setMeta(m => ({ ...m, title: file.name.replace(/\.[^.]+$/, '') }))
       }
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Failed to read file')
+      setUploadError(err instanceof Error ? err.message : t('Failed to read file'))
     }
   }
 
@@ -331,7 +334,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
       setFinalMd(mdResult)
       setTimeout(() => setStage('review'), 400)
     } catch (err) {
-      setProcessError(err instanceof Error ? err.message : 'Error during conversion')
+      setProcessError(err instanceof Error ? err.message : t('Error during conversion'))
       setStep2Status(s => ({ ...s, structure: 'pending' }))
     }
   }
@@ -381,7 +384,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
         updatedItems[i] = {
           ...updatedItems[i],
           status: 'error',
-          error: err instanceof Error ? err.message : 'Conversion failed',
+          error: err instanceof Error ? err.message : t('Conversion failed'),
         }
         setBatchItems([...updatedItems])
       }
@@ -452,16 +455,16 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
             onClick={() => setCenterTab('graph')}
             className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-[var(--color-bg-hover)]"
             style={{ color: 'var(--color-text-muted)' }}
-            title="Back to graph"
+            title={t('Back to graph')}
           >
             <ChevronLeft size={12} />
-            Graph
+            {t('Graph')}
           </button>
           <span
             className="text-xs font-medium px-2"
             style={{ color: 'var(--color-text-secondary)' }}
           >
-            ✏️ MD Conversion Editor
+            ✏️ {t('MD Conversion Editor')}
           </span>
         </div>
       )}
@@ -481,23 +484,23 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
             {/* Input tabs */}
             <div className="flex gap-1">
               {([
-                { id: 'paste',      label: 'Paste',        icon: null },
-                { id: 'upload',     label: 'Upload File',  icon: null },
-                { id: 'folder',     label: 'Batch Folder', icon: <Folder size={11} /> },
-                { id: 'confluence', label: 'Confluence', icon: <Globe size={11} /> },
-              ] as const).map(t => (
+                { id: 'paste',      label: t('Paste'),        icon: null },
+                { id: 'upload',     label: t('Upload File'),  icon: null },
+                { id: 'folder',     label: t('Batch Folder'), icon: <Folder size={11} /> },
+                { id: 'confluence', label: t('Confluence'), icon: <Globe size={11} /> },
+              ] as const).map(opt => (
                 <button
-                  key={t.id}
-                  onClick={() => setInputTab(t.id)}
-                  className={cn('px-3 py-1.5 text-xs rounded transition-colors flex items-center gap-1.5', inputTab === t.id && 'font-medium')}
+                  key={opt.id}
+                  onClick={() => setInputTab(opt.id)}
+                  className={cn('px-3 py-1.5 text-xs rounded transition-colors flex items-center gap-1.5', inputTab === opt.id && 'font-medium')}
                   style={{
-                    background: inputTab === t.id ? 'var(--color-bg-hover)' : 'transparent',
-                    color: inputTab === t.id ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
+                    background: inputTab === opt.id ? 'var(--color-bg-hover)' : 'transparent',
+                    color: inputTab === opt.id ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
                     border: '1px solid var(--color-border)',
                   }}
                 >
-                  {t.icon}
-                  {t.label}
+                  {opt.icon}
+                  {opt.label}
                 </button>
               ))}
             </div>
@@ -507,7 +510,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
               <textarea
                 value={content}
                 onChange={e => setContent(e.target.value)}
-                placeholder="Paste your source text here..."
+                placeholder={t('Paste your source text here...')}
                 rows={10}
                 className="w-full resize-none rounded-lg px-3 py-2 text-sm"
                 style={{
@@ -532,7 +535,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                 <Upload size={24} style={{ color: 'var(--color-text-muted)' }} />
                 <div className="text-center">
                   <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                    Drag a file here or click to upload
+                    {t('Drag a file here or click to upload')}
                   </div>
                   <div className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
                     .txt .md .html .docx .pdf
@@ -574,15 +577,15 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                   <Folder size={24} style={{ color: 'var(--color-text-muted)' }} />
                   <div className="text-center">
                     <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                      Click to select a folder
+                      {t('Click to select a folder')}
                     </div>
                     <div className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
-                      Supported formats: .txt .md .html .docx .pdf
+                      {t('Supported formats: .txt .md .html .docx .pdf')}
                     </div>
                   </div>
                   {folderFiles.length > 0 && (
                     <div className="text-xs font-medium" style={{ color: 'var(--color-accent)' }}>
-                      ✓ {folderFiles.length} file{folderFiles.length !== 1 ? 's' : ''} found
+                      ✓ {t('{count} file(s) found', { count: folderFiles.length })}
                     </div>
                   )}
                   {/* webkitdirectory set imperatively in useEffect */}
@@ -613,10 +616,10 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                           onChange={toggleAll}
                           className="cursor-pointer"
                         />
-                        Select all ({selectedIndices.size}/{folderFiles.length} selected)
+                        {t('Select all ({count}/{total} selected)', { count: selectedIndices.size, total: folderFiles.length })}
                       </label>
                       <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                        Choose files to convert
+                        {t('Choose files to convert')}
                       </span>
                     </div>
 
@@ -681,11 +684,11 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
               {/* Title — only for single-file modes */}
               {inputTab !== 'folder' && (
                 <div className="col-span-2">
-                  <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Title</label>
+                  <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>{t('Title')}</label>
                   <input
                     value={meta.title}
                     onChange={e => setMeta(m => ({ ...m, title: e.target.value }))}
-                    placeholder="Document title (Obsidian filename)"
+                    placeholder={t('Document title (Obsidian filename)')}
                     className="w-full px-3 py-1.5 text-sm rounded"
                     style={{
                       background: 'var(--color-bg-secondary)',
@@ -702,12 +705,12 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                     className="text-xs px-3 py-2 rounded"
                     style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}
                   >
-                    📝 The filename will be used as the title for each document
+                    📝 {t('The filename will be used as the title for each document')}
                   </div>
                 </div>
               )}
               <div>
-                <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Speaker</label>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>{t('Speaker')}</label>
                 <select
                   value={meta.speaker}
                   onChange={e => setMeta(m => ({ ...m, speaker: e.target.value }))}
@@ -725,7 +728,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                 </select>
               </div>
               <div>
-                <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Date</label>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>{t('Date')}</label>
                 <input
                   type="date"
                   value={meta.date}
@@ -741,7 +744,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                 />
               </div>
               <div>
-                <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Type</label>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>{t('Type')}</label>
                 <select
                   value={meta.type}
                   onChange={e => setMeta(m => ({ ...m, type: e.target.value as ConversionType }))}
@@ -753,7 +756,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                     outline: 'none',
                   }}
                 >
-                  {DOC_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  {DOC_TYPES.map(dt => <option key={dt.value} value={dt.value}>{t(dt.label)}</option>)}
                 </select>
               </div>
             </div>
@@ -771,7 +774,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                   }}
                 >
                   <Folder size={14} />
-                  Batch convert {selectedIndices.size} file{selectedIndices.size !== 1 ? 's' : ''}
+                  {t('Batch convert {count} file(s)', { count: selectedIndices.size })}
                   <ArrowRight size={14} />
                 </button>
               ) : (
@@ -784,7 +787,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                     color: canStartSingle ? '#fff' : 'var(--color-text-muted)',
                   }}
                 >
-                  Start AI Conversion
+                  {t('Start AI Conversion')}
                   <ArrowRight size={14} />
                 </button>
               )}
@@ -804,7 +807,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-                    Converting file {batchCurrentIdx + 1} / {batchItems.length}…
+                    {t('Converting file {current} / {total}…', { current: batchCurrentIdx + 1, total: batchItems.length })}
                   </div>
                   <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
                     {batchItems[batchCurrentIdx]?.file.name}
@@ -854,7 +857,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
             {/* Single-file processing header */}
             {!isBatchMode && (
               <div className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-                Claude is analyzing the document...
+                {t('Claude is analyzing the document...')}
               </div>
             )}
 
@@ -873,7 +876,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
               }}
             >
               {streamedText || (
-                <span style={{ color: 'var(--color-text-muted)' }}>Waiting...</span>
+                <span style={{ color: 'var(--color-text-muted)' }}>{t('Waiting...')}</span>
               )}
               <span
                 style={{
@@ -895,9 +898,9 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                 className="text-xs px-3 py-2 rounded"
                 style={{ background: '#3d1a1a', color: '#e74c3c', border: '1px solid #5a2020' }}
               >
-                Error: {processError}
+                {t('Error: {error}', { error: processError })}
                 <button onClick={handleReset} className="ml-3 underline" style={{ color: 'var(--color-accent)' }}>
-                  Start over
+                  {t('Start over')}
                 </button>
               </div>
             )}
@@ -920,10 +923,10 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                 >
                   <div>
                     <div className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
-                      Batch conversion complete
+                      {t('Batch conversion complete')}
                     </div>
                     <div className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                      Success: {batchDoneCount} / {batchItems.length} total
+                      {t('Success: {done} / {total} total', { done: batchDoneCount, total: batchItems.length })}
                     </div>
                   </div>
                   <button
@@ -933,7 +936,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                     style={{ background: 'var(--color-accent)', color: '#fff' }}
                   >
                     <Download size={12} />
-                    Download all ({batchDoneCount})
+                    {t('Download all ({count})', { count: batchDoneCount })}
                   </button>
                 </div>
 
@@ -1002,7 +1005,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                     style={{ color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}
                   >
                     <RotateCcw size={12} />
-                    Convert again
+                    {t('Convert again')}
                   </button>
                 </div>
               </>
@@ -1013,7 +1016,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                 {keywords.length > 0 && (
                   <div>
                     <div className="text-xs mb-2" style={{ color: 'var(--color-text-muted)' }}>
-                      Extracted keywords
+                      {t('Extracted keywords')}
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       {keywords.map(kw => (
@@ -1036,7 +1039,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                 {/* Editable MD textarea */}
                 <div>
                   <div className="text-xs mb-2" style={{ color: 'var(--color-text-muted)' }}>
-                    Generated markdown (editable)
+                    {t('Generated markdown (editable)')}
                   </div>
                   <textarea
                     value={finalMd}
@@ -1062,7 +1065,7 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                     style={{ color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}
                   >
                     <RotateCcw size={12} />
-                    Edit again
+                    {t('Edit again')}
                   </button>
                   <div className="flex-1" />
                   <button
@@ -1073,12 +1076,12 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                       background: saveStatus === 'saved' ? '#2ecc71' : 'var(--color-accent)',
                       color: '#fff',
                     }}
-                    title={!vaultPath ? 'Please select a vault first (⚙️ Settings)' : undefined}
+                    title={!vaultPath ? t('Please select a vault first (⚙️ Settings)') : undefined}
                   >
-                    {saveStatus === 'saving' ? 'Saving...'
-                      : saveStatus === 'saved' ? <><Check size={12} /> Saved</>
-                      : saveStatus === 'error' ? 'Save failed'
-                      : <><Save size={12} /> Approve &amp; Save</>
+                    {saveStatus === 'saving' ? t('Saving...')
+                      : saveStatus === 'saved' ? <><Check size={12} /> {t('Saved')}</>
+                      : saveStatus === 'error' ? t('Save failed')
+                      : <><Save size={12} /> {t('Approve & Save')}</>
                     }
                   </button>
                   <button
@@ -1087,13 +1090,13 @@ export default function ConverterEditor({ onBack }: ConverterEditorProps = {}) {
                     style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}
                   >
                     <Download size={12} />
-                    Download .md
+                    {t('Download .md')}
                   </button>
                 </div>
 
                 {saveStatus === 'error' && (
                   <div className="text-xs" style={{ color: '#e74c3c' }}>
-                    Save failed — please select a vault first (⚙️ Settings → Select Vault)
+                    {t('Save failed — please select a vault first (⚙️ Settings → Select Vault)')}
                   </div>
                 )}
               </>

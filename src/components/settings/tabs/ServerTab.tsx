@@ -10,6 +10,7 @@ import { fieldInputStyle } from '../settingsShared'
 import { clearWebConfig, loadWebConfig } from '@/web/config'
 import { currentRemoteVault } from '@/web/remoteVault'
 import { clearSession } from '@/web/auth'
+import { t, useT } from '@/i18n'
 
 type SyncState = NonNullable<Window['syncAPI']> extends { getState(): Promise<infer S> } ? S : never
 
@@ -35,15 +36,16 @@ function when(ms: number): string {
 }
 
 function relative(ms: number | null): string {
-  if (!ms) return 'never'
+  if (!ms) return t('never')
   const s = Math.floor((Date.now() - ms) / 1000)
-  if (s < 5) return 'just now'
-  if (s < 60) return `${s}s ago`
+  if (s < 5) return t('just now')
+  if (s < 60) return t('{s}s ago', { s })
   const m = Math.floor(s / 60)
-  return m < 60 ? `${m}m ago` : `${Math.floor(m / 60)}h ago`
+  return m < 60 ? t('{m}m ago', { m }) : t('{h}h ago', { h: Math.floor(m / 60) })
 }
 
 export default function ServerTab() {
+  const t = useT()
   const api = window.syncAPI
   const [state, setState] = useState<SyncState | null>(null)
   const [author, setAuthor] = useState('')
@@ -77,7 +79,7 @@ export default function ServerTab() {
   }, [api])
 
   if (!api) {
-    return <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>Not connected to a server.</div>
+    return <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{t('Not connected to a server.')}</div>
   }
 
   const status = state?.status
@@ -96,7 +98,7 @@ export default function ServerTab() {
     try { setState(await api.syncNow()) } finally { setBusy(null) }
   }
   const disconnect = async () => {
-    if (!window.confirm('Disconnect from this server? The local copy of the vault in this browser is removed; nothing on the server changes.')) return
+    if (!window.confirm(t('Disconnect from this server? The local copy of the vault in this browser is removed; nothing on the server changes.'))) return
     await currentRemoteVault()?.cache.reset()
     clearSession()
     clearWebConfig()
@@ -109,7 +111,7 @@ export default function ServerTab() {
         <Cloud size={16} color="var(--color-accent)" />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-accent)' }} data-testid="server-status-title">
-            {status?.inFlight ? 'Syncing…' : status?.lastError ? 'Sync error' : `Connected · last ${relative(status?.lastSyncAt ?? null)}`}
+            {status?.inFlight ? t('Syncing…') : status?.lastError ? t('Sync error') : t('Connected · last {time}', { time: relative(status?.lastSyncAt ?? null) })}
           </div>
           <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {url}{status ? ` · seq ${status.lastSeq}` : ''}{signedIn && saved?.email ? ` · ${saved.email}` : ''}
@@ -117,50 +119,50 @@ export default function ServerTab() {
           {status?.lastError && <div style={{ fontSize: 11, color: 'var(--color-error)', marginTop: 4 }}>{status.lastError}</div>}
         </div>
         <button onClick={syncNow} disabled={busy !== null} data-testid="server-sync-now" style={{ ...button, opacity: busy ? 0.5 : 1 }}>
-          <RefreshCw size={11} className={busy === 'sync' || status?.inFlight ? 'animate-spin' : ''} /> Sync now
+          <RefreshCw size={11} className={busy === 'sync' || status?.inFlight ? 'animate-spin' : ''} /> {t('Sync now')}
         </button>
       </div>
 
       <div>
-        <div style={sectionLabel}>You</div>
+        <div style={sectionLabel}>{t('You')}</div>
         <div style={card}>
           <div>
-            <label style={label}>Author name</label>
+            <label style={label}>{t('Author name')}</label>
             <div style={{ display: 'flex', gap: 8 }}>
-              <input value={author} onChange={e => setAuthor(e.target.value)} placeholder="shown on your edits and conflict copies" style={fieldInputStyle} data-testid="server-author" />
-              <button onClick={saveAuthor} disabled={busy !== null || author.trim() === (state?.config.author ?? '')} style={{ ...button, whiteSpace: 'nowrap' }}>Save</button>
+              <input value={author} onChange={e => setAuthor(e.target.value)} placeholder={t('shown on your edits and conflict copies')} style={fieldInputStyle} data-testid="server-author" />
+              <button onClick={saveAuthor} disabled={busy !== null || author.trim() === (state?.config.author ?? '')} style={{ ...button, whiteSpace: 'nowrap' }}>{t('Save')}</button>
             </div>
-            <div style={hint}>{signedIn ? 'Comes from your Google account; change it here if the team knows you by another name.' : 'Recorded on every file you save so the team sees who changed what.'}</div>
+            <div style={hint}>{signedIn ? t('Comes from your Google account; change it here if the team knows you by another name.') : t('Recorded on every file you save so the team sees who changed what.')}</div>
           </div>
         </div>
       </div>
 
       <div>
-        <div style={sectionLabel}>Talk to the vault from Claude Code</div>
+        <div style={sectionLabel}>{t('Talk to the vault from Claude Code')}</div>
         <div style={card}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
             <Terminal size={13} style={{ flexShrink: 0, marginTop: 3, color: 'var(--color-text-muted)' }} />
             <code style={{ fontSize: 11, lineHeight: 1.6, wordBreak: 'break-all', color: 'var(--color-text-primary)' }} data-testid="server-mcp-command">{mcpCommand}</code>
           </div>
-          <div style={hint}>{signedIn ? 'Claude Code opens the Google sign-in the first time you use it.' : 'Same server, same token.'} Gives Claude Code <code>vault_search</code>, <code>graph_lint</code>, <code>vault_propose</code> and friends.</div>
+          <div style={hint}>{signedIn ? t('Claude Code opens the Google sign-in the first time you use it.') : t('Same server, same token.')} {t('Gives Claude Code')} <code>vault_search</code>, <code>graph_lint</code>, <code>vault_propose</code> {t('and friends.')}</div>
         </div>
       </div>
 
       <div>
-        <div style={sectionLabel}>Nightly batch — lint report + vector index</div>
+        <div style={sectionLabel}>{t('Nightly batch — lint report + vector index')}</div>
         <div style={card}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <Database size={14} style={{ flexShrink: 0, color: 'var(--color-accent)' }} />
             <div style={{ flex: 1, fontSize: 12, color: 'var(--color-text-primary)' }} data-testid="batch-coverage">
               {batch
-                ? <>Vector index covers <b>{batch.embeddedDocs}</b> / {batch.totalDocs} documents{batch.pendingDocs > 0 ? <span style={{ color: 'var(--color-warning)' }}> · {batch.pendingDocs} waiting for the next run</span> : ''}</>
-                : batchError ? <span style={{ color: 'var(--color-error)' }}>{batchError}</span> : 'Loading…'}
+                ? <>{t('Vector index covers')} <b>{batch.embeddedDocs}</b> {t('/ {total} documents', { total: batch.totalDocs })}{batch.pendingDocs > 0 ? <span style={{ color: 'var(--color-warning)' }}> · {t('{count} waiting for the next run', { count: batch.pendingDocs })}</span> : ''}</>
+                : batchError ? <span style={{ color: 'var(--color-error)' }}>{batchError}</span> : t('Loading…')}
             </div>
             <button onClick={runBatch} disabled={busy !== null} data-testid="batch-run" style={{ ...button, opacity: busy ? 0.5 : 1 }}>
-              {busy === 'batch' ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} />} {busy === 'batch' ? 'Running…' : 'Run now'}
+              {busy === 'batch' ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} />} {busy === 'batch' ? t('Running…') : t('Run now')}
             </button>
           </div>
-          <div style={hint}>Runs every night at 04:00 (Asia/Seoul): writes <code>_reports/lint-&lt;date&gt;.md</code> and embeds changed documents for <code>vault_search</code>. Large backlogs finish over several runs.</div>
+          <div style={hint}>{t('Runs every night at 04:00 (Asia/Seoul): writes')} <code>_reports/lint-&lt;date&gt;.md</code> {t('and embeds changed documents for')} <code>vault_search</code>{t('. Large backlogs finish over several runs.')}</div>
           {batch && batch.runs.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }} data-testid="batch-log">
               {batch.runs.slice().reverse().slice(0, 10).map((r, i) => (
@@ -168,7 +170,10 @@ export default function ServerTab() {
                   <span style={{ color: 'var(--color-text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{when(r.startedAt)}</span>
                   <span style={{ color: 'var(--color-text-muted)' }}>{r.trigger}</span>
                   <span style={{ color: r.embeddings.error ? 'var(--color-error)' : 'var(--color-text-muted)' }}>
-                    {r.docs} docs · lint {r.lint.errors}E/{r.lint.warnings}W · embedded {r.embeddings.docsEmbedded}{r.embeddings.pending > 0 ? ` (+${r.embeddings.pending} left)` : ''} · {Math.round(r.durationMs / 1000)}s{r.embeddings.error ? ` · ${r.embeddings.error}` : ''}
+                    {t('{docs} docs · lint {errors}E/{warnings}W · embedded {embedded}', { docs: r.docs, errors: r.lint.errors, warnings: r.lint.warnings, embedded: r.embeddings.docsEmbedded })}
+                    {r.embeddings.pending > 0 ? t(' (+{pending} left)', { pending: r.embeddings.pending }) : ''}
+                    {t(' · {seconds}s', { seconds: Math.round(r.durationMs / 1000) })}
+                    {r.embeddings.error ? ` · ${r.embeddings.error}` : ''}
                   </span>
                 </div>
               ))}
@@ -179,14 +184,14 @@ export default function ServerTab() {
 
       {status && status.conflicts.length > 0 && (
         <div>
-          <div style={sectionLabel}>Conflicts</div>
+          <div style={sectionLabel}>{t('Conflicts')}</div>
           <div style={card}>
             {status.conflicts.slice().reverse().map((c, i) => (
               <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 11 }}>
                 <GitBranch size={12} style={{ flexShrink: 0, marginTop: 2, color: 'var(--color-warning)' }} />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ color: 'var(--color-text-primary)' }}>{c.path}</div>
-                  <div style={{ color: 'var(--color-text-muted)' }}>{c.remoteAuthor} won · yours kept as <code>{c.keptAs.split('/').pop()}</code> · {relative(c.at)}</div>
+                  <div style={{ color: 'var(--color-text-muted)' }}>{c.remoteAuthor} {t('won · yours kept as')} <code>{c.keptAs.split('/').pop()}</code> · {relative(c.at)}</div>
                 </div>
               </div>
             ))}
@@ -196,7 +201,7 @@ export default function ServerTab() {
 
       {status && status.errors.length > 0 && (
         <div>
-          <div style={sectionLabel}>Recent errors</div>
+          <div style={sectionLabel}>{t('Recent errors')}</div>
           <div style={card}>
             {status.errors.slice().reverse().slice(0, 5).map((e, i) => (
               <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 11 }}>
@@ -209,14 +214,14 @@ export default function ServerTab() {
       )}
 
       <div>
-        <div style={sectionLabel}>Session</div>
+        <div style={sectionLabel}>{t('Session')}</div>
         <div style={card}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ flex: 1, fontSize: 11, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
-              {signedIn ? 'Signs you out and removes the local copy of the vault from this browser.' : 'Removes the server address, the token and the local copy of the vault from this browser.'}
+              {signedIn ? t('Signs you out and removes the local copy of the vault from this browser.') : t('Removes the server address, the token and the local copy of the vault from this browser.')}
             </div>
             <button onClick={disconnect} data-testid="server-disconnect" style={{ ...button, color: 'var(--color-error)' }}>
-              <LogOut size={11} /> {signedIn ? 'Sign out' : 'Disconnect'}
+              <LogOut size={11} /> {signedIn ? t('Sign out') : t('Disconnect')}
             </button>
           </div>
         </div>

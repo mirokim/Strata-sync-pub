@@ -41,6 +41,7 @@ import ServerTab from './tabs/ServerTab'
 import McpTab from './tabs/McpTab'
 import MembersTab from './tabs/MembersTab'
 import { isWebMode } from '@/web/config'
+import { useT } from '@/i18n'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -158,6 +159,7 @@ function renderTabContent(tab: SettingsTab) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function SettingsPanel() {
+  const t = useT()
   const { resetPersonaModels } = useSettingsStore()
   const setCenterTab = useUIStore(s => s.setCenterTab)
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
@@ -184,7 +186,7 @@ export default function SettingsPanel() {
           style={{ borderBottom: '1px solid var(--color-border)' }}
         >
           <span className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
-            Settings
+            {t('Settings')}
           </span>
         </div>
 
@@ -196,7 +198,7 @@ export default function SettingsPanel() {
                 className="px-4 pb-1 text-xs font-semibold tracking-wider uppercase"
                 style={{ color: 'var(--color-text-muted)' }}
               >
-                {group.label}
+                {t(group.label)}
               </div>
 
               {group.items.map(item => {
@@ -217,7 +219,7 @@ export default function SettingsPanel() {
                     }}
                   >
                     <Icon size={14} />
-                    {item.label}
+                    {t(item.label)}
                   </button>
                 )
               })}
@@ -239,13 +241,13 @@ export default function SettingsPanel() {
           style={{ borderBottom: '1px solid var(--color-border)' }}
         >
           <span className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-            {activeLabel}
+            {t(activeLabel)}
           </span>
           <button
             onClick={close}
             className="p-1 rounded transition-colors hover:bg-[var(--color-bg-hover)]"
             style={{ color: 'var(--color-text-muted)' }}
-            aria-label="Close"
+            aria-label={t('Close')}
             data-testid="settings-close"
           >
             <X size={14} />
@@ -268,7 +270,7 @@ export default function SettingsPanel() {
             style={{ color: 'var(--color-text-muted)' }}
             data-testid="settings-reset"
           >
-            Reset to Defaults
+            {t('Reset to Defaults')}
           </button>
           <button
             onClick={close}
@@ -276,7 +278,7 @@ export default function SettingsPanel() {
             style={{ background: 'var(--color-accent)', color: '#fff' }}
             data-testid="settings-save"
           >
-            Close
+            {t('Close')}
           </button>
         </div>
       </div>

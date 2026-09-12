@@ -14,6 +14,7 @@ import { Play, Square, Plus, Trash2, RotateCcw, Save, Clock, History, ChevronDow
 import { useMiroStore } from '@/stores/miroStore'
 import { MODEL_OPTIONS } from '@/lib/modelConfig'
 import type { MirofishPersona, MirofishScheduledTopic, MirofishHistoryEntry } from '@/services/mirofish/types'
+import { useT } from '@/i18n'
 
 // Color mapping
 
@@ -74,6 +75,7 @@ export default function MirofishTab() {
     topic: '', numPersonas: 5, numRounds: 3, time: '09:00', enabled: true,
   })
   const [vaultToast, setVaultToast] = useState<'saved' | 'copied' | 'error' | null>(null)
+  const t = useT()
 
   const feedEndRef = useRef<HTMLDivElement>(null)
 
@@ -87,12 +89,12 @@ export default function MirofishTab() {
   const canStart   = config.topic.trim().length > 0 && config.personas.length > 0
 
   const statusText: Record<typeof simState.status, string> = {
-    idle:                'Idle',
-    'generating-personas': 'Generating personas...',
-    running:             `Round ${simState.currentRound} / ${simState.totalRounds} in progress...`,
-    'generating-report': 'Generating report...',
-    done:                'Complete',
-    error:               `Error: ${simState.errorMessage ?? ''}`,
+    idle:                t('Idle'),
+    'generating-personas': t('Generating personas...'),
+    running:             t('Round {current} / {total} in progress...', { current: simState.currentRound, total: simState.totalRounds }),
+    'generating-report': t('Generating report...'),
+    done:                t('Complete'),
+    error:               t('Error: {message}', { message: simState.errorMessage ?? '' }),
   }
 
   // Save to vault
@@ -123,19 +125,19 @@ export default function MirofishTab() {
 
       {/* Simulation settings */}
       <div>
-        <SectionLabel>Simulation Settings</SectionLabel>
+        <SectionLabel>{t('Simulation Settings')}</SectionLabel>
         <Card>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
             {/* Topic */}
             <div>
               <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', display: 'block', marginBottom: 5 }}>
-                Topic / Scenario
+                {t('Topic / Scenario')}
               </label>
               <input
                 value={config.topic}
                 onChange={e => setConfig({ topic: e.target.value })}
-                placeholder="e.g. New character launch, price increase announcement, new feature promo..."
+                placeholder={t('e.g. New character launch, price increase announcement, new feature promo...')}
                 disabled={isRunning}
                 style={{
                   width: '100%', fontSize: 13, padding: '7px 10px', borderRadius: 2,
@@ -149,7 +151,7 @@ export default function MirofishTab() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', display: 'block', marginBottom: 5 }}>
-                  Persona Count (3-50)
+                  {t('Persona Count (3-50)')}
                 </label>
                 <input
                   type="number" min={3} max={50} value={config.numPersonas}
@@ -164,7 +166,7 @@ export default function MirofishTab() {
               </div>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', display: 'block', marginBottom: 5 }}>
-                  Round Count (2-10)
+                  {t('Round Count (2-10)')}
                 </label>
                 <input
                   type="number" min={2} max={10} value={config.numRounds}
@@ -182,7 +184,7 @@ export default function MirofishTab() {
             {/* Model selection */}
             <div>
               <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', display: 'block', marginBottom: 5 }}>
-                Model
+                {t('Model')}
               </label>
               <select
                 value={config.modelId}
@@ -209,10 +211,10 @@ export default function MirofishTab() {
                 disabled={isRunning}
               />
               <span style={{ fontSize: 13, color: 'var(--color-text-primary)' }}>
-                Auto-generate personas based on topic
+                {t('Auto-generate personas based on topic')}
               </span>
               <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-                (LLM analyzes topic and creates personas)
+                {t('(LLM analyzes topic and creates personas)')}
               </span>
             </label>
 
@@ -220,10 +222,10 @@ export default function MirofishTab() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
                 <span style={{ fontSize: 13, color: 'var(--color-text-primary)' }}>
-                  Direct Image Pass
+                  {t('Direct Image Pass')}
                 </span>
                 <span style={{ fontSize: 11, color: 'var(--color-text-muted)', marginLeft: 6 }}>
-                  {config.imageDirectPass ? 'Each persona sees images directly (more tokens)' : 'Images converted to text descriptions (fewer tokens)'}
+                  {config.imageDirectPass ? t('Each persona sees images directly (more tokens)') : t('Images converted to text descriptions (fewer tokens)')}
                 </span>
               </div>
               <button
@@ -252,7 +254,7 @@ export default function MirofishTab() {
 
       {/* Execution controls */}
       <div>
-        <SectionLabel>Execution Controls</SectionLabel>
+        <SectionLabel>{t('Execution Controls')}</SectionLabel>
         <div style={{
           display: 'flex', alignItems: 'center', gap: 12,
           padding: '12px 14px', borderRadius: 2,
@@ -291,7 +293,7 @@ export default function MirofishTab() {
                 color: 'var(--color-text-muted)', cursor: 'pointer',
               }}
             >
-              <RotateCcw size={10} /> Reset
+              <RotateCcw size={10} /> {t('Reset')}
             </button>
           )}
 
@@ -309,7 +311,7 @@ export default function MirofishTab() {
               flexShrink: 0, whiteSpace: 'nowrap',
             }}
           >
-            {isRunning ? <><Square size={11} /> Stop</> : <><Play size={11} /> Start</>}
+            {isRunning ? <><Square size={11} /> {t('Stop')}</> : <><Play size={11} /> {t('Start')}</>}
           </button>
         </div>
         <style>{`@keyframes miroPing { 0% { transform: scale(1); opacity: 0.25; } 100% { transform: scale(3); opacity: 0; } }`}</style>
@@ -319,7 +321,7 @@ export default function MirofishTab() {
       {!config.autoGeneratePersonas && (
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <SectionLabel>Persona List</SectionLabel>
+            <SectionLabel>{t('Persona List')}</SectionLabel>
             <button
               onClick={addPersona}
               disabled={isRunning || config.personas.length >= 50}
@@ -329,7 +331,7 @@ export default function MirofishTab() {
                 background: 'none', color: 'var(--color-text-muted)', cursor: 'pointer',
               }}
             >
-              <Plus size={10} /> Add
+              <Plus size={10} /> {t('Add')}
             </button>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -348,7 +350,7 @@ export default function MirofishTab() {
 
       {/* Persona presets */}
       <div>
-        <SectionLabel>Persona Presets</SectionLabel>
+        <SectionLabel>{t('Persona Presets')}</SectionLabel>
         <Card>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {/* Save current personas */}
@@ -356,7 +358,7 @@ export default function MirofishTab() {
               <input
                 value={presetName}
                 onChange={e => setPresetName(e.target.value)}
-                placeholder="Preset name..."
+                placeholder={t('Preset name...')}
                 style={{
                   flex: 1, fontSize: 12, padding: '5px 8px', borderRadius: 2,
                   background: 'var(--color-bg-base)', border: '1px solid var(--color-border)',
@@ -374,13 +376,13 @@ export default function MirofishTab() {
                   opacity: presetName.trim() && config.personas.length > 0 ? 1 : 0.4,
                 }}
               >
-                <Save size={10} /> Save
+                <Save size={10} /> {t('Save')}
               </button>
             </div>
             {/* Saved presets list */}
             {presets.length === 0 ? (
               <div style={{ fontSize: 12, color: 'var(--color-text-muted)', textAlign: 'center', padding: '6px 0' }}>
-                No saved presets
+                {t('No saved presets')}
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -394,13 +396,13 @@ export default function MirofishTab() {
                       {preset.name}
                     </span>
                     <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>
-                      {preset.personas.length} personas
+                      {t('{count} personas', { count: preset.personas.length })}
                     </span>
                     <button
                       onClick={() => loadPreset(preset.id)}
                       style={{ ...btnStyle, fontSize: 10, padding: '3px 8px' }}
                     >
-                      Load
+                      {t('Load')}
                     </button>
                     <button
                       onClick={() => deletePreset(preset.id)}
@@ -418,7 +420,7 @@ export default function MirofishTab() {
 
       {/* Scheduled execution */}
       <div>
-        <SectionLabel>Scheduled Execution</SectionLabel>
+        <SectionLabel>{t('Scheduled Execution')}</SectionLabel>
         <Card>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {/* Add new schedule */}
@@ -427,7 +429,7 @@ export default function MirofishTab() {
                 <input
                   value={newSched.topic}
                   onChange={e => setNewSched(s => ({ ...s, topic: e.target.value }))}
-                  placeholder="Topic..."
+                  placeholder={t('Topic...')}
                   style={{
                     flex: 1, fontSize: 12, padding: '5px 8px', borderRadius: 2,
                     background: 'var(--color-bg-base)', border: '1px solid var(--color-border)',
@@ -446,7 +448,7 @@ export default function MirofishTab() {
                 />
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>Personas</span>
+                <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{t('Personas')}</span>
                 <input
                   type="number" min={3} max={50} value={newSched.numPersonas}
                   onChange={e => setNewSched(s => ({ ...s, numPersonas: Math.max(3, Math.min(50, +e.target.value)) }))}
@@ -456,7 +458,7 @@ export default function MirofishTab() {
                     color: 'var(--color-text-primary)', outline: 'none',
                   }}
                 />
-                <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>Rounds</span>
+                <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{t('Rounds')}</span>
                 <input
                   type="number" min={2} max={10} value={newSched.numRounds}
                   onChange={e => setNewSched(s => ({ ...s, numRounds: Math.max(2, Math.min(10, +e.target.value)) }))}
@@ -477,14 +479,14 @@ export default function MirofishTab() {
                     opacity: newSched.topic.trim() ? 1 : 0.4,
                   }}
                 >
-                  <Clock size={10} /> Add
+                  <Clock size={10} /> {t('Add')}
                 </button>
               </div>
             </div>
             {/* Schedule list */}
             {scheduledTopics.length === 0 ? (
               <div style={{ fontSize: 12, color: 'var(--color-text-muted)', textAlign: 'center', padding: '4px 0' }}>
-                No scheduled topics
+                {t('No scheduled topics')}
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -502,7 +504,7 @@ export default function MirofishTab() {
                       {sched.topic}
                     </span>
                     <span style={{ fontSize: 10, color: 'var(--color-text-muted)', flexShrink: 0 }}>
-                      {sched.numPersonas} personas, {sched.numRounds} rounds
+                      {t('{personas} personas, {rounds} rounds', { personas: sched.numPersonas, rounds: sched.numRounds })}
                     </span>
                     <button
                       onClick={() => updateScheduledTopic(sched.id, { enabled: !sched.enabled })}
@@ -514,7 +516,7 @@ export default function MirofishTab() {
                         cursor: 'pointer',
                       }}
                     >
-                      {sched.enabled ? 'ON' : 'OFF'}
+                      {sched.enabled ? t('ON') : t('OFF')}
                     </button>
                     <button
                       onClick={() => deleteScheduledTopic(sched.id)}
@@ -533,7 +535,7 @@ export default function MirofishTab() {
       {/* Feed */}
       {(simState.feed.length > 0 || simState.streamingPost) && (
         <div>
-          <SectionLabel>Reaction Feed</SectionLabel>
+          <SectionLabel>{t('Reaction Feed')}</SectionLabel>
           <div style={{
             height: 240, overflowY: 'auto',
             background: 'var(--color-bg-base)', border: '1px solid var(--color-border)',
@@ -547,7 +549,7 @@ export default function MirofishTab() {
                 <span style={{ color: STANCE_COLOR[post.stance], fontWeight: 600 }}>
                   {post.personaName}
                 </span>
-                <span style={{ color: 'var(--color-text-muted)', fontSize: 10 }}> ({STANCE_LABEL[post.stance]})</span>
+                <span style={{ color: 'var(--color-text-muted)', fontSize: 10 }}> ({t(STANCE_LABEL[post.stance])})</span>
                 <span style={{ color: 'var(--color-text-primary)' }}>: {post.content}</span>
               </div>
             ))}
@@ -573,11 +575,11 @@ export default function MirofishTab() {
       {isDone && simState.report && (
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <SectionLabel>Analysis Report</SectionLabel>
+            <SectionLabel>{t('Analysis Report')}</SectionLabel>
             <div style={{ display: 'flex', gap: 6 }}>
-              <button onClick={copyReport} style={btnStyle}>Copy</button>
+              <button onClick={copyReport} style={btnStyle}>{t('Copy')}</button>
               <button onClick={saveToVault} style={btnStyle}>
-                {vaultToast === 'saved' ? 'Saved' : vaultToast === 'copied' ? 'Copied to clipboard' : vaultToast === 'error' ? 'Save failed' : 'Save to Vault'}
+                {vaultToast === 'saved' ? t('Saved') : vaultToast === 'copied' ? t('Copied to clipboard') : vaultToast === 'error' ? t('Save failed') : t('Save to Vault')}
               </button>
             </div>
           </div>
@@ -597,12 +599,12 @@ export default function MirofishTab() {
       {simulationHistory.length > 0 && (
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <SectionLabel>Simulation History ({simulationHistory.length})</SectionLabel>
+            <SectionLabel>{t('Simulation History ({count})', { count: simulationHistory.length })}</SectionLabel>
             <button
               onClick={clearHistory}
               style={{ fontSize: 11, padding: '2px 8px', borderRadius: 2, border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text-muted)', cursor: 'pointer' }}
             >
-              Clear All
+              {t('Clear All')}
             </button>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -628,6 +630,7 @@ export default function MirofishTab() {
 // History card
 
 function HistoryCard({ entry, onDelete, onRerun }: { entry: MirofishHistoryEntry; onDelete: () => void; onRerun: () => void }) {
+  const t = useT()
   const [expanded, setExpanded] = useState(false)
   const date = new Date(entry.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
   const stanceCounts = entry.feed.reduce<Record<string, number>>((acc, p) => {
@@ -646,19 +649,19 @@ function HistoryCard({ entry, onDelete, onRerun }: { entry: MirofishHistoryEntry
             {entry.topic}
           </div>
           <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
-            {date} - {entry.numPersonas} personas - {entry.numRounds} rounds - {entry.feed.length} reactions
+            {t('{date} - {personas} personas - {rounds} rounds - {reactions} reactions', { date, personas: entry.numPersonas, rounds: entry.numRounds, reactions: entry.feed.length })}
             {Object.entries(stanceCounts).map(([s, n]) => (
               <span key={s} style={{ marginLeft: 6, color: s === 'supportive' ? 'var(--color-accent)' : s === 'opposing' ? 'var(--color-error)' : 'var(--color-text-muted)' }}>
-                {s === 'supportive' ? 'Support' : s === 'opposing' ? 'Oppose' : s === 'neutral' ? 'Neutral' : 'Observe'} {n}
+                {t(s === 'supportive' ? 'Support' : s === 'opposing' ? 'Oppose' : s === 'neutral' ? 'Neutral' : 'Observe')} {n}
               </span>
             ))}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 4 }} onClick={e => e.stopPropagation()}>
-          <button onClick={onRerun} title="Rerun with this topic" style={{ fontSize: 11, padding: '2px 6px', borderRadius: 2, border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
-            Rerun
+          <button onClick={onRerun} title={t('Rerun with this topic')} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 2, border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
+            {t('Rerun')}
           </button>
-          <button onClick={onDelete} title="Delete" style={{ padding: '2px 4px', borderRadius: 2, border: 'none', background: 'transparent', color: 'var(--color-text-muted)', cursor: 'pointer' }}>
+          <button onClick={onDelete} title={t('Delete')} style={{ padding: '2px 4px', borderRadius: 2, border: 'none', background: 'transparent', color: 'var(--color-text-muted)', cursor: 'pointer' }}>
             <Trash2 size={12} />
           </button>
         </div>
@@ -684,6 +687,7 @@ function PersonaCard({
   onUpdate: (p: Partial<MirofishPersona>) => void
   onRemove: () => void
 }) {
+  const t = useT()
   const inp = (style?: React.CSSProperties): React.CSSProperties => ({
     fontSize: 12, padding: '4px 8px', borderRadius: 2,
     background: 'var(--color-bg-base)', border: '1px solid var(--color-border)',
@@ -704,7 +708,7 @@ function PersonaCard({
           value={persona.name}
           onChange={e => onUpdate({ name: e.target.value })}
           disabled={disabled}
-          placeholder="Name"
+          placeholder={t('Name')}
           style={inp({ flex: 1 })}
         />
         {/* Stance */}
@@ -714,14 +718,14 @@ function PersonaCard({
           disabled={disabled}
           style={inp({ color: STANCE_COLOR[persona.stance] })}
         >
-          <option value="supportive">Supportive</option>
-          <option value="opposing">Opposing</option>
-          <option value="neutral">Neutral</option>
-          <option value="observer">Observer</option>
+          <option value="supportive">{t('Supportive')}</option>
+          <option value="opposing">{t('Opposing')}</option>
+          <option value="neutral">{t('Neutral')}</option>
+          <option value="observer">{t('Observer')}</option>
         </select>
         {/* Activity level */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ fontSize: 10, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>Activity</span>
+          <span style={{ fontSize: 10, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>{t('Activity')}</span>
           <input
             type="number" min={0.1} max={1} step={0.1}
             value={persona.activityLevel}
@@ -744,7 +748,7 @@ function PersonaCard({
         onChange={e => onUpdate({ systemPrompt: e.target.value })}
         disabled={disabled}
         rows={2}
-        placeholder="Describe this persona's perspective and voice..."
+        placeholder={t("Describe this persona's perspective and voice...")}
         style={{
           ...inp({ width: '100%', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5, boxSizing: 'border-box' }),
         }}

@@ -4,6 +4,7 @@ import { useGraphStore } from '@/stores/graphStore'
 import { SPEAKER_CONFIG } from '@/lib/speakerConfig'
 import StatsChart from './StatsChart'
 import type { SpeakerId } from '@/types'
+import { useT } from '@/i18n'
 
 // ── Small horizontal bar ────────────────────────────────────────────────────
 
@@ -55,6 +56,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 export default function StatsTab() {
+  const t = useT()
   const docs = useVaultStore(s => s.loadedDocuments)
   const vaultPath = useVaultStore(s => s.vaultPath)
   const { nodes, links } = useGraphStore()
@@ -115,7 +117,7 @@ export default function StatsTab() {
     return (
       <div className="flex flex-col items-center justify-center h-full py-16 gap-2">
         <span style={{ fontSize: 28, opacity: 0.2 }}>📂</span>
-        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Please load a vault first</p>
+        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{t('Please load a vault first')}</p>
       </div>
     )
   }
@@ -124,7 +126,7 @@ export default function StatsTab() {
     return (
       <div className="flex flex-col items-center justify-center h-full py-16 gap-2">
         <span style={{ fontSize: 28, opacity: 0.2 }}>📊</span>
-        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>No documents</p>
+        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{t('No documents')}</p>
       </div>
     )
   }
@@ -144,24 +146,24 @@ export default function StatsTab() {
 
       {/* Summary cards */}
       <div style={{ display: 'flex', gap: 8 }}>
-        <Card label="Total Docs" value={stats.docCount} />
-        <Card label="Nodes" value={stats.nodeCount} />
-        <Card label="Wires" value={stats.linkCount} />
-        <Card label="Image Refs" value={stats.totalImages} />
-        <Card label="Total Chars" value={stats.charLabel} />
+        <Card label={t('Total Docs')} value={stats.docCount} />
+        <Card label={t('Nodes')} value={stats.nodeCount} />
+        <Card label={t('Wires')} value={stats.linkCount} />
+        <Card label={t('Image Refs')} value={stats.totalImages} />
+        <Card label={t('Total Chars')} value={stats.charLabel} />
       </div>
 
       {/* Date · Link overview */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <SectionTitle>Overview</SectionTitle>
+        <SectionTitle>{t('Overview')}</SectionTitle>
         {[
           ['Date Range', stats.dateRange],
-          ['Avg Links', `${stats.avgLinks} / doc`],
-          ['Isolated Docs (no links)', `${stats.orphanCount}`],
-          ['Unique Tag Count', `${stats.totalTagTypes}`],
+          ['Avg Links', t('{avg} / doc', { avg: stats.avgLinks })],
+          ['Isolated Docs (no links)', String(stats.orphanCount)],
+          ['Unique Tag Count', String(stats.totalTagTypes)],
         ].map(([k, v]) => (
           <div key={k} style={row}>
-            <span style={{ color: 'var(--color-text-secondary)' }}>{k}</span>
+            <span style={{ color: 'var(--color-text-secondary)' }}>{t(k)}</span>
             <span style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{v}</span>
           </div>
         ))}
@@ -169,7 +171,7 @@ export default function StatsTab() {
 
       {/* Speaker distribution */}
       <div>
-        <SectionTitle>Speaker Distribution</SectionTitle>
+        <SectionTitle>{t('Speaker Distribution')}</SectionTitle>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {Object.entries(stats.speakerCounts)
             .sort((a, b) => b[1] - a[1])
@@ -199,7 +201,7 @@ export default function StatsTab() {
 
       {/* Top linked documents */}
       <div>
-        <SectionTitle>Top Linked Documents</SectionTitle>
+        <SectionTitle>{t('Top Linked Documents')}</SectionTitle>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           {stats.topLinked.map((doc, i) => (
             <div key={doc.id} style={row}>
@@ -218,7 +220,7 @@ export default function StatsTab() {
       {/* Top tags */}
       {stats.topTags.length > 0 && (
         <div>
-          <SectionTitle>Top Tags</SectionTitle>
+          <SectionTitle>{t('Top Tags')}</SectionTitle>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
             {stats.topTags.map(([tag, count]) => (
               <span
@@ -241,7 +243,7 @@ export default function StatsTab() {
 
       {/* Trend chart */}
       <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 16 }}>
-        <SectionTitle>Trends</SectionTitle>
+        <SectionTitle>{t('Trends')}</SectionTitle>
         <StatsChart />
       </div>
 

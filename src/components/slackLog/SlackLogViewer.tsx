@@ -7,6 +7,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { ChevronLeft, ChevronRight, X, RefreshCw } from 'lucide-react'
 import { useUIStore } from '@/stores/uiStore'
+import { useT } from '@/i18n'
 
 // ── Log line parsing ─────────────────────────────────────────────────────────
 
@@ -91,6 +92,7 @@ function addDays(d: Date, n: number): Date {
 // ── Main component ───────────────────────────────────────────────────────────
 
 export default function SlackLogViewer() {
+  const t = useT()
   const setCenterTab = useUIStore(s => s.setCenterTab)
   const [date, setDate] = useState(() => formatDate(new Date()))
   const [lines, setLines] = useState<string[]>([])
@@ -162,7 +164,7 @@ export default function SlackLogViewer() {
         background: 'var(--color-bg-surface)',
       }}>
         <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-          Slack Bot Logs
+          {t('Slack Bot Logs')}
         </span>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginLeft: 8 }}>
@@ -173,7 +175,7 @@ export default function SlackLogViewer() {
           <button onClick={nextDay} style={navBtnStyle}><ChevronRight size={14} /></button>
         </div>
 
-        <button onClick={() => loadLog(date)} style={{ ...navBtnStyle, marginLeft: 4 }} title="Refresh">
+        <button onClick={() => loadLog(date)} style={{ ...navBtnStyle, marginLeft: 4 }} title={t('Refresh')}>
           <RefreshCw size={12} />
         </button>
 
@@ -191,12 +193,12 @@ export default function SlackLogViewer() {
                 cursor: 'pointer',
               }}
             >
-              {label} {count > 0 && <span style={{ opacity: 0.6 }}>{count}</span>}
+              {t(label)} {count > 0 && <span style={{ opacity: 0.6 }}>{count}</span>}
             </button>
           ))}
         </div>
 
-        <button onClick={() => setCenterTab('graph')} style={navBtnStyle} title="Close">
+        <button onClick={() => setCenterTab('graph')} style={navBtnStyle} title={t('Close')}>
           <X size={14} />
         </button>
       </div>
@@ -211,11 +213,11 @@ export default function SlackLogViewer() {
         }}
       >
         {loading && (
-          <div style={{ padding: 16, color: 'var(--color-text-muted)', textAlign: 'center' }}>Loading...</div>
+          <div style={{ padding: 16, color: 'var(--color-text-muted)', textAlign: 'center' }}>{t('Loading...')}</div>
         )}
         {!loading && entries.length === 0 && (
           <div style={{ padding: 16, color: 'var(--color-text-muted)', textAlign: 'center' }}>
-            No logs for {date}
+            {t('No logs for {date}', { date })}
           </div>
         )}
         {entries.map((entry, i) => (

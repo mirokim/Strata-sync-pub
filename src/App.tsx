@@ -13,6 +13,7 @@ import LaunchPage from '@/components/launch/LaunchPage'
 import MainLayout from '@/components/layout/MainLayout'
 import LoadingOverlay from '@/components/layout/LoadingOverlay'
 import { useChatStore } from '@/stores/chatStore'
+import { resolveLanguage, useT } from '@/i18n'
 
 const CRASH_LABELS: Record<string, string> = {
   oom:        'Restarted due to out-of-memory (OOM). Try reducing vault size or using graph filters.',
@@ -22,11 +23,14 @@ const CRASH_LABELS: Record<string, string> = {
 }
 
 export default function App() {
+  const t = useT()
   const { appState, theme, panelOpacity, setAppState } = useUIStore()
-  const [crashBanner, setCrashBanner] = useState<string | null>(() => {
-    const p = new URLSearchParams(window.location.search).get('crashed')
-    return p ? (CRASH_LABELS[p] ?? `Restarted due to error (${p}).`) : null
-  })
+  const [crashParam, setCrashParam] = useState<string | null>(() => (
+    new URLSearchParams(window.location.search).get('crashed')
+  ))
+  const crashBanner = crashParam
+    ? (CRASH_LABELS[crashParam] ? t(CRASH_LABELS[crashParam]) : t('Restarted due to error ({code}).', { code: crashParam }))
+    : null
   const { vaultPath, loadVault, loadVaultBackground } = useVaultLoader()
   useVaultWatcher()
   usePersonaVaultSaver()
@@ -41,6 +45,9 @@ export default function App() {
   useEffect(() => { restoreSession() }, [])  // eslint-disable-line react-hooks/exhaustive-deps
   const botAutoStarted = useRef(false)
   const slackBotConfig = useSettingsStore(s => s.slackBotConfig)
+  // <html lang> follows the UI language (screen readers, hyphenation, font fallback)
+  const language = useSettingsStore(s => s.language)
+  useEffect(() => { document.documentElement.lang = resolveLanguage(language) }, [language])
   const { setRunning, startBot } = useBotStore()
   const { notification, dismissNotification } = useSyncStore()
   const { watchDiff, setWatchDiff } = useVaultStore()
@@ -136,14 +143,14 @@ export default function App() {
             {crashBanner}
           </div>
           <button
-            onClick={() => setCrashBanner(null)}
+            onClick={() => setCrashParam(null)}
             style={{
               fontSize: 11, padding: '2px 10px', borderRadius: 4, flexShrink: 0,
               background: 'var(--color-warning-bg)', color: 'var(--color-warning)',
               border: '1px solid rgba(245,158,11,0.3)', cursor: 'pointer',
             }}
           >
-            Close
+            {t('Close')}
           </button>
         </div>
       )}
@@ -173,7 +180,7 @@ export default function App() {
             <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 2 }}>
               {watchDiff.added > 0 && <span style={{ color: 'var(--color-success)', marginRight: 6 }}>+{watchDiff.added}</span>}
               {watchDiff.removed > 0 && <span style={{ color: 'var(--color-error)', marginRight: 6 }}>−{watchDiff.removed}</span>}
-              {watchDiff.added === 0 && watchDiff.removed === 0 && 'Changed'}
+              {watchDiff.added === 0 && watchDiff.removed === 0 && t('Changed')}
             </div>
             {watchDiff.preview && (
               <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>
@@ -213,7 +220,7 @@ export default function App() {
               {notification.message}
             </div>
             <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
-              {notification.count} document(s) updated in the vault.
+              {t('{count} document(s) updated in the vault.', { count: notification.count })}
             </div>
           </div>
           <button
@@ -230,7 +237,7 @@ export default function App() {
               whiteSpace: 'nowrap',
             }}
           >
-            OK
+            {t('OK')}
           </button>
         </div>
       )}

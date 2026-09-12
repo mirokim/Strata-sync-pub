@@ -16,8 +16,10 @@ import { useBackendStore } from '@/stores/backendStore'
 import { useVaultLoader } from '@/hooks/useVaultLoader'
 import { suppressVaultWatch } from '@/hooks/useVaultWatcher'
 import { isWebMode } from '@/web/config'
+import { useT } from '@/i18n'
 
 export default function VaultSelector() {
+  const t = useT()
   const {
     vaults, activeVaultId, vaultPath, loadedDocuments,
     isLoading, error, vaultDocsCache,
@@ -105,7 +107,7 @@ export default function VaultSelector() {
           className="text-[11px] font-semibold tracking-widest"
           style={{ color: 'var(--color-text-muted)' }}
         >
-          VAULT ({vaultEntries.length}/8)
+          {t('VAULT ({count}/8)', { count: vaultEntries.length })}
         </p>
 
         {isElectron && vaultEntries.length < 8 && (
@@ -118,10 +120,10 @@ export default function VaultSelector() {
               color: 'var(--color-text-secondary)',
               opacity: isLoading ? 0.4 : 1,
             }}
-            title="Add new vault"
+            title={t('Add new vault')}
           >
             <Plus size={11} />
-            Add Vault
+            {t('Add Vault')}
           </button>
         )}
       </div>
@@ -132,7 +134,7 @@ export default function VaultSelector() {
           background: 'rgba(245,158,11,0.08)',
           border: '1px solid rgba(245,158,11,0.2)',
         }}>
-          {isWebMode() ? 'This browser is connected to the team vault. Change the server in Settings → Server.' : 'Vault selection is only available in the Electron app.'}
+          {isWebMode() ? t('This browser is connected to the team vault. Change the server in Settings → Server.') : t('Vault selection is only available in the Electron app.')}
         </p>
       )}
 
@@ -145,7 +147,7 @@ export default function VaultSelector() {
             border: '1px dashed var(--color-border)',
           }}
         >
-          No vaults registered.
+          {t('No vaults registered.')}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -199,9 +201,9 @@ export default function VaultSelector() {
                   fontSize: 11, color: 'var(--color-text-muted)',
                   whiteSpace: 'nowrap', flexShrink: 0,
                 }}>
-                  {docCount > 0 ? `${docCount} docs` : '–'}
-                  {isActive && isIndexing && ' · Indexing...'}
-                  {isActive && !isLoading && chunkCount > 0 && ` · ${chunkCount} chunks`}
+                  {docCount > 0 ? t('{count} docs', { count: docCount }) : '–'}
+                  {isActive && isIndexing && ' · ' + t('Indexing...')}
+                  {isActive && !isLoading && chunkCount > 0 && ' · ' + t('{count} chunks', { count: chunkCount })}
                 </div>
 
                 {/* Actions */}
@@ -216,7 +218,7 @@ export default function VaultSelector() {
                         color: 'var(--color-text-muted)',
                         opacity: isLoading ? 0.4 : 1,
                       }}
-                      title="Refresh"
+                      title={t('Refresh')}
                     >
                       {isLoading
                         ? <Loader2 size={10} className="animate-spin" />
@@ -234,9 +236,9 @@ export default function VaultSelector() {
                         color: 'var(--color-text-muted)',
                         opacity: isLoading ? 0.4 : 1,
                       }}
-                      title="Switch to this vault"
+                      title={t('Switch to this vault')}
                     >
-                      Switch
+                      {t('Switch')}
                     </button>
                   )}
                   <button
@@ -248,7 +250,7 @@ export default function VaultSelector() {
                       color: 'var(--color-text-muted)',
                       opacity: isLoading ? 0.4 : 1,
                     }}
-                    title="Remove vault"
+                    title={t('Remove vault')}
                   >
                     <X size={10} />
                   </button>
@@ -285,7 +287,7 @@ export default function VaultSelector() {
           data-testid="vault-select-btn"
         >
           <FolderOpen size={12} />
-          Select Vault Folder
+          {t('Select Vault Folder')}
         </button>
       )}
     </div>

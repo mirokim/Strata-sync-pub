@@ -4,6 +4,7 @@ import type { MockDocument, SpeakerId } from '@/types'
 import { SPEAKER_CONFIG } from '@/lib/speakerConfig'
 import FileTreeItem from './FileTreeItem'
 import type { ContextMenuState } from './ContextMenu'
+import { useT } from '@/i18n'
 
 interface SpeakerGroupProps {
   speakerId: SpeakerId
@@ -18,6 +19,7 @@ export default function SpeakerGroup({
   isOpenOverride,
   onContextMenu,
 }: SpeakerGroupProps) {
+  const t = useT()
   const [localOpen, setLocalOpen] = useState(true)
   const { label, color, darkBg } = SPEAKER_CONFIG[speakerId]
 
@@ -52,7 +54,7 @@ export default function SpeakerGroup({
           <Folder size={9} style={{ color }} />
         </span>
 
-        <span className="flex-1 text-left tracking-wide uppercase text-[10px]">{label}</span>
+        <span className="flex-1 text-left tracking-wide uppercase text-[10px]">{t(label)}</span>
 
         <span style={{ color: 'var(--color-text-muted)' }} className="text-[10px]">
           {docs.length}

@@ -7,6 +7,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useVaultStore } from '@/stores/vaultStore'
 import { loadStatsLog, type VaultStatsSnapshot } from '@/lib/vaultStatsLog'
+import { useT } from '@/i18n'
 
 // ── Color palette ────────────────────────────────────────────────────────────
 
@@ -166,6 +167,7 @@ function DeltaBadge({ current, previous }: { current: number; previous: number }
 // ── Main component ───────────────────────────────────────────────────────────
 
 export default function StatsChart() {
+  const t = useT()
   const vaultPath = useVaultStore(s => s.vaultPath)
   const [snapshots, setSnapshots] = useState<VaultStatsSnapshot[]>([])
   const [loading, setLoading] = useState(true)
@@ -195,7 +197,7 @@ export default function StatsChart() {
   if (snapshots.length < 2) {
     return (
       <div style={{ fontSize: 11, color: 'var(--color-text-muted)', padding: '8px 0' }}>
-        Trend charts need at least 2 days of data. A snapshot is recorded automatically each day the vault is loaded.
+        {t('Trend charts need at least 2 days of data. A snapshot is recorded automatically each day the vault is loaded.')}
       </div>
     )
   }
@@ -207,7 +209,7 @@ export default function StatsChart() {
       <div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 6 }}>
           <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-            Total Documents
+            {t('Total Documents')}
           </span>
           {latest && <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)' }}>{latest.total}</span>}
           {latest && prev && <DeltaBadge current={latest.total} previous={prev.total} />}
@@ -218,7 +220,7 @@ export default function StatsChart() {
       {/* Trend by source */}
       <div>
         <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-          By Source
+          {t('By Source')}
         </span>
         <div style={{ marginTop: 6 }}>
           <StackedBarChart snapshots={snapshots} field="byOrigin" colorMap={ORIGIN_COLORS} width={chartWidth} />
@@ -228,7 +230,7 @@ export default function StatsChart() {
       {/* Trend by type */}
       <div>
         <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-          By Type
+          {t('By Type')}
         </span>
         <div style={{ marginTop: 6 }}>
           <StackedBarChart snapshots={snapshots} field="byType" width={chartWidth} />
@@ -238,7 +240,7 @@ export default function StatsChart() {
       {/* Trend by folder */}
       <div>
         <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-          By Folder
+          {t('By Folder')}
         </span>
         <div style={{ marginTop: 6 }}>
           <StackedBarChart snapshots={snapshots} field="byFolder" width={chartWidth} />
@@ -249,21 +251,21 @@ export default function StatsChart() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
         <div>
           <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginBottom: 4 }}>
-            Total Chars (KB)
+            {t('Total Chars (KB)')}
             {latest && prev && <DeltaBadge current={Math.round(latest.totalChars / 1024)} previous={Math.round(prev.totalChars / 1024)} />}
           </div>
           <MiniLineChart data={charsTrend} color="#f59e0b" width={90} height={40} />
         </div>
         <div>
           <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginBottom: 4 }}>
-            Total Links
+            {t('Total Links')}
             {latest && prev && <DeltaBadge current={latest.totalLinks} previous={prev.totalLinks} />}
           </div>
           <MiniLineChart data={linksTrend} color="#10b981" width={90} height={40} />
         </div>
         <div>
           <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginBottom: 4 }}>
-            Orphan Docs
+            {t('Orphan Docs')}
             {latest && prev && <DeltaBadge current={latest.orphanCount} previous={prev.orphanCount} />}
           </div>
           <MiniLineChart data={orphanTrend} color="#ef4444" width={90} height={40} />
@@ -272,7 +274,11 @@ export default function StatsChart() {
 
       {/* Date range */}
       <div style={{ fontSize: 9, color: 'var(--color-text-muted)', opacity: 0.6 }}>
-        {snapshots[0].date} ~ {snapshots[snapshots.length - 1].date} ({snapshots.length} days recorded)
+        {t('{start} ~ {end} ({count} days recorded)', {
+          start: snapshots[0].date,
+          end: snapshots[snapshots.length - 1].date,
+          count: snapshots.length,
+        })}
       </div>
     </div>
   )

@@ -7,6 +7,7 @@ import { useUIStore } from '@/stores/uiStore'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useGraphStore } from '@/stores/graphStore'
 import { File, Settings, PanelLeft, RotateCcw, Search } from 'lucide-react'
+import { useT } from '@/i18n'
 
 interface PaletteItem {
   id: string
@@ -17,6 +18,7 @@ interface PaletteItem {
 }
 
 export default function CommandPalette() {
+  const t = useT()
   const open              = useUIStore(s => s.commandPaletteOpen)
   const setOpen           = useUIStore(s => s.setCommandPaletteOpen)
   const toggleLeft        = useUIStore(s => s.toggleLeftPanel)
@@ -169,7 +171,7 @@ export default function CommandPalette() {
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Search files or run a command..."
+            placeholder={t('Search files or run a command...')}
             style={{
               flex: 1, background: 'transparent', border: 'none', outline: 'none',
               color: 'var(--color-text-primary)', fontSize: 14,
@@ -186,7 +188,7 @@ export default function CommandPalette() {
         <div ref={listRef} style={{ maxHeight: 360, overflowY: 'auto' }}>
           {results.length === 0 ? (
             <div style={{ padding: '20px 16px', textAlign: 'center', color: '#475569', fontSize: 13 }}>
-              No results found
+              {t('No results found')}
             </div>
           ) : (
             results.map((item, idx) => (
@@ -210,13 +212,16 @@ export default function CommandPalette() {
                   {item.icon}
                 </span>
                 <span style={{ flex: 1, fontSize: 13, color: 'var(--color-text-primary)' }}>
-                  {item.label}
+                  {t(item.label)}
                 </span>
-                {item.sub && (
-                  <span style={{ fontSize: 11, color: '#475569', fontFamily: 'monospace' }}>
-                    {item.sub.length > 36 ? '...' + item.sub.slice(-34) : item.sub}
-                  </span>
-                )}
+                {item.sub && (() => {
+                  const sub = t(item.sub)
+                  return (
+                    <span style={{ fontSize: 11, color: '#475569', fontFamily: 'monospace' }}>
+                      {sub.length > 36 ? '...' + sub.slice(-34) : sub}
+                    </span>
+                  )
+                })()}
               </div>
             ))
           )}
@@ -228,9 +233,9 @@ export default function CommandPalette() {
           borderTop: '1px solid var(--color-bg-tertiary)',
           display: 'flex', gap: 16, fontSize: 10, color: '#475569',
         }}>
-          <span><kbd style={{ marginRight: 4, padding: '1px 5px', borderRadius: 3, border: '1px solid rgba(255,255,255,0.1)' }}>↑↓</kbd>Navigate</span>
-          <span><kbd style={{ marginRight: 4, padding: '1px 5px', borderRadius: 3, border: '1px solid rgba(255,255,255,0.1)' }}>↵</kbd>Execute</span>
-          <span><kbd style={{ marginRight: 4, padding: '1px 5px', borderRadius: 3, border: '1px solid rgba(255,255,255,0.1)' }}>ESC</kbd>Close</span>
+          <span><kbd style={{ marginRight: 4, padding: '1px 5px', borderRadius: 3, border: '1px solid rgba(255,255,255,0.1)' }}>↑↓</kbd>{t('Navigate')}</span>
+          <span><kbd style={{ marginRight: 4, padding: '1px 5px', borderRadius: 3, border: '1px solid rgba(255,255,255,0.1)' }}>↵</kbd>{t('Execute')}</span>
+          <span><kbd style={{ marginRight: 4, padding: '1px 5px', borderRadius: 3, border: '1px solid rgba(255,255,255,0.1)' }}>ESC</kbd>{t('Close')}</span>
         </div>
       </div>
     </>

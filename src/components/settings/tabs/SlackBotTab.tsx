@@ -11,10 +11,12 @@ import { useBotStore } from '@/stores/botStore'
 import { fieldInputStyle } from '../settingsShared'
 import { MODEL_OPTIONS } from '@/lib/modelConfig'
 import { syncSlackToMcp } from '@/lib/syncMcpConfig'
+import { useT } from '@/i18n'
 
 export default function SlackBotTab() {
   const { slackBotConfig, setSlackBotConfig } = useSettingsStore()
   const { running, setRunning, startBot, stopBot } = useBotStore()
+  const t = useT()
 
   type LogEntry = { id: string; text: string }
   const [logs, setLogs] = useState<LogEntry[]>([])
@@ -54,18 +56,18 @@ export default function SlackBotTab() {
   const handleStart = async () => {
     const result = await startBot()
     if (result.ok) {
-      addLog('▶ Bot started')
+      addLog(`▶ ${t('Bot started')}`)
     } else {
-      addLog(`❌ Start failed: ${result.error}`)
+      addLog(`❌ ${t('Start failed: {error}', { error: result.error ?? t('Unknown error') })}`)
     }
   }
 
   const handleStop = async () => {
     const result = await stopBot()
     if (!result?.ok) {
-      addLog(`■ Bot stop failed: ${'Unknown error'}`)
+      addLog(`■ ${t('Bot stop failed: {error}', { error: t('Unknown error') })}`)
     } else {
-      addLog('■ Bot stopped')
+      addLog(`■ ${t('Bot stopped')}`)
     }
   }
 
@@ -95,11 +97,11 @@ export default function SlackBotTab() {
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: running ? 'var(--color-accent)' : 'var(--color-text-primary)', lineHeight: 1.3 }}>
-            {running ? 'Slack Bot running' : 'Slack Bot'}
+            {running ? t('Slack Bot running') : t('Slack Bot')}
           </div>
           {!canStart && !running && (
             <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
-              Enter the tokens first
+              {t('Enter the tokens first')}
             </div>
           )}
         </div>
@@ -118,7 +120,7 @@ export default function SlackBotTab() {
             flexShrink: 0, whiteSpace: 'nowrap',
           }}
         >
-          {running ? <><Square size={11} /> Stop</> : <><Play size={11} /> Start</>}
+          {running ? <><Square size={11} /> {t('Stop')}</> : <><Play size={11} /> {t('Start')}</>}
         </button>
       </div>
 
@@ -127,11 +129,11 @@ export default function SlackBotTab() {
       {/* Credentials */}
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 10 }}>
-          Connection Settings
+          {t('Connection Settings')}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 14, borderRadius: 2, background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}>
           <div>
-            <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', display: 'block', marginBottom: 5 }}>Bot Token</label>
+            <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', display: 'block', marginBottom: 5 }}>{t('Bot Token')}</label>
             <input
               type="password"
               value={slackBotConfig.botToken}
@@ -142,7 +144,7 @@ export default function SlackBotTab() {
             />
           </div>
           <div>
-            <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', display: 'block', marginBottom: 5 }}>App Token</label>
+            <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', display: 'block', marginBottom: 5 }}>{t('App Token')}</label>
             <input
               type="password"
               value={slackBotConfig.appToken}
@@ -153,7 +155,7 @@ export default function SlackBotTab() {
             />
           </div>
           <div>
-            <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', display: 'block', marginBottom: 5 }}>Response Model</label>
+            <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', display: 'block', marginBottom: 5 }}>{t('Response Model')}</label>
             <select
               value={slackBotConfig.model}
               onChange={e => setSlackBotConfig({ model: e.target.value })}
@@ -166,8 +168,8 @@ export default function SlackBotTab() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
-              <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)' }}>Image Upload</div>
-              <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>Auto-attach vault images to Slack</div>
+              <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)' }}>{t('Image Upload')}</div>
+              <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>{t('Auto-attach vault images to Slack')}</div>
             </div>
             <input
               type="checkbox"
@@ -183,14 +185,14 @@ export default function SlackBotTab() {
       <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
           <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
-            Logs
+            {t('Logs')}
           </div>
           {logs.length > 0 && (
             <button
               onClick={() => setLogs([])}
               style={{ fontSize: 11, color: 'var(--color-text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', borderRadius: 4 }}
             >
-              Clear
+              {t('Clear')}
             </button>
           )}
         </div>
@@ -203,7 +205,7 @@ export default function SlackBotTab() {
           color: 'var(--color-text-secondary)',
         }}>
           {logs.length === 0
-            ? <span style={{ color: 'var(--color-text-muted)' }}>Logs will appear once the bot is started.</span>
+            ? <span style={{ color: 'var(--color-text-muted)' }}>{t('Logs will appear once the bot is started.')}</span>
             : logs.map(entry => (
               <div key={entry.id} style={{
                 lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-all',

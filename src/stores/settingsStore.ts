@@ -297,6 +297,10 @@ interface SettingsState {
   renderQualityRestored: boolean
   /** Whether node labels are visible in the graph */
   showNodeLabels: boolean
+  /** UI language: 'ko' | 'en', or 'system' to follow the browser / OS */
+  language: 'ko' | 'en' | 'system'
+  /** Markdown editor renders syntax in place (Obsidian-style live preview) instead of raw source */
+  editorLivePreview: boolean
   /** Allowed tag names for AI tag suggestion */
   tagPresets: string[]
   /** User-assigned hex colors per tag name (overrides auto-palette in graph) */
@@ -357,6 +361,8 @@ interface SettingsState {
   setEditorDefaultLocked: (locked: boolean) => void
   setParagraphRenderQuality: (q: ParagraphRenderQuality) => void
   toggleNodeLabels: () => void
+  setLanguage: (language: 'ko' | 'en' | 'system') => void
+  toggleEditorLivePreview: () => void
   addTagPreset: (tag: string) => void
   removeTagPreset: (tag: string) => void
   setTagColor: (tag: string, color: string) => void
@@ -435,6 +441,8 @@ export const useSettingsStore = create<SettingsState>()(
       paragraphRenderQuality: 'high' as ParagraphRenderQuality,
       renderQualityRestored: true,
       showNodeLabels: true,
+      language: 'system' as const,
+      editorLivePreview: true,
       tagPresets: [],
       tagColors: {},
       folderColors: {},
@@ -536,6 +544,8 @@ export const useSettingsStore = create<SettingsState>()(
       setParagraphRenderQuality: (paragraphRenderQuality) => set({ paragraphRenderQuality }),
 
       toggleNodeLabels: () => set((s) => ({ showNodeLabels: !s.showNodeLabels })),
+      setLanguage: (language) => set({ language }),
+      toggleEditorLivePreview: () => set((s) => ({ editorLivePreview: !s.editorLivePreview })),
 
       addTagPreset: (tag) =>
         set((s) => ({
@@ -616,6 +626,8 @@ export const useSettingsStore = create<SettingsState>()(
         paragraphRenderQuality: state.paragraphRenderQuality,
         renderQualityRestored: state.renderQualityRestored,
         showNodeLabels: state.showNodeLabels,
+        language: state.language,
+        editorLivePreview: state.editorLivePreview,
         tagPresets: state.tagPresets,
         tagColors: state.tagColors,
         folderColors: state.folderColors,

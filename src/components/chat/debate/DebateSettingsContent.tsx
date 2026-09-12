@@ -16,6 +16,7 @@ import {
   ROLE_GROUPS,
 } from '@/services/debateRoles'
 import type { DiscussionMode, ReferenceFile } from '@/types'
+import { useT } from '@/i18n'
 
 /** All participant candidates — the 5 director personas */
 const ALL_PERSONAS = SPEAKER_IDS
@@ -54,6 +55,7 @@ function readFileAsDataUrl(file: File): Promise<string> {
 }
 
 export function DebateSettingsContent() {
+  const t = useT()
   const settings = useDebateStore((s) => s.settings)
   const updateSettings = useDebateStore((s) => s.updateSettings)
   const toggleProvider = useDebateStore((s) => s.toggleProvider)
@@ -99,7 +101,7 @@ export function DebateSettingsContent() {
 
   const sectionLabel = (text: string) => (
     <label className="block text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--color-text-muted)' }}>
-      {text}
+      {t(text)}
     </label>
   )
 
@@ -114,14 +116,14 @@ export function DebateSettingsContent() {
           : { background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }
       }
     >
-      {MODE_LABELS[m]}
+      {t(MODE_LABELS[m])}
     </button>
   )
 
   return (
     <div className="space-y-6">
       <p className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
-        Configure debate mode, participating AIs, roles, number of rounds, and more.
+        {t('Configure debate mode, participating AIs, roles, number of rounds, and more.')}
       </p>
 
       {/* Mode Selection */}
@@ -131,7 +133,7 @@ export function DebateSettingsContent() {
           {DEBATE_MODES.map(modeBtn)}
         </div>
         <p className="text-[11px] mt-1.5 pl-0.5" style={{ color: 'var(--color-text-muted)' }}>
-          {MODE_DESCRIPTIONS[mode]}
+          {t(MODE_DESCRIPTIONS[mode])}
         </p>
       </div>
 
@@ -144,7 +146,7 @@ export function DebateSettingsContent() {
             style={{ background: 'rgba(255,152,0,0.1)', color: '#ff9800' }}
           >
             <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-            <span>Set API keys for 2 or more personas in AI Settings</span>
+            <span>{t('Set API keys for 2 or more personas in AI Settings')}</span>
           </div>
         )}
         {mode === 'battle' && selectedProviders.length >= 2 && selectedProviders.length < 3 && (
@@ -153,7 +155,7 @@ export function DebateSettingsContent() {
             style={{ background: 'rgba(255,152,0,0.1)', color: '#ff9800' }}
           >
             <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-            <span>Battle mode requires 3 AIs (2 debaters + 1 judge)</span>
+            <span>{t('Battle mode requires 3 AIs (2 debaters + 1 judge)')}</span>
           </div>
         )}
         <div className="flex flex-wrap gap-1.5">
@@ -235,7 +237,7 @@ export function DebateSettingsContent() {
                     {meta?.label ?? p}
                   </span>
                   {isJudgeAI ? (
-                    <span className="flex-1 px-2 py-1 text-xs font-semibold" style={{ color: '#ff9800' }}>Judge</span>
+                    <span className="flex-1 px-2 py-1 text-xs font-semibold" style={{ color: '#ff9800' }}>{t('Judge')}</span>
                   ) : (
                     <select
                       value={role}
@@ -271,7 +273,7 @@ export function DebateSettingsContent() {
 
       {/* Rounds */}
       <div>
-        {sectionLabel(`Rounds: ${maxRounds}`)}
+        {sectionLabel(t('Rounds: {count}', { count: maxRounds }))}
         <input
           type="range"
           min={1}
@@ -305,7 +307,7 @@ export function DebateSettingsContent() {
             />
           </div>
           <FileText className="w-3.5 h-3.5" style={{ color: 'var(--color-text-secondary)' }} />
-          <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>Include reference material</span>
+          <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>{t('Include reference material')}</span>
         </label>
 
         {useReference && (
@@ -315,7 +317,7 @@ export function DebateSettingsContent() {
               onChange={(e) => {
                 if (e.target.value.length <= REF_MAX_LENGTH) updateSettings({ referenceText: e.target.value })
               }}
-              placeholder="Paste text to use as reference for the debate."
+              placeholder={t('Paste text to use as reference for the debate.')}
               className="w-full px-3 py-2.5 text-sm rounded-lg resize-none focus:outline-none transition"
               style={{
                 background: 'var(--color-bg-surface)',
@@ -329,7 +331,7 @@ export function DebateSettingsContent() {
                 className="text-[10px]"
                 style={{ color: referenceText.length > REF_MAX_LENGTH * 0.9 ? '#ff9800' : 'var(--color-text-muted)' }}
               >
-                {referenceText.length.toLocaleString()} / {REF_MAX_LENGTH.toLocaleString()} chars
+                {t('{count} / {max} chars', { count: referenceText.length.toLocaleString(), max: REF_MAX_LENGTH.toLocaleString() })}
               </span>
             </div>
 
@@ -349,9 +351,9 @@ export function DebateSettingsContent() {
               }}
             >
               <Upload className="w-4 h-4" />
-              <span className="text-xs font-medium">Drag image/PDF or click to upload</span>
+              <span className="text-xs font-medium">{t('Drag image/PDF or click to upload')}</span>
               <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
-                Max 10MB | Max {MAX_FILES} files
+                {t('Max 10MB | Max {count} files', { count: MAX_FILES })}
               </span>
               <input
                 ref={fileInputRef}
@@ -415,7 +417,7 @@ export function DebateSettingsContent() {
                   : { background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }
               }
             >
-              {m === 'auto' ? 'Auto' : 'Manual'}
+              {m === 'auto' ? t('Auto') : t('Manual')}
             </button>
           ))}
         </div>
@@ -439,7 +441,7 @@ export function DebateSettingsContent() {
           </div>
         ) : (
           <p className="text-[11px] pl-0.5" style={{ color: 'var(--color-text-muted)' }}>
-            Press the 'Next Turn' button after each AI response to proceed
+            {t("Press the 'Next Turn' button after each AI response to proceed")}
           </p>
         )}
       </div>

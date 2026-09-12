@@ -13,12 +13,14 @@ import { useVaultStore } from '@/stores/vaultStore'
 import { computeInsights, type InsightResult } from '@/lib/graphAnalysis'
 import { useGraphStore } from '@/stores/graphStore'
 import { X, RefreshCw } from 'lucide-react'
+import { useT } from '@/i18n'
 
 interface Props {
   onClose: () => void
 }
 
 export default function InsightsPanel({ onClose }: Props) {
+  const t = useT()
   const loadedDocuments = useVaultStore(s => s.loadedDocuments)
   const setAiHighlightNodes = useGraphStore(s => s.setAiHighlightNodes)
   const [tab, setTab] = useState<'bridge' | 'orphan' | 'gap' | 'cluster'>('bridge')
@@ -59,12 +61,12 @@ export default function InsightsPanel({ onClose }: Props) {
         borderBottom: '1px solid var(--color-border)',
       }}>
         <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-primary)', flex: 1 }}>
-          Vault Insights
+          {t('Vault Insights')}
         </span>
         <button
           onClick={() => setRev(r => r + 1)}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', padding: 4 }}
-          title="Re-analyze"
+          title={t('Re-analyze')}
         >
           <RefreshCw size={11} />
         </button>
@@ -81,26 +83,26 @@ export default function InsightsPanel({ onClose }: Props) {
         display: 'flex', borderBottom: '1px solid var(--color-border)',
         padding: '0 8px',
       }}>
-        {TABS.map(t => (
+        {TABS.map(tabItem => (
           <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
+            key={tabItem.id}
+            onClick={() => setTab(tabItem.id)}
             style={{
               flex: 1, padding: '6px 4px', fontSize: 10, fontWeight: 600,
               background: 'none', border: 'none', cursor: 'pointer',
-              color: tab === t.id ? t.color : 'var(--color-text-muted)',
-              borderBottom: tab === t.id ? `2px solid ${t.color}` : '2px solid transparent',
+              color: tab === tabItem.id ? tabItem.color : 'var(--color-text-muted)',
+              borderBottom: tab === tabItem.id ? `2px solid ${tabItem.color}` : '2px solid transparent',
               transition: 'color 0.15s',
             }}
           >
-            {t.label}
+            {t(tabItem.label)}
             <span style={{
               marginLeft: 4,
-              background: tab === t.id ? `${t.color}22` : 'var(--color-bg-surface)',
-              color: tab === t.id ? t.color : 'var(--color-text-muted)',
+              background: tab === tabItem.id ? `${tabItem.color}22` : 'var(--color-bg-surface)',
+              color: tab === tabItem.id ? tabItem.color : 'var(--color-text-muted)',
               borderRadius: 8, padding: '1px 5px', fontSize: 9,
             }}>
-              {t.count}
+              {tabItem.count}
             </span>
           </button>
         ))}
@@ -111,15 +113,15 @@ export default function InsightsPanel({ onClose }: Props) {
         {tab === 'bridge' && (
           <>
             {insights.bridgeNodes.length === 0 ? (
-              <EmptyState msg="No hubs with 3+ inbound links" />
+              <EmptyState msg={t('No hubs with 3+ inbound links')} />
             ) : insights.bridgeNodes.map(n => (
               <InsightRow
                 key={n.docId}
                 label={n.filename.replace(/\.md$/i, '')}
-                badge={`in:${n.inboundCount} out:${n.outboundCount}`}
+                badge={t('in:{inCount} out:{outCount}', { inCount: n.inboundCount, outCount: n.outboundCount })}
                 color="#60a5fa"
                 onClick={() => highlightNode(n.docId)}
-                tooltip="Highlight in graph"
+                tooltip={t('Highlight in graph')}
               />
             ))}
           </>
@@ -128,11 +130,11 @@ export default function InsightsPanel({ onClose }: Props) {
         {tab === 'orphan' && (
           <>
             {insights.orphanDocs.length === 0 ? (
-              <EmptyState msg="No orphan documents — all docs have links" isGood />
+              <EmptyState msg={t('No orphan documents — all docs have links')} isGood />
             ) : (
               <>
                 <div style={{ padding: '0 12px 6px', fontSize: 11, color: 'var(--color-text-muted)' }}>
-                  Documents with no inbound or outbound links
+                  {t('Documents with no inbound or outbound links')}
                 </div>
                 {insights.orphanDocs.map(n => (
                   <InsightRow
@@ -140,7 +142,7 @@ export default function InsightsPanel({ onClose }: Props) {
                     label={n.filename.replace(/\.md$/i, '')}
                     color="var(--color-error)"
                     onClick={() => highlightNode(n.docId)}
-                    tooltip="Highlight in graph"
+                    tooltip={t('Highlight in graph')}
                   />
                 ))}
               </>
@@ -151,17 +153,17 @@ export default function InsightsPanel({ onClose }: Props) {
         {tab === 'gap' && (
           <>
             {insights.gapTopics.length === 0 ? (
-              <EmptyState msg="No gap topics found" isGood />
+              <EmptyState msg={t('No gap topics found')} isGood />
             ) : (
               <>
                 <div style={{ padding: '0 12px 6px', fontSize: 11, color: 'var(--color-text-muted)' }}>
-                  Topics referenced in multiple docs but with no backing file (consider creating them)
+                  {t('Topics referenced in multiple docs but with no backing file (consider creating them)')}
                 </div>
                 {insights.gapTopics.map(g => (
                   <InsightRow
                     key={g.topic}
                     label={g.topic}
-                    badge={`${g.referenceCount} refs`}
+                    badge={t('{count} refs', { count: g.referenceCount })}
                     color="#fbbf24"
                   />
                 ))}
@@ -173,12 +175,12 @@ export default function InsightsPanel({ onClose }: Props) {
         {tab === 'cluster' && (
           <>
             {insights.clusters.length === 0 ? (
-              <EmptyState msg="No separate clusters — vault is fully connected" isGood />
+              <EmptyState msg={t('No separate clusters — vault is fully connected')} isGood />
             ) : insights.clusters.map((c, i) => (
               <InsightRow
                 key={c.clusterIdx}
-                label={`Cluster ${i + 1}: ${c.representative.replace(/\.md$/i, '')}`}
-                badge={`${c.size} docs`}
+                label={t('Cluster {n}: {name}', { n: i + 1, name: c.representative.replace(/\.md$/i, '') })}
+                badge={t('{count} docs', { count: c.size })}
                 color="#a78bfa"
               />
             ))}

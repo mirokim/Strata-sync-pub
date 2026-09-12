@@ -11,6 +11,7 @@ import { useVaultStore } from '@/stores/vaultStore'
 import { computeStats, type VaultStats } from '@/lib/vaultStats'
 import { SCRIPTS, PIPELINE_ORDER, type ScriptDef } from '@/lib/scriptConfig'
 import VaultSelector from '../VaultSelector'
+import { useT } from '@/i18n'
 
 // ── Preload API ────────────────────────────────────────────────────────────────
 
@@ -77,6 +78,7 @@ const CATEGORY_COLOR: Record<ScriptDef['category'], string> = {
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function VaultManagerTab() {
+  const t = useT()
   const vaultPath    = useVaultStore(s => s.vaultPath)
   const loadedDocuments = useVaultStore(s => s.loadedDocuments)
 
@@ -167,10 +169,10 @@ export default function VaultManagerTab() {
             display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8,
           }}>
             {[
-              { label: 'Total docs',    value: stats.total,       alert: false },
-              { label: 'Stubs (<50 chars)',  value: stats.stubCount,  alert: stats.stubCount > 0 },
-              { label: 'Thin (<300 chars)', value: stats.thinCount, alert: stats.thinCount > 10 },
-              { label: 'No links',    value: stats.noLinkCount, alert: stats.noLinkCount > 0 },
+              { label: t('Total docs'),    value: stats.total,       alert: false },
+              { label: t('Stubs (<50 chars)'),  value: stats.stubCount,  alert: stats.stubCount > 0 },
+              { label: t('Thin (<300 chars)'), value: stats.thinCount, alert: stats.thinCount > 10 },
+              { label: t('No links'),    value: stats.noLinkCount, alert: stats.noLinkCount > 0 },
             ].map(item => (
               <div key={item.label} style={{
                 padding: '10px 8px', borderRadius: 6, textAlign: 'center',
@@ -201,14 +203,14 @@ export default function VaultManagerTab() {
                 currentSituation.md
               </div>
               <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
-                Graph RAG BFS entry point — refresh within 2 weeks recommended (§14.1)
+                {t('Graph RAG BFS entry point — refresh within 2 weeks recommended (§14.1)')}
               </div>
             </div>
             <div style={{
               fontSize: 11, fontWeight: 600, paddingLeft: 12,
               color: stats.hasCurrentSituation ? 'var(--color-success)' : 'var(--color-error)',
             }}>
-              {stats.hasCurrentSituation ? 'Present' : 'Missing'}
+              {stats.hasCurrentSituation ? t('Present') : t('Missing')}
             </div>
           </div>
         </section>
@@ -225,7 +227,7 @@ export default function VaultManagerTab() {
             fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
             color: 'var(--color-text-muted)',
           }}>
-            Run Scripts
+            {t('Run Scripts')}
           </h3>
           <button
             onClick={runPipeline}
@@ -239,13 +241,13 @@ export default function VaultManagerTab() {
               opacity: pipelineRunning ? 0.7 : 1,
             }}
           >
-            {pipelineRunning ? 'Running…' : 'Run Full Pipeline (§17.1.4)'}
+            {pipelineRunning ? t('Running…') : t('Run Full Pipeline (§17.1.4)')}
           </button>
         </div>
 
         {!hasAPI && (
           <p style={{ fontSize: 12, color: 'var(--color-warning)', marginBottom: 10 }}>
-            Scripts can only be run in Electron.
+            {t('Scripts can only be run in Electron.')}
           </p>
         )}
 
@@ -273,12 +275,12 @@ export default function VaultManagerTab() {
                 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)' }}>
-                    {script.label}
-                    {result === 'ok' && <span style={{ marginLeft: 5, color: 'var(--color-success)', fontSize: 11 }}>Done</span>}
-                    {result === 'error' && <span style={{ marginLeft: 5, color: 'var(--color-error)', fontSize: 11 }}>Error</span>}
+                    {t(script.label)}
+                    {result === 'ok' && <span style={{ marginLeft: 5, color: 'var(--color-success)', fontSize: 11 }}>{t('Done')}</span>}
+                    {result === 'error' && <span style={{ marginLeft: 5, color: 'var(--color-error)', fontSize: 11 }}>{t('Error')}</span>}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2, lineHeight: 1.3 }}>
-                    {script.desc}
+                    {t(script.desc)}
                   </div>
                 </div>
                 <button
@@ -293,7 +295,7 @@ export default function VaultManagerTab() {
                     opacity: canRun || isRunning ? 1 : 0.4,
                   }}
                 >
-                  {isRunning ? '…' : 'Run'}
+                  {isRunning ? '…' : t('Run')}
                 </button>
               </div>
             )
@@ -306,13 +308,13 @@ export default function VaultManagerTab() {
         <section>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
             <span style={{ fontSize: 11, color: 'var(--color-text-muted)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-              Run Log
+              {t('Run Log')}
             </span>
             <button
               onClick={() => setLog([])}
               style={{ fontSize: 11, color: 'var(--color-text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}
             >
-              Clear
+              {t('Clear')}
             </button>
           </div>
           <div style={{
@@ -352,10 +354,10 @@ export default function VaultManagerTab() {
             fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
             color: 'var(--color-text-muted)',
           }}>
-            Advanced
+            {t('Advanced')}
           </span>
           <span style={{ fontSize: 11, color: 'var(--color-text-muted)', marginLeft: 4, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
-            Other scripts · Quality checklist · Recurring schedule
+            {t('Other scripts · Quality checklist · Recurring schedule')}
           </span>
         </button>
 
@@ -368,7 +370,7 @@ export default function VaultManagerTab() {
                 fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)',
                 marginBottom: 8, letterSpacing: '0.04em',
               }}>
-                Additional Scripts
+                {t('Additional Scripts')}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
                 {SCRIPTS.filter(s => !s.primary).map(script => {
@@ -392,12 +394,12 @@ export default function VaultManagerTab() {
                       }} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)' }}>
-                          {script.label}
-                          {result === 'ok' && <span style={{ marginLeft: 5, color: 'var(--color-success)', fontSize: 11 }}>Done</span>}
-                          {result === 'error' && <span style={{ marginLeft: 5, color: 'var(--color-error)', fontSize: 11 }}>Error</span>}
+                          {t(script.label)}
+                          {result === 'ok' && <span style={{ marginLeft: 5, color: 'var(--color-success)', fontSize: 11 }}>{t('Done')}</span>}
+                          {result === 'error' && <span style={{ marginLeft: 5, color: 'var(--color-error)', fontSize: 11 }}>{t('Error')}</span>}
                         </div>
                         <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2, lineHeight: 1.3 }}>
-                          {script.desc}
+                          {t(script.desc)}
                         </div>
                       </div>
                       <button
@@ -412,7 +414,7 @@ export default function VaultManagerTab() {
                           opacity: canRun || isRunning ? 1 : 0.4,
                         }}
                       >
-                        {isRunning ? '…' : 'Run'}
+                        {isRunning ? '…' : t('Run')}
                       </button>
                     </div>
                   )
@@ -428,16 +430,16 @@ export default function VaultManagerTab() {
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8,
               }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)', letterSpacing: '0.04em' }}>
-                  Quality Checklist (§16)
+                  {t('Quality Checklist (§16)')}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-                  {checkedItems.size}/{QUALITY_CHECKLIST.length} done
+                  {t('{done}/{total} done', { done: checkedItems.size, total: QUALITY_CHECKLIST.length })}
                   {checkedItems.size > 0 && (
                     <button
                       onClick={() => setCheckedItems(new Set())}
                       style={{ marginLeft: 8, fontSize: 11, color: 'var(--color-text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}
                     >
-                      Reset
+                      {t('Reset')}
                     </button>
                   )}
                 </div>
@@ -479,11 +481,11 @@ export default function VaultManagerTab() {
                         color: checked ? 'var(--color-text-muted)' : 'var(--color-text-primary)',
                         textDecoration: checked ? 'line-through' : 'none',
                       }}>
-                        {item.label}
+                        {t(item.label)}
                       </span>
                       {/* Target */}
                       <span style={{ fontSize: 11, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
-                        {item.target}
+                        {t(item.target)}
                       </span>
                       {/* Run button */}
                       {item.script ? (
@@ -501,7 +503,7 @@ export default function VaultManagerTab() {
                             cursor: canRun ? 'pointer' : 'not-allowed', opacity: canRun ? 1 : 0.4,
                           }}
                         >
-                          {runningScript === item.script ? '…' : 'Run'}
+                          {runningScript === item.script ? '…' : t('Run')}
                         </button>
                       ) : (
                         <div style={{ width: 36 }} />
@@ -520,7 +522,7 @@ export default function VaultManagerTab() {
                 fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)',
                 marginBottom: 8, letterSpacing: '0.04em',
               }}>
-                Recurring Refinement Schedule (§17.2)
+                {t('Recurring Refinement Schedule (§17.2)')}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {PERIODIC_TASKS.map(pt => (
@@ -533,7 +535,7 @@ export default function VaultManagerTab() {
                       fontSize: 11, fontWeight: 700, color: 'var(--color-text-muted)',
                       paddingTop: 2, letterSpacing: '0.04em',
                     }}>
-                      {pt.period}
+                      {t(pt.period)}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                       {pt.tasks.map(task => {
@@ -542,10 +544,10 @@ export default function VaultManagerTab() {
                         return (
                           <div key={task.script} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', flex: 1 }}>
-                              {task.label}
+                              {t(task.label)}
                             </span>
-                            {result === 'ok'    && <span style={{ fontSize: 11, color: 'var(--color-success)' }}>Done</span>}
-                            {result === 'error' && <span style={{ fontSize: 11, color: 'var(--color-error)' }}>Error</span>}
+                            {result === 'ok'    && <span style={{ fontSize: 11, color: 'var(--color-success)' }}>{t('Done')}</span>}
+                            {result === 'error' && <span style={{ fontSize: 11, color: 'var(--color-error)' }}>{t('Error')}</span>}
                             <button
                               onClick={() => script && runScript(script)}
                               disabled={!canRun || !script}
@@ -558,7 +560,7 @@ export default function VaultManagerTab() {
                                 opacity: (canRun && script) ? 1 : 0.4,
                               }}
                             >
-                              {runningScript === task.script ? '…' : 'Run'}
+                              {runningScript === task.script ? '…' : t('Run')}
                             </button>
                           </div>
                         )
@@ -577,10 +579,10 @@ export default function VaultManagerTab() {
               background: 'var(--color-warning-bg)', border: '1px solid var(--color-warning-bg)',
             }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-warning)', marginBottom: 6 }}>
-                §18 Graph RAG Freshness Bug Response
+                {t('§18 Graph RAG Freshness Bug Response')}
               </div>
               <div style={{ fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.7, marginBottom: 10 }}>
-                If the AI presents outdated information as current, run the following in order.
+                {t('If the AI presents outdated information as current, run the following in order.')}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {[
@@ -596,7 +598,7 @@ export default function VaultManagerTab() {
                         width: 16, textAlign: 'right', flexShrink: 0,
                       }}>{step}</span>
                       <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', flex: 1 }}>
-                        {note}
+                        {t(note)}
                       </span>
                       <button
                         onClick={() => script && runScript(script)}
@@ -610,7 +612,7 @@ export default function VaultManagerTab() {
                           opacity: (canRun && script) ? 1 : 0.4,
                         }}
                       >
-                        {runningScript === sname ? '…' : 'Run'}
+                        {runningScript === sname ? '…' : t('Run')}
                       </button>
                     </div>
                   )

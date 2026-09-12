@@ -3,11 +3,13 @@ import { useUIStore } from '@/stores/uiStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useBotStore } from '@/stores/botStore'
 import { cn } from '@/lib/utils'
+import { useT } from '@/i18n'
 import VaultTabs from './VaultTabs'
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function TopBar() {
+  const t = useT()
   const {
     graphMode, centerTab,
     leftPanelCollapsed,
@@ -49,7 +51,7 @@ export default function TopBar() {
           borderRadius: 3, padding: '1px 5px',
           lineHeight: 1.4,
         }}>
-          beta
+          {t('beta')}
         </span>
       </div>
 
@@ -68,8 +70,8 @@ export default function TopBar() {
           onClick={toggleNodeLabels}
           className={cn('flex items-center justify-center w-7 h-7 rounded transition-colors', 'hover:bg-[var(--color-bg-hover)]')}
           style={{ color: showNodeLabels ? 'var(--color-text-primary)' : 'var(--color-text-muted)' }}
-          title={showNodeLabels ? 'Hide node labels' : 'Show node labels'}
-          aria-label="Toggle node labels"
+          title={showNodeLabels ? t('Hide node labels') : t('Show node labels')}
+          aria-label={t('Toggle node labels')}
         >
           <Type size={13} />
         </button>
@@ -80,8 +82,8 @@ export default function TopBar() {
             onClick={() => setGraphMode(graphMode === '3d' ? '2d' : '3d')}
             className={cn('flex items-center justify-center w-7 h-7 rounded transition-colors', 'hover:bg-[var(--color-bg-hover)]')}
             style={{ color: 'var(--color-text-muted)', fontSize: 10, fontWeight: 600, letterSpacing: '0.04em' }}
-            title={`${graphMode.toUpperCase()} graph — click to switch to ${graphMode === '3d' ? '2D' : '3D'}`}
-            aria-label={`Switch to ${graphMode === '3d' ? '2D' : '3D'} graph`}
+            title={t('{mode} graph — click to switch to {target}', { mode: graphMode.toUpperCase(), target: graphMode === '3d' ? '2D' : '3D' })}
+            aria-label={t('Switch to {target} graph', { target: graphMode === '3d' ? '2D' : '3D' })}
           >
             {graphMode === '3d' ? <Monitor size={13} /> : <Monitor size={13} style={{ opacity: 0.5 }} />}
           </button>
@@ -92,8 +94,8 @@ export default function TopBar() {
           onClick={toggleSettingsPanel}
           className={cn('flex items-center justify-center w-7 h-7 rounded transition-colors', 'hover:bg-[var(--color-bg-hover)]')}
           style={{ color: 'var(--color-text-muted)' }}
-          title="Settings"
-          aria-label="Open settings"
+          title={t('Settings')}
+          aria-label={t('Open settings')}
           data-testid="settings-button"
         >
           <Settings size={13} />
@@ -105,8 +107,8 @@ export default function TopBar() {
             onClick={() => window.windowAPI?.toggleDevTools()}
             className={cn('flex items-center justify-center w-7 h-7 rounded transition-colors', 'hover:bg-[var(--color-bg-hover)]')}
             style={{ color: 'var(--color-text-muted)' }}
-            title="Developer Tools"
-            aria-label="Toggle developer tools"
+            title={t('Developer Tools')}
+            aria-label={t('Toggle developer tools')}
           >
             <Terminal size={13} />
           </button>
@@ -122,8 +124,8 @@ export default function TopBar() {
               background: botRunning ? 'var(--color-info-bg)' : 'transparent',
               color: botRunning ? 'var(--color-accent)' : 'var(--color-text-muted)',
             }}
-            title={botRunning ? 'Stop Slack bot' : 'Start Slack bot'}
-            aria-label="Toggle Slack bot"
+            title={botRunning ? t('Stop Slack bot') : t('Start Slack bot')}
+            aria-label={t('Toggle Slack bot')}
           >
             <span style={{
               width: 5, height: 5, borderRadius: '50%', flexShrink: 0,
@@ -140,8 +142,8 @@ export default function TopBar() {
             onClick={() => setCenterTab(centerTab === 'slack-logs' ? 'graph' : 'slack-logs')}
             className={cn('flex items-center justify-center w-7 h-7 rounded transition-colors', 'hover:bg-[var(--color-bg-hover)]')}
             style={{ color: centerTab === 'slack-logs' ? 'var(--color-accent)' : 'var(--color-text-muted)' }}
-            title="Slack logs"
-            aria-label="Slack logs"
+            title={t('Slack logs')}
+            aria-label={t('Slack logs')}
           >
             <ScrollText size={13} />
           </button>
@@ -155,8 +157,8 @@ export default function TopBar() {
           onClick={toggleLeftPanel}
           className={cn('flex items-center justify-center w-7 h-7 rounded transition-colors', 'hover:bg-[var(--color-bg-hover)]')}
           style={{ color: leftPanelCollapsed ? 'var(--color-text-muted)' : 'var(--color-text-primary)' }}
-          title={leftPanelCollapsed ? 'Open left panel' : 'Close left panel'}
-          aria-label="Toggle left panel"
+          title={leftPanelCollapsed ? t('Open left panel') : t('Close left panel')}
+          aria-label={t('Toggle left panel')}
         >
           <PanelLeft size={14} />
         </button>

@@ -4,6 +4,7 @@ import type { MockDocument, LoadedDocument } from '@/types'
 import FileTreeItem from './FileTreeItem'
 import type { ContextMenuState } from './ContextMenu'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { useT } from '@/i18n'
 
 interface TagGroupProps {
   tag: string  // '' = no tag
@@ -19,6 +20,7 @@ export default function TagGroup({
   isOpenOverride,
   onContextMenu,
 }: TagGroupProps) {
+  const t = useT()
   const [localOpen, setLocalOpen] = useState(true)
   const { tagColors } = useSettingsStore()
   const customColor = tag !== '' ? (tagColors[tag] ?? undefined) : undefined
@@ -38,7 +40,7 @@ export default function TagGroup({
 
   if (docs.length === 0) return null
 
-  const displayName = tag === '' ? 'Untagged' : `#${tag}`
+  const displayName = tag === '' ? t('Untagged') : `#${tag}`
 
   return (
     <div>

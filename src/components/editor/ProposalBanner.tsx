@@ -8,6 +8,7 @@ import { useMemo, useState } from 'react'
 import { Bot, Check, Trash2 } from 'lucide-react'
 import type { LoadedDocument } from '@/types'
 import { isProposal, proposalSource, promoteProposal, discardProposal } from '@/lib/proposals'
+import { useT } from '@/i18n'
 
 interface Props {
   doc: LoadedDocument
@@ -19,6 +20,7 @@ interface Props {
 }
 
 export default function ProposalBanner({ doc, vaultPath, folders, onDone, onError }: Props) {
+  const t = useT()
   const [dest, setDest] = useState('')
   const [busy, setBusy] = useState<'promote' | 'discard' | null>(null)
   const source = useMemo(() => proposalSource(doc), [doc])
@@ -36,7 +38,7 @@ export default function ProposalBanner({ doc, vaultPath, folders, onDone, onErro
     } finally { setBusy(null) }
   }
   const discard = async () => {
-    if (!window.confirm(`Discard the proposal "${doc.filename.replace(/\.md$/i, '')}"? This deletes the file.`)) return
+    if (!window.confirm(t('Discard the proposal "{name}"? This deletes the file.', { name: doc.filename.replace(/\.md$/i, '') }))) return
     setBusy('discard')
     try {
       await discardProposal(doc)
@@ -54,24 +56,24 @@ export default function ProposalBanner({ doc, vaultPath, folders, onDone, onErro
     }}>
       <Bot size={14} color="var(--color-accent)" />
       <span style={{ color: 'var(--color-text-primary)' }}>
-        Proposed by <strong>{source}</strong> — not part of the vault yet. Search ranks it lower and the lint ignores it.
+        {t('Proposed by')} <strong>{source}</strong> {t('— not part of the vault yet. Search ranks it lower and the lint ignores it.')}
       </span>
       <span style={{ flex: 1 }} />
       <label style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--color-text-muted)' }}>
-        into
+        {t('into')}
         <select value={dest} onChange={e => setDest(e.target.value)} data-testid="proposal-dest"
           style={{ fontSize: 12, padding: '3px 6px', borderRadius: 2, border: '1px solid var(--color-border)', background: 'var(--color-bg-primary)', color: 'var(--color-text-primary)' }}>
-          <option value="">(vault root)</option>
+          <option value="">{t('(vault root)')}</option>
           {options.map(f => <option key={f} value={f}>{f}/</option>)}
         </select>
       </label>
       <button onClick={promote} disabled={busy !== null} data-testid="proposal-promote"
         style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 2, fontSize: 12, fontWeight: 500, border: 'none', background: 'var(--color-accent)', color: '#fff', cursor: 'pointer', opacity: busy ? 0.6 : 1 }}>
-        <Check size={12} /> Promote
+        <Check size={12} /> {t('Promote')}
       </button>
       <button onClick={discard} disabled={busy !== null} data-testid="proposal-discard"
         style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 2, fontSize: 12, border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text-muted)', cursor: 'pointer' }}>
-        <Trash2 size={12} /> Discard
+        <Trash2 size={12} /> {t('Discard')}
       </button>
     </div>
   )

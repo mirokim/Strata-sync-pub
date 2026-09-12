@@ -11,6 +11,7 @@ import { RefreshCw, Loader, CheckCircle, Send } from 'lucide-react'
 import { useSettingsStore, MIGRATED_CONFIG_KEY, type ConfluenceConfig } from '@/stores/settingsStore'
 import { useVaultStore } from '@/stores/vaultStore'
 import { streamMessageRaw } from '@/services/llmClient'
+import { useT } from '@/i18n'
 
 // ── Markdown → Confluence Storage Format ─────────────────────────────────────
 
@@ -105,6 +106,7 @@ export default function ConfluencePublishTab() {
   const vaults = useVaultStore(s => s.vaults)
   const activeVaultId = useVaultStore(s => s.activeVaultId)
   const editAgentConfig = useSettingsStore(s => s.editAgentConfig)
+  const t = useT()
 
   // Vault selector
   const [selectedVaultId, setSelectedVaultId] = useState(activeVaultId ?? '')
@@ -148,14 +150,14 @@ export default function ConfluencePublishTab() {
   // ── Fetch existing page info (update mode) ──────────────────────────────────
   const handleFetchInfo = async () => {
     const id = extractPageId(targetUrl)
-    if (!id) { setFetchError('Enter a URL or page ID.'); return }
+    if (!id) { setFetchError(t('Enter a URL or page ID.')); return }
     setFetchingInfo(true); setFetchError(''); setPageInfo(null)
     try {
       const info = await (window as any).confluenceAPI.getPageInfo(configForApi, id)
       setPageInfo(info)
       setPageTitle(info.title)
     } catch (e: any) {
-      setFetchError(e?.message ?? 'Failed to fetch page')
+      setFetchError(e?.message ?? t('Failed to fetch page'))
     } finally {
       setFetchingInfo(false)
     }
@@ -198,7 +200,7 @@ export default function ConfluencePublishTab() {
       )
       setGenState('done')
     } catch (e: any) {
-      setGenError(e?.message ?? 'Generation failed')
+      setGenError(e?.message ?? t('Generation failed'))
       setGenState('error')
     }
   }
@@ -222,7 +224,7 @@ export default function ConfluencePublishTab() {
         setPublishedUrl(result.url ?? '')
         setPubState('done')
       } else {
-        if (!pageInfo) { setPubError('Fetch the page info first.'); setPubState('error'); return }
+        if (!pageInfo) { setPubError(t('Fetch the page info first.')); setPubState('error'); return }
         const result = await (window as any).confluenceAPI.updatePage(configForApi, {
           pageId: pageInfo.id,
           title: pageTitle || pageInfo.title,
@@ -235,7 +237,7 @@ export default function ConfluencePublishTab() {
         setPageInfo(p => p ? { ...p, version: p.version + 1 } : p)
       }
     } catch (e: any) {
-      setPubError(e?.message ?? 'Publish failed')
+      setPubError(e?.message ?? t('Publish failed'))
       setPubState('error')
     }
   }
@@ -248,15 +250,15 @@ export default function ConfluencePublishTab() {
     <div className="flex flex-col gap-5">
       <section>
         <p style={{ fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.7 }}>
-          Review an AI-written draft, then publish it to Confluence.<br />
-          Configure the Confluence connection under <strong style={{ color: 'var(--color-text-secondary)' }}>Settings › Confluence Import</strong>.
+          {t('Review an AI-written draft, then publish it to Confluence.')}<br />
+          {t('Configure the Confluence connection under')} <strong style={{ color: 'var(--color-text-secondary)' }}>{t('Settings › Confluence Import')}</strong>.
         </p>
       </section>
 
       {/* Vault selector */}
       {vaultEntries.length > 0 && (
         <section>
-          <SectionTitle>Target Vault</SectionTitle>
+          <SectionTitle>{t('Target Vault')}</SectionTitle>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {vaultEntries.map(([id, v]) => {
               const isActive = selectedVaultId === id
@@ -287,7 +289,7 @@ export default function ConfluencePublishTab() {
 
       {!confluenceConfigured && (
         <p style={{ fontSize: 11, color: 'var(--color-warning)' }}>
-          ⚠ Confluence connection is not configured. Complete the connection settings first.
+          {t('⚠ Confluence connection is not configured. Complete the connection settings first.')}
         </p>
       )}
 
@@ -295,11 +297,11 @@ export default function ConfluencePublishTab() {
 
       {/* Mode selection */}
       <section>
-        <SectionTitle>Publish Mode</SectionTitle>
+        <SectionTitle>{t('Publish Mode')}</SectionTitle>
         <div style={{ display: 'flex', border: '1px solid var(--color-border)', borderRadius: 2, overflow: 'hidden', width: 'fit-content' }}>
           {([
-            { id: 'create', label: 'Create New Page' },
-            { id: 'update', label: 'Update Existing Page' },
+            { id: 'create', label: t('Create New Page') },
+            { id: 'update', label: t('Update Existing Page') },
           ] as const).map((opt, i) => (
             <button
               key={opt.id}
@@ -318,19 +320,19 @@ export default function ConfluencePublishTab() {
 
       {/* Page settings */}
       <section>
-        <SectionTitle>{mode === 'create' ? 'New Page Settings' : 'Target Page'}</SectionTitle>
+        <SectionTitle>{mode === 'create' ? t('New Page Settings') : t('Target Page')}</SectionTitle>
 
         {mode === 'create' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <FieldRow label="Space Key" value={spaceKey} onChange={setSpaceKey} placeholder={cfg.spaceKey || 'TEAM'} />
-            <FieldRow label="Parent Page URL" value={parentUrl} onChange={setParentUrl} placeholder="https://wiki.company.com/pages/12345 (optional)" />
-            <FieldRow label="Page Title" value={pageTitle} onChange={setPageTitle} placeholder="Title (leave empty to derive from the AI topic)" />
+            <FieldRow label={t('Space Key')} value={spaceKey} onChange={setSpaceKey} placeholder={cfg.spaceKey || 'TEAM'} />
+            <FieldRow label={t('Parent Page URL')} value={parentUrl} onChange={setParentUrl} placeholder={t('https://wiki.company.com/pages/12345 (optional)')} />
+            <FieldRow label={t('Page Title')} value={pageTitle} onChange={setPageTitle} placeholder={t('Title (leave empty to derive from the AI topic)')} />
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <div style={{ flex: 1 }}>
-                <FieldRow label="Page URL / ID" value={targetUrl} onChange={v => { setTargetUrl(v); setPageInfo(null); setFetchError('') }} placeholder="https://wiki.company.com/pages/12345 or numeric ID" />
+                <FieldRow label={t('Page URL / ID')} value={targetUrl} onChange={v => { setTargetUrl(v); setPageInfo(null); setFetchError('') }} placeholder={t('https://wiki.company.com/pages/12345 or numeric ID')} />
               </div>
               <button
                 onClick={handleFetchInfo}
@@ -345,19 +347,19 @@ export default function ConfluencePublishTab() {
                 }}
               >
                 {fetchingInfo ? <Loader size={11} className="animate-spin" /> : <RefreshCw size={11} />}
-                Fetch
+                {t('Fetch')}
               </button>
             </div>
             {fetchError && <p style={{ fontSize: 11, color: 'var(--color-error)' }}>{fetchError}</p>}
             {pageInfo && (
               <div style={{ padding: '8px 12px', borderRadius: 2, background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', fontSize: 11 }}>
-                <span style={{ color: 'var(--color-text-muted)' }}>Page: </span>
+                <span style={{ color: 'var(--color-text-muted)' }}>{t('Page:')} </span>
                 <strong style={{ color: 'var(--color-text-primary)' }}>{pageInfo.title}</strong>
-                <span style={{ color: 'var(--color-text-muted)', marginLeft: 8 }}>v{pageInfo.version} · {pageInfo.spaceKey}</span>
+                <span style={{ color: 'var(--color-text-muted)', marginLeft: 8 }}>{t('v{version} · {space}', { version: pageInfo.version, space: pageInfo.spaceKey })}</span>
               </div>
             )}
             {pageInfo && (
-              <FieldRow label="Page Title" value={pageTitle} onChange={setPageTitle} placeholder={pageInfo.title} />
+              <FieldRow label={t('Page Title')} value={pageTitle} onChange={setPageTitle} placeholder={pageInfo.title} />
             )}
           </div>
         )}
@@ -367,13 +369,13 @@ export default function ConfluencePublishTab() {
 
       {/* AI draft generation */}
       <section>
-        <SectionTitle>AI Draft Generation</SectionTitle>
+        <SectionTitle>{t('AI Draft Generation')}</SectionTitle>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <label style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>Topic / Instructions</label>
+          <label style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{t('Topic / Instructions')}</label>
           <textarea
             value={topic}
             onChange={e => setTopic(e.target.value)}
-            placeholder="e.g.: Write the Q1 2026 new feature release notes. Key changes: ..."
+            placeholder={t('e.g.: Write the Q1 2026 new feature release notes. Key changes: ...')}
             rows={4}
             style={{
               width: '100%', fontSize: 12, padding: '8px 10px', borderRadius: 2,
@@ -395,7 +397,7 @@ export default function ConfluencePublishTab() {
                 display: 'flex', alignItems: 'center', gap: 6,
               }}
             >
-              {genState === 'generating' ? <><Loader size={11} className="animate-spin" /> Generating…</> : 'Generate AI Draft'}
+              {genState === 'generating' ? <><Loader size={11} className="animate-spin" /> {t('Generating…')}</> : t('Generate AI Draft')}
             </button>
             {genError && <span style={{ fontSize: 11, color: 'var(--color-error)' }}>{genError}</span>}
           </div>
@@ -407,7 +409,7 @@ export default function ConfluencePublishTab() {
         <>
           <div style={{ borderTop: '1px solid var(--color-border)' }} />
           <section>
-            <SectionTitle>Review Draft (Markdown editable)</SectionTitle>
+            <SectionTitle>{t('Review Draft (Markdown editable)')}</SectionTitle>
             <textarea
               value={markdownDraft}
               onChange={e => { setMarkdownDraft(e.target.value); setAccepted(false) }}
@@ -432,7 +434,7 @@ export default function ConfluencePublishTab() {
                   disabled={genState === 'generating'}
                 />
                 <CheckCircle size={13} style={{ color: accepted ? 'var(--color-success)' : 'var(--color-text-muted)' }} />
-                Approve Draft
+                {t('Approve Draft')}
               </label>
 
               <button
@@ -448,18 +450,18 @@ export default function ConfluencePublishTab() {
                 }}
               >
                 {pubState === 'publishing'
-                  ? <><Loader size={11} className="animate-spin" /> Publishing…</>
-                  : <><Send size={11} /> Publish to Confluence</>
+                  ? <><Loader size={11} className="animate-spin" /> {t('Publishing…')}</>
+                  : <><Send size={11} /> {t('Publish to Confluence')}</>
                 }
               </button>
 
               {pubState === 'done' && (
                 <span style={{ fontSize: 11, color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <CheckCircle size={12} /> Published
+                  <CheckCircle size={12} /> {t('Published')}
                   {publishedUrl && (
                     <a href={publishedUrl} target="_blank" rel="noreferrer"
                       style={{ marginLeft: 4, color: '#60a5fa', textDecoration: 'underline' }}>
-                      Open
+                      {t('Open')}
                     </a>
                   )}
                 </span>

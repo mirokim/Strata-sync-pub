@@ -18,6 +18,7 @@ import { useActivityHeat } from '@/hooks/useActivityHeat'
 import type { GraphLink } from '@/types'
 import NodeTooltip from './NodeTooltip'
 import { sphereSegmentsFor, chooseLabelledNodes, nextQualityLevel, strongestEdgeMask, edgeSubsetIndex, QUALITY_MAX } from '@/lib/graph3dQuality'
+import { useT } from '@/i18n'
 
 interface Props {
   width: number
@@ -66,6 +67,7 @@ interface PooledLabel {
 }
 
 export default function Graph3D({ width, height }: Props) {
+  const t = useT()
   const mountRef = useRef<HTMLDivElement>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
   const css2dRendererRef = useRef<CSS2DRenderer | null>(null)
@@ -1376,7 +1378,7 @@ export default function Graph3D({ width, height }: Props) {
     >
       <div
         role="img"
-        aria-label={`Knowledge graph: ${nodes.length} nodes, ${links.length} links`}
+        aria-label={t('Knowledge graph: {nodes} nodes, {links} links', { nodes: nodes.length, links: links.length })}
         style={{
           position: 'absolute',
           width: 1,

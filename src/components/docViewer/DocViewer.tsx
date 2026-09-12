@@ -7,6 +7,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { MOCK_DOCUMENTS } from '@/data/mockDocuments'
 import { SPEAKER_CONFIG } from '@/lib/speakerConfig'
 import { cn } from '@/lib/utils'
+import { useT } from '@/i18n'
 import FrontmatterBlock from './FrontmatterBlock'
 import ParagraphBlock from './ParagraphBlock'
 import type { SpeakerId } from '@/types'
@@ -26,6 +27,7 @@ export default function DocViewer() {
   const { vaultPath, loadedDocuments } = useVaultStore()
   const isFast = useSettingsStore(s => s.paragraphRenderQuality === 'fast')
   const scrollRef = useRef<HTMLDivElement>(null)
+  const t = useT()
 
   // Mock fallback: if no vault loaded, use MOCK_DOCUMENTS
   const allDocuments = (vaultPath && loadedDocuments) ? loadedDocuments : MOCK_DOCUMENTS
@@ -60,17 +62,17 @@ export default function DocViewer() {
             'hover:bg-[var(--color-bg-hover)]'
           )}
           style={{ color: 'var(--color-text-muted)' }}
-          aria-label="Back to graph"
+          aria-label={t('Back to graph')}
         >
           <ChevronLeft size={12} />
-          Graph
+          {t('Graph')}
         </button>
         <span
           className="flex items-center gap-1.5 px-3 py-1 text-xs rounded"
           style={{ background: 'var(--color-bg-hover)', color: 'var(--color-text-primary)' }}
         >
           <FileText size={12} />
-          Document
+          {t('Document')}
         </span>
       </div>
 
@@ -81,8 +83,8 @@ export default function DocViewer() {
           style={{ color: 'var(--color-text-muted)', fontSize: 12 }}
           data-testid="doc-viewer-empty"
         >
-          <div style={{ marginBottom: 8 }}>← Select a document from the file tree</div>
-          <div style={{ fontSize: 11, opacity: 0.5 }}>or click a node in the graph</div>
+          <div style={{ marginBottom: 8 }}>← {t('Select a document from the file tree')}</div>
+          <div style={{ fontSize: 11, opacity: 0.5 }}>{t('or click a node in the graph')}</div>
         </div>
       )}
 
@@ -183,14 +185,14 @@ export default function DocViewer() {
                         className="text-xs font-semibold tracking-wide"
                         style={{ color: 'var(--color-text-muted)' }}
                       >
-                        Priority Reference
+                        {t('Priority Reference')}
                       </span>
                       {higherPriority.length > 0 && (
                         <span
                           className="text-xs px-1.5 py-0.5 rounded"
                           style={{ background: 'rgba(245,158,11,0.15)', color: 'var(--color-warning)' }}
                         >
-                          {higherPriority.length} higher-priority doc{higherPriority.length !== 1 ? 's' : ''}
+                          {t('{count} higher-priority doc(s)', { count: higherPriority.length })}
                         </span>
                       )}
                     </div>
@@ -225,13 +227,13 @@ export default function DocViewer() {
                             {isHigher && (
                               <span className="shrink-0 flex items-center gap-0.5" style={{ color: 'var(--color-warning)' }}>
                                 <ArrowUp size={10} />
-                                <span>Higher</span>
+                                <span>{t('Higher')}</span>
                               </span>
                             )}
                             {isLower && (
                               <span className="shrink-0 flex items-center gap-0.5" style={{ color: 'var(--color-text-muted)' }}>
                                 <ArrowDown size={10} />
-                                <span>Lower</span>
+                                <span>{t('Lower')}</span>
                               </span>
                             )}
                           </div>

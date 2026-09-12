@@ -7,6 +7,7 @@ import { FileText, MessageCircle } from 'lucide-react'
 import { useDebateStore } from '@/stores/debateStore'
 import { DEBATE_PROVIDER_LABELS, DEBATE_PROVIDER_COLORS } from '@/services/debateRoles'
 import type { DiscussionMessage, ReferenceFile } from '@/types'
+import { useT } from '@/i18n'
 
 function TypingIndicator({ provider }: { provider: string }) {
   const color = DEBATE_PROVIDER_COLORS[provider] || '#888'
@@ -30,6 +31,7 @@ function TypingIndicator({ provider }: { provider: string }) {
 }
 
 function MessageBubble({ message }: { message: DiscussionMessage }) {
+  const t = useT()
   const isUser = message.provider === 'user'
   const isError = !!message.error
   const isJudgeEval = message.messageType === 'judge-evaluation'
@@ -37,7 +39,7 @@ function MessageBubble({ message }: { message: DiscussionMessage }) {
     ? '#fbbf24'
     : (DEBATE_PROVIDER_COLORS[message.provider] || '#888')
   const label = isUser
-    ? 'You'
+    ? t('You')
     : (DEBATE_PROVIDER_LABELS[message.provider] || message.provider)
   const [expandedImage, setExpandedImage] = useState<string | null>(null)
 
@@ -88,7 +90,7 @@ function MessageBubble({ message }: { message: DiscussionMessage }) {
                 className="text-[9px] font-bold px-1.5 py-0.5 rounded"
                 style={{ background: 'rgba(255,152,0,0.15)', color: '#ff9800' }}
               >
-                Judge
+                {t('Judge')}
               </span>
             )}
             <span
@@ -102,7 +104,7 @@ function MessageBubble({ message }: { message: DiscussionMessage }) {
                 className="text-[9px] font-semibold px-1.5 py-0.5 rounded"
                 style={{ background: 'rgba(244,67,54,0.1)', color: '#f44336' }}
               >
-                Error
+                {t('Error')}
               </span>
             )}
           </div>
@@ -168,6 +170,7 @@ function MessageBubble({ message }: { message: DiscussionMessage }) {
 }
 
 export function DebateThread() {
+  const t = useT()
   const messages = useDebateStore((s) => s.messages)
   const loadingProvider = useDebateStore((s) => s.loadingProvider)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -192,7 +195,7 @@ export function DebateThread() {
           >
             <MessageCircle className="w-5 h-5" />
           </div>
-          <p className="text-xs">Conversation will appear here once the debate starts</p>
+          <p className="text-xs">{t('Conversation will appear here once the debate starts')}</p>
         </div>
       )}
 

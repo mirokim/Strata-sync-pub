@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { logger } from '@/lib/logger'
+import { t } from '@/i18n'
 
 interface Props {
   children: ReactNode
@@ -59,7 +60,7 @@ export default class ErrorBoundary extends Component<Props, State> {
         >
           <div style={{ fontSize: '2rem' }}>⚠️</div>
           <div style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>
-            A rendering error occurred
+            {t('A rendering error occurred')}
           </div>
           {this.state.error && (
             <div
@@ -89,7 +90,7 @@ export default class ErrorBoundary extends Component<Props, State> {
               fontSize: '0.75rem',
             }}
           >
-            Retry
+            {t('Retry')}
           </button>
         </div>
       )

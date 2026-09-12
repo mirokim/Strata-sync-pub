@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useGraphStore } from '@/stores/graphStore'
+import { useT } from '@/i18n'
 
 const SATELLITES = [0, 60, 120, 180, 240, 300].map((deg, i) => {
   const rad = (deg * Math.PI) / 180
@@ -8,6 +9,7 @@ const SATELLITES = [0, 60, 120, 180, 240, 300].map((deg, i) => {
 })
 
 export default function LoadingOverlay() {
+  const t = useT()
   const {
     isLoading, vaultPath, vaultReady, loadingProgress, loadingPhase,
     vaults, activeVaultId, vaultDocsCache, bgLoadingInfo,
@@ -75,7 +77,7 @@ export default function LoadingOverlay() {
           }} />
         </div>
         <span style={{ fontSize: 10, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
-          Indexing {bgLoadingInfo!.done + 1}/{bgLoadingInfo!.total}
+          {t('Indexing {done}/{total}', { done: bgLoadingInfo!.done + 1, total: bgLoadingInfo!.total })}
         </span>
       </div>
     )
@@ -158,7 +160,7 @@ export default function LoadingOverlay() {
                 fontSize: 10, fontWeight: 700, letterSpacing: '0.07em',
                 textTransform: 'uppercase', color: 'var(--color-text-muted)',
               }}>
-                Vault Ready Status
+                {t('Vault Ready Status')}
               </span>
               <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
                 {readyCount} / {vaultEntries.length}
@@ -209,9 +211,9 @@ export default function LoadingOverlay() {
                   </span>
                   <span style={{ fontSize: 11, color: 'var(--color-text-muted)', flexShrink: 0 }}>
                     {isCurrentlyLoading ? `${loadingProgress}%`
-                      : isBgLoadingThis ? 'Indexing...'
-                      : isDone ? `${docCount} docs`
-                      : 'Waiting'}
+                      : isBgLoadingThis ? t('Indexing...')
+                      : isDone ? t('{count} docs', { count: docCount })
+                      : t('Waiting')}
                   </span>
                 </div>
               )
@@ -249,8 +251,8 @@ export default function LoadingOverlay() {
         }}>
           <span>
             {isBgLoading
-              ? `Background indexing... (${bgLoadingInfo!.done + 1}/${bgLoadingInfo!.total})`
-              : (loadingPhase || 'Loading vault...')}
+              ? t('Background indexing... ({done}/{total})', { done: bgLoadingInfo!.done + 1, total: bgLoadingInfo!.total })
+              : (loadingPhase || t('Loading vault...'))}
           </span>
           {!isBgLoading && loadingProgress > 0 && <span>{loadingProgress}%</span>}
         </div>

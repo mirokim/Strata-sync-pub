@@ -5,17 +5,19 @@
 import { useEffect, useState } from 'react'
 import { Cloud, CloudOff, FolderOpen } from 'lucide-react'
 import { useVaultStore } from '@/stores/vaultStore'
+import { t, useT } from '@/i18n'
 
 function relative(ms: number | null): string {
-  if (!ms) return 'never'
+  if (!ms) return t('never')
   const s = Math.floor((Date.now() - ms) / 1000)
-  if (s < 5) return 'just now'
-  if (s < 60) return `${s}s ago`
+  if (s < 5) return t('just now')
+  if (s < 60) return t('{s}s ago', { s })
   const m = Math.floor(s / 60)
-  return m < 60 ? `${m}m ago` : `${Math.floor(m / 60)}h ago`
+  return m < 60 ? t('{m}m ago', { m }) : t('{h}h ago', { h: Math.floor(m / 60) })
 }
 
 export default function StatusBar() {
+  const t = useT()
   const vaultPath = useVaultStore(s => s.vaultPath)
   const [sync, setSync] = useState<TeamSyncState | null>(null)
 
@@ -42,7 +44,7 @@ export default function StatusBar() {
           {remote.status.lastError ? <CloudOff size={11} color="var(--color-error)" /> : <Cloud size={11} color="var(--color-accent)" />}
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={remote.config.url}>{host}</span>
           <span style={{ opacity: 0.4 }}>·</span>
-          <span>{remote.status.inFlight ? 'syncing…' : remote.status.lastError ? remote.status.lastError : `synced ${relative(remote.status.lastSyncAt)}`}</span>
+          <span>{remote.status.inFlight ? t('syncing…') : remote.status.lastError ? remote.status.lastError : t('synced {time}', { time: relative(remote.status.lastSyncAt) })}</span>
           {remote.config.author && (<><span style={{ opacity: 0.4 }}>·</span><span>{remote.config.author}</span></>)}
         </>
       ) : vaultPath ? (

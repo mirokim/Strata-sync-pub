@@ -5,6 +5,7 @@
 import { Pause, Play, Square, SkipForward, Plus } from 'lucide-react'
 import { useDebateStore } from '@/stores/debateStore'
 import { DEBATE_PROVIDER_LABELS, DEBATE_PROVIDER_COLORS } from '@/services/debateRoles'
+import { useT } from '@/i18n'
 
 const STATUS_LABELS: Record<string, string> = {
   running: 'Running',
@@ -28,6 +29,7 @@ const STATUS_COLOR: Record<string, string> = {
 }
 
 export function DebateControlBar() {
+  const t = useT()
   const status = useDebateStore((s) => s.status)
   const config = useDebateStore((s) => s.config)
   const currentRound = useDebateStore((s) => s.currentRound)
@@ -61,7 +63,7 @@ export function DebateControlBar() {
             color: STATUS_COLOR[status] || 'var(--color-text-muted)',
           }}
         >
-          {STATUS_LABELS[status] || status}
+          {t(STATUS_LABELS[status] || status)}
         </span>
 
         {/* Round counter */}
@@ -88,7 +90,7 @@ export function DebateControlBar() {
                         : undefined,
                     animation: loadingProvider === p ? 'pulse 1s infinite' : undefined,
                   }}
-                  title={`${DEBATE_PROVIDER_LABELS[p] || p}${isJudge ? ' (Judge)' : ''}`}
+                  title={isJudge ? t('{label} (Judge)', { label: DEBATE_PROVIDER_LABELS[p] || p }) : (DEBATE_PROVIDER_LABELS[p] || p)}
                 />
               )
             })}
@@ -101,7 +103,7 @@ export function DebateControlBar() {
             <span style={{ color: DEBATE_PROVIDER_COLORS[loadingProvider] || '#888', fontWeight: 600 }}>
               {DEBATE_PROVIDER_LABELS[loadingProvider] || loadingProvider}
             </span>
-            <span style={{ color: 'var(--color-text-muted)' }}>responding</span>
+            <span style={{ color: 'var(--color-text-muted)' }}>{t('responding')}</span>
           </span>
         )}
 
@@ -127,7 +129,7 @@ export function DebateControlBar() {
             }}
           >
             <SkipForward className="w-3.5 h-3.5" />
-            Next Turn
+            {t('Next Turn')}
           </button>
         )}
       </div>
@@ -139,7 +141,7 @@ export function DebateControlBar() {
             onClick={pauseDebate}
             className="p-1.5 rounded-lg transition"
             style={{ color: 'var(--color-text-secondary)' }}
-            title="Pause"
+            title={t('Pause')}
           >
             <Pause className="w-3.5 h-3.5" />
           </button>
@@ -149,7 +151,7 @@ export function DebateControlBar() {
             onClick={resumeDebate}
             className="p-1.5 rounded-lg transition"
             style={{ color: '#4caf50' }}
-            title="Resume"
+            title={t('Resume')}
           >
             <Play className="w-3.5 h-3.5" />
           </button>
@@ -159,7 +161,7 @@ export function DebateControlBar() {
             onClick={stopDebate}
             className="p-1.5 rounded-lg transition"
             style={{ color: 'var(--color-text-muted)' }}
-            title="Stop"
+            title={t('Stop')}
           >
             <Square className="w-3.5 h-3.5" />
           </button>
@@ -171,7 +173,7 @@ export function DebateControlBar() {
             style={{ color: 'var(--color-accent)', background: 'rgba(82,156,202,0.1)' }}
           >
             <Plus className="w-3 h-3" />
-            New Debate
+            {t('New Debate')}
           </button>
         )}
       </div>

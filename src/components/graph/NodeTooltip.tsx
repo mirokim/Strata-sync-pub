@@ -3,6 +3,7 @@ import { useGraphStore } from '@/stores/graphStore'
 import { useVaultStore } from '@/stores/vaultStore'
 import { MOCK_DOCUMENTS } from '@/data/mockDocuments'
 import { SPEAKER_CONFIG } from '@/lib/speakerConfig'
+import { useT } from '@/i18n'
 
 interface NodeTooltipProps {
   nodeId: string
@@ -13,6 +14,7 @@ interface NodeTooltipProps {
 }
 
 export default function NodeTooltip({ nodeId, x, y }: NodeTooltipProps) {
+  const t = useT()
   const { nodes } = useGraphStore()
   const { vaultPath, loadedDocuments } = useVaultStore()
 
@@ -54,7 +56,7 @@ export default function NodeTooltip({ nodeId, x, y }: NodeTooltipProps) {
     >
       {/* Speaker label */}
       <div className="text-[10px] font-semibold tracking-wider uppercase mb-1" style={{ color }}>
-        {SPEAKER_CONFIG[node.speaker].label}
+        {t(SPEAKER_CONFIG[node.speaker].label)}
       </div>
       {/* Document name */}
       <div className="text-xs font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>

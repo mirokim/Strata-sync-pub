@@ -13,8 +13,10 @@ import { Plus, X } from 'lucide-react'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useVaultLoader } from '@/hooks/useVaultLoader'
 import { useGraphStore } from '@/stores/graphStore'
+import { useT } from '@/i18n'
 
 export default function VaultTabs() {
+  const t = useT()
   const { vaults, activeVaultId, switchVault, addVault, removeVault } = useVaultStore()
   const { loadVault } = useVaultLoader()
 
@@ -107,7 +109,7 @@ export default function VaultTabs() {
                 onClick={(e) => handleRemove(e, id)}
                 className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity cursor-pointer"
                 style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}
-                title="Remove vault"
+                title={t('Remove vault')}
               >
                 <X size={9} />
               </span>
@@ -122,7 +124,7 @@ export default function VaultTabs() {
           onClick={handleAdd}
           className="flex items-center justify-center w-6 h-6 rounded transition-colors hover:bg-[var(--color-bg-hover)] shrink-0"
           style={{ color: 'var(--color-text-muted)' }}
-          title="Add vault"
+          title={t('Add vault')}
         >
           <Plus size={11} />
         </button>

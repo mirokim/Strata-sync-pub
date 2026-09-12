@@ -21,6 +21,7 @@ import TagGroup from './TagGroup'
 import ContextMenu from './ContextMenu'
 import type { SpeakerId, LoadedDocument } from '@/types'
 import type { ContextMenuState } from './ContextMenu'
+import { useT } from '@/i18n'
 
 // ── Filename validation (path injection prevention) ──────────────────────────
 const SAFE_FILENAME_RE = /^[^\/\\:*?"<>|]+$/
@@ -59,6 +60,7 @@ interface FolderPickerProps {
 }
 
 function FolderPickerModal({ folders, x, y, onPick, onClose }: FolderPickerProps) {
+  const t = useT()
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -102,7 +104,7 @@ function FolderPickerModal({ folders, x, y, onPick, onClose }: FolderPickerProps
         borderBottom: '1px solid var(--color-bg-tertiary)',
         marginBottom: 4,
       }}>
-        Select destination folder
+        {t('Select destination folder')}
       </div>
       {folders.map(folder => (
         <button
@@ -127,7 +129,7 @@ function FolderPickerModal({ folders, x, y, onPick, onClose }: FolderPickerProps
           onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
         >
           <Folder size={11} style={{ color: 'var(--color-accent)', flexShrink: 0 }} />
-          {folder || '/ (root)'}
+          {folder || t('/ (root)')}
         </button>
       ))}
     </div>,
@@ -138,6 +140,7 @@ function FolderPickerModal({ folders, x, y, onPick, onClose }: FolderPickerProps
 // ── Main FileTree component ────────────────────────────────────────────────────
 
 export default function FileTree() {
+  const t = useT()
   const {
     search, setSearch,
     sortBy, setSortBy,
@@ -233,7 +236,7 @@ export default function FileTree() {
     const ext = filename.endsWith('.md') ? '.md' : ''
     const base = filename.replace(/\.md$/i, '')
     const copyFilename = `${base} copy${ext}`
-    if (!isValidFilename(copyFilename)) { alert('Invalid file name.'); return }
+    if (!isValidFilename(copyFilename)) { alert(t('Invalid file name.')); return }
     const dir = absolutePath.replace(/[\\/][^\\/]+$/, '')
     const sep = absolutePath.includes('\\') ? '\\' : '/'
     const destPath = `${dir}${sep}${copyFilename}`
@@ -249,12 +252,12 @@ export default function FileTree() {
   }
 
   const handleRename = async (absolutePath: string, filename: string) => {
-    const newName = window.prompt('New file name:', filename.replace(/\.md$/i, ''))
+    const newName = window.prompt(t('New file name:'), filename.replace(/\.md$/i, ''))
     if (!newName || newName.trim() === '') return
     const newFilename = newName.trim().endsWith('.md')
       ? newName.trim()
       : `${newName.trim()}.md`
-    if (!isValidFilename(newFilename)) { alert('Invalid file name.'); return }
+    if (!isValidFilename(newFilename)) { alert(t('Invalid file name.')); return }
     if (newFilename === filename) return
 
     const oldDoc = loadedDocuments?.find(d => (d as LoadedDocument).absolutePath === absolutePath)
@@ -278,7 +281,7 @@ export default function FileTree() {
   }
 
   const handleDelete = async (absolutePath: string, filename: string) => {
-    const confirmed = window.confirm(`Delete "${filename}"?\nYou can restore it from Settings › Trash.`)
+    const confirmed = window.confirm(t('Delete "{filename}"?\nYou can restore it from Settings › Trash.', { filename }))
     if (!confirmed) return
     await safeFileOp('delete', async () => {
       // Back up the content before deleting → keep it in the trash store
@@ -299,11 +302,11 @@ export default function FileTree() {
 
   const handleCreateFolder = async () => {
     if (!vaultPath || !window.vaultAPI?.createFolder) return
-    const name = window.prompt('New folder name (nested allowed: parent/child):')
+    const name = window.prompt(t('New folder name (nested allowed: parent/child):'))
     if (!name || !name.trim()) return
     // Validate each path segment (parent/child allowed, ../ blocked)
     const segments = name.trim().split(/[/\\]/).filter(Boolean)
-    if (segments.some(s => !isValidFilename(s))) { alert('Invalid folder name.'); return }
+    if (segments.some(s => !isValidFilename(s))) { alert(t('Invalid folder name.')); return }
     const sep = vaultPath.includes('\\') ? '\\' : '/'
     const folderRelPath = name.trim().replace(/[/\\]/g, sep)
     const folderAbsPath = `${vaultPath}${sep}${folderRelPath}`
@@ -392,7 +395,7 @@ export default function FileTree() {
       >
         <button
           style={iconBtn(sortBy === 'name')}
-          title={`By name${sortBy === 'name' ? (sortDir === 'asc' ? ' (ascending)' : ' (descending)') : ''}`}
+          title={sortBy === 'name' ? (sortDir === 'asc' ? t('By name (ascending)') : t('By name (descending)')) : t('By name')}
           onClick={() => sortBy === 'name' ? toggleSortDir() : setSortBy('name')}
         >
           {sortBy === 'name'
@@ -402,7 +405,7 @@ export default function FileTree() {
 
         <button
           style={iconBtn(sortBy === 'date')}
-          title={`By date${sortBy === 'date' ? (sortDir === 'asc' ? ' (ascending)' : ' (descending)') : ''}`}
+          title={sortBy === 'date' ? (sortDir === 'asc' ? t('By date (ascending)') : t('By date (descending)')) : t('By date')}
           onClick={() => sortBy === 'date' ? toggleSortDir() : setSortBy('date')}
         >
           {sortBy === 'date'
@@ -414,8 +417,8 @@ export default function FileTree() {
 
         <button
           style={iconBtn(expandOverride !== null)}
-          title={expandOverride === true ? 'Collapse all' : 'Expand all'}
-          aria-label={expandOverride === true ? 'Collapse all' : 'Expand all'}
+          title={expandOverride === true ? t('Collapse all') : t('Expand all')}
+          aria-label={expandOverride === true ? t('Collapse all') : t('Expand all')}
           onClick={handleExpandCollapseToggle}
         >
           {expandOverride === true ? <ChevronsDownUp size={11} /> : <ChevronsUpDown size={11} />}
@@ -423,8 +426,8 @@ export default function FileTree() {
 
         <button
           style={iconBtn(isVaultLoaded)}
-          title={groupMode === 'folder' ? 'Switch to tag view' : 'Switch to folder view'}
-          aria-label={groupMode === 'folder' ? 'Switch to tag view' : 'Switch to folder view'}
+          title={groupMode === 'folder' ? t('Switch to tag view') : t('Switch to folder view')}
+          aria-label={groupMode === 'folder' ? t('Switch to tag view') : t('Switch to folder view')}
           onClick={handleGroupModeToggle}
           disabled={!isVaultLoaded}
         >
@@ -435,8 +438,8 @@ export default function FileTree() {
 
         <button
           style={iconBtn()}
-          title={vaultPath ? 'Create new folder' : 'Please select a vault first'}
-          aria-label="Create new folder"
+          title={vaultPath ? t('Create new folder') : t('Please select a vault first')}
+          aria-label={t('Create new folder')}
           onClick={handleCreateFolder}
           disabled={!vaultPath}
         >
@@ -445,8 +448,8 @@ export default function FileTree() {
 
         <button
           style={iconBtn()}
-          title={vaultPath ? 'Create new document' : 'Please select a vault first'}
-          aria-label="Create new document"
+          title={vaultPath ? t('Create new document') : t('Please select a vault first')}
+          aria-label={t('Create new document')}
           onClick={handleNewDocument}
           disabled={!vaultPath}
         >
@@ -502,7 +505,7 @@ export default function FileTree() {
 
         {filtered.length === 0 && (
           <div className="px-4 py-6 text-xs text-center" style={{ color: 'var(--color-text-muted)' }}>
-            No results found
+            {t('No results found')}
           </div>
         )}
       </div>
@@ -512,10 +515,10 @@ export default function FileTree() {
         className="px-3 py-2 text-[10px] shrink-0"
         style={{ color: 'var(--color-text-muted)', borderTop: '1px solid var(--color-border)' }}
       >
-        <span>{filtered.length} / {totalCount} docs</span>
+        <span>{t('{filtered} / {total} docs', { filtered: filtered.length, total: totalCount })}</span>
         {nodes.length > 0 && (
           <span style={{ opacity: 0.6 }}>
-            {' · '}{nodes.length} nodes · {links.length} wires
+            {' · '}{t('{nodes} nodes · {wires} wires', { nodes: nodes.length, wires: links.length })}
           </span>
         )}
       </div>

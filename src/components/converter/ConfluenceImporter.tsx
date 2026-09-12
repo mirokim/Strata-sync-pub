@@ -24,6 +24,7 @@ import {
   type ConfluenceCredentials,
   type ConfluenceExportPageSummary,
 } from '@/services/confluenceApi'
+import { useT } from '@/i18n'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -83,6 +84,7 @@ function InputField({
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ConfluenceImporter() {
+  const t = useT()
   const [mode, setMode] = useState<ImportMode>('folder')
 
   // ── Shared: page list + selection ──────────────────────────────────────────
@@ -131,12 +133,12 @@ export default function ConfluenceImporter() {
 
   const handleFetchPages = async () => {
     const urlTrim = apiUrl.trim()
-    if (!urlTrim) { setApiFetchError('Please enter a Confluence URL.'); return }
+    if (!urlTrim) { setApiFetchError(t('Please enter a Confluence URL.')); return }
     if (authType === 'cloud' && (!apiEmail.trim() || !apiToken.trim())) {
-      setApiFetchError('Please enter email and API token.'); return
+      setApiFetchError(t('Please enter email and API token.')); return
     }
     if (authType === 'server' && !apiPat.trim()) {
-      setApiFetchError('Please enter a Personal Access Token.'); return
+      setApiFetchError(t('Please enter a Personal Access Token.')); return
     }
 
     setApiFetching(true)
@@ -155,7 +157,7 @@ export default function ConfluenceImporter() {
       setPages(items)
       setSelectedIds(new Set(items.map(p => p.id)))
     } catch (err) {
-      setApiFetchError(err instanceof Error ? err.message : 'Failed to fetch page list')
+      setApiFetchError(err instanceof Error ? err.message : t('Failed to fetch page list'))
     } finally {
       setApiFetching(false)
     }
@@ -217,7 +219,7 @@ export default function ConfluenceImporter() {
         updated[i] = {
           ...updated[i],
           status: 'error',
-          error: err instanceof Error ? err.message : 'Conversion failed',
+          error: err instanceof Error ? err.message : t('Conversion failed'),
           progressMsg: undefined,
         }
       }
@@ -258,8 +260,8 @@ export default function ConfluenceImporter() {
       {/* Mode toggle */}
       <div className="flex gap-1">
         {([
-          { id: 'folder', label: 'Import Folder', icon: <Folder size={11} /> },
-          { id: 'api',    label: 'API Connect',  icon: <Globe  size={11} /> },
+          { id: 'folder', label: t('Import Folder'), icon: <Folder size={11} /> },
+          { id: 'api',    label: t('API Connect'),  icon: <Globe  size={11} /> },
         ] as const).map(m => (
           <button
             key={m.id}
@@ -291,7 +293,7 @@ export default function ConfluenceImporter() {
             📌 <code style={{ color: 'var(--color-accent)' }}>{'ID_Title.html'}</code>
             {' '}+{' '}
             <code style={{ color: 'var(--color-accent)' }}>{'ID_files/'}</code>
-            {' '}structure is automatically recognized.
+            {' '}{t('structure is automatically recognized.')}
           </div>
 
           <div
@@ -302,15 +304,15 @@ export default function ConfluenceImporter() {
             <Folder size={24} style={{ color: 'var(--color-text-muted)' }} />
             <div className="text-center">
               <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                Select downloaded_pages folder
+                {t('Select downloaded_pages folder')}
               </div>
               <div className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
-                HTML + PDF, DOCX, PPTX, XLSX attachments auto-converted
+                {t('HTML + PDF, DOCX, PPTX, XLSX attachments auto-converted')}
               </div>
             </div>
             {pages.length > 0 && (
               <div className="text-xs font-medium" style={{ color: 'var(--color-accent)' }}>
-                ✓ {pages.length} pages detected
+                ✓ {t('{count} pages detected', { count: pages.length })}
               </div>
             )}
             <input
@@ -330,20 +332,20 @@ export default function ConfluenceImporter() {
           {/* Auth type toggle */}
           <div className="flex gap-1">
             {([
-              { id: 'cloud',  label: 'Cloud (Email + API Token)' },
-              { id: 'server', label: 'Server / DC (PAT)' },
-            ] as const).map(t => (
+              { id: 'cloud',  label: t('Cloud (Email + API Token)') },
+              { id: 'server', label: t('Server / DC (PAT)') },
+            ] as const).map(opt => (
               <button
-                key={t.id}
-                onClick={() => setAuthType(t.id)}
+                key={opt.id}
+                onClick={() => setAuthType(opt.id)}
                 className="px-2.5 py-1 text-[10px] rounded transition-colors"
                 style={{
-                  background: authType === t.id ? 'var(--color-accent)' : 'var(--color-bg-hover)',
-                  color: authType === t.id ? '#fff' : 'var(--color-text-muted)',
+                  background: authType === opt.id ? 'var(--color-accent)' : 'var(--color-bg-hover)',
+                  color: authType === opt.id ? '#fff' : 'var(--color-text-muted)',
                   border: '1px solid var(--color-border)',
                 }}
               >
-                {t.label}
+                {opt.label}
               </button>
             ))}
           </div>
@@ -351,7 +353,7 @@ export default function ConfluenceImporter() {
           {/* Credentials form */}
           <div className="flex flex-col gap-2">
             <InputField
-              label="Confluence URL"
+              label={t('Confluence URL')}
               value={apiUrl}
               onChange={setApiUrl}
               placeholder="https://company.atlassian.net/wiki"
@@ -361,7 +363,7 @@ export default function ConfluenceImporter() {
             {authType === 'cloud' ? (
               <>
                 <InputField
-                  label="Email"
+                  label={t('Email')}
                   value={apiEmail}
                   onChange={setApiEmail}
                   placeholder="you@company.com"
@@ -369,7 +371,7 @@ export default function ConfluenceImporter() {
                 />
                 <div>
                   <label className="text-[10px] block mb-1" style={{ color: 'var(--color-text-muted)' }}>
-                    API Token{' '}
+                    {t('API Token')}{' '}
                     <a
                       href="https://id.atlassian.com/manage-profile/security/api-tokens"
                       target="_blank"
@@ -377,7 +379,7 @@ export default function ConfluenceImporter() {
                       className="underline"
                       style={{ color: 'var(--color-accent)' }}
                     >
-                      Get one ↗
+                      {t('Get one ↗')}
                     </a>
                   </label>
                   <div className="relative">
@@ -409,14 +411,14 @@ export default function ConfluenceImporter() {
             ) : (
               <div>
                 <label className="text-[10px] block mb-1" style={{ color: 'var(--color-text-muted)' }}>
-                  Personal Access Token
+                  {t('Personal Access Token')}
                 </label>
                 <div className="relative">
                   <input
                     type={showSecret ? 'text' : 'password'}
                     value={apiPat}
                     onChange={e => setApiPat(e.target.value)}
-                    placeholder="Enter token"
+                    placeholder={t('Enter token')}
                     disabled={running}
                     className="w-full px-2.5 py-1.5 pr-8 text-xs rounded"
                     style={{
@@ -439,10 +441,10 @@ export default function ConfluenceImporter() {
             )}
 
             <InputField
-              label="Space Key (optional, blank for all)"
+              label={t('Space Key (optional, blank for all)')}
               value={spaceKey}
               onChange={setSpaceKey}
-              placeholder="e.g.: PROJ"
+              placeholder={t('e.g.: PROJ')}
               disabled={running}
             />
           </div>
@@ -457,7 +459,7 @@ export default function ConfluenceImporter() {
               color: 'white',
             }}
           >
-            {apiFetching ? '⟳ Fetching page list...' : '📥 Fetch Page List'}
+            {apiFetching ? `⟳ ${t('Fetching page list...')}` : `📥 ${t('Fetch Page List')}`}
           </button>
 
           {/* Fetch error */}
@@ -488,7 +490,7 @@ export default function ConfluenceImporter() {
           >
             {done ? (
               <span className="text-xs" style={{ color: 'var(--color-accent)' }}>
-                ✓ {doneCount} / {pages.filter(p => selectedIds.has(p.id)).length} converted
+                ✓ {t('{done} / {total} converted', { done: doneCount, total: pages.filter(p => selectedIds.has(p.id)).length })}
               </span>
             ) : (
               <label
@@ -502,7 +504,7 @@ export default function ConfluenceImporter() {
                   disabled={running}
                   className="cursor-pointer"
                 />
-                Select All ({selectedIds.size}/{pages.length})
+                {t('Select All ({selected}/{total})', { selected: selectedIds.size, total: pages.length })}
               </label>
             )}
             {running && currentRunning?.progressMsg && (
@@ -617,7 +619,7 @@ export default function ConfluenceImporter() {
                       onClick={() => handleDownloadOne(item)}
                       className="shrink-0 p-1 rounded transition-colors hover:bg-[var(--color-bg-hover)]"
                       style={{ color: 'var(--color-accent)' }}
-                      title="Download MD"
+                      title={t('Download MD')}
                     >
                       <Download size={11} />
                     </button>
@@ -649,7 +651,7 @@ export default function ConfluenceImporter() {
             style={{ color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}
           >
             <RotateCcw size={11} />
-            Reset
+            {t('Reset')}
           </button>
 
           {done ? (
@@ -660,7 +662,7 @@ export default function ConfluenceImporter() {
               style={{ background: 'var(--color-accent)', color: 'white' }}
             >
               <Download size={11} />
-              Download All ({doneCount})
+              {t('Download All ({count})', { count: doneCount })}
             </button>
           ) : (
             <button
@@ -673,8 +675,8 @@ export default function ConfluenceImporter() {
               }}
             >
               {running
-                ? `⟳ Converting... (${doneCount}/${selectedCount})`
-                : `▶ Convert ${selectedCount} pages`}
+                ? `⟳ ${t('Converting... ({done}/{total})', { done: doneCount, total: selectedCount })}`
+                : `▶ ${t('Convert {count} pages', { count: selectedCount })}`}
             </button>
           )}
         </div>

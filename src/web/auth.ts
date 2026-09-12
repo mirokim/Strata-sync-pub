@@ -5,6 +5,7 @@
  * keeps the access/refresh tokens in localStorage. Everything is per server origin.
  */
 import { normalizeServerUrl, type WebConfig } from './config'
+import { t as i18nT } from '@/i18n'
 
 export interface Session {
   server: string
@@ -66,7 +67,7 @@ async function clientIdFor(server: string, fetchImpl: FetchLike): Promise<string
       response_types: ['code'],
     }),
   })
-  if (!res.ok) throw new Error(`client registration failed (${res.status})`)
+  if (!res.ok) throw new Error(i18nT('client registration failed ({status})', { status: res.status }))
   const body = await res.json() as { client_id: string }
   store.set(CLIENT_KEY, { ...known, [key]: body.client_id })
   return body.client_id
@@ -77,7 +78,7 @@ async function clientIdFor(server: string, fetchImpl: FetchLike): Promise<string
 /** Leave the page for the sign-in. Returns only when navigation could not start. */
 export async function startSignIn(serverUrl: string, fetchImpl: FetchLike = (i, init) => fetch(i, init)): Promise<void> {
   const server = normalizeServerUrl(serverUrl)
-  if (!server) throw new Error('invalid server URL')
+  if (!server) throw new Error(i18nT('invalid server URL'))
   const clientId = await clientIdFor(server, fetchImpl)
   const verifier = randomString(48)
   const state = randomString(16)
@@ -105,8 +106,8 @@ export async function completeSignIn(fetchImpl: FetchLike = (i, init) => fetch(i
   // Strip the code from the URL whatever happens next — it is single-use and must not be re-sent
   history.replaceState(null, '', redirectUri())
   store.del(PENDING_KEY)
-  if (!pending || pending.state !== state) throw new Error('sign-in state mismatch — start again')
-  if (Date.now() - pending.startedAt > 10 * 60_000) throw new Error('sign-in took too long — start again')
+  if (!pending || pending.state !== state) throw new Error(i18nT('sign-in state mismatch — start again'))
+  if (Date.now() - pending.startedAt > 10 * 60_000) throw new Error(i18nT('sign-in took too long — start again'))
   const session = await exchange(pending.server, {
     grant_type: 'authorization_code', code, redirect_uri: redirectUri(), client_id: pending.clientId, code_verifier: pending.verifier,
   }, pending.clientId, fetchImpl)
@@ -122,7 +123,7 @@ async function exchange(server: string, form: Record<string, string>, clientId: 
   })
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { error?: string; error_description?: string }
-    throw new Error(body.error_description || body.error || `token endpoint answered ${res.status}`)
+    throw new Error(body.error_description || body.error || i18nT('token endpoint answered {status}', { status: res.status }))
   }
   const t = await res.json() as { access_token: string; refresh_token?: string; expires_in?: number }
   return {

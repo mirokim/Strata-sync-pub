@@ -7,6 +7,7 @@ import { useChatStore } from '@/stores/chatStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { generateChatReport, downloadMarkdown } from '@/lib/chatReport'
 import { streamAIReport } from '@/services/reportClient'
+import { useT } from '@/i18n'
 
 /**
  * ReportViewer — Editor view that previews the chat conversation as a markdown report.
@@ -17,6 +18,7 @@ import { streamAIReport } from '@/services/reportClient'
  * When reportModelId is empty: static format via generateChatReport()
  */
 export default function ReportViewer() {
+  const t = useT()
   const { closeEditor } = useUIStore()
   const messages = useChatStore.getState().messages
   const activePersonas = useChatStore.getState().activePersonas
@@ -62,7 +64,7 @@ export default function ReportViewer() {
           className="text-xs font-mono"
           style={{ color: 'var(--color-text-secondary)' }}
         >
-          📄 Chat Report{reportModelId ? ' (AI)' : ''}
+          📄 {reportModelId ? t('Chat Report (AI)') : t('Chat Report')}
         </span>
 
         <div className="flex items-center gap-1">
@@ -71,7 +73,7 @@ export default function ReportViewer() {
               className="text-[10px] px-2"
               style={{ color: 'var(--color-text-muted)' }}
             >
-              Generating…
+              {t('Generating…')}
             </span>
           )}
 
@@ -84,17 +86,17 @@ export default function ReportViewer() {
               border: '1px solid var(--color-accent, #60a5fa)',
               background: 'transparent',
             }}
-            title="Download as markdown file"
+            title={t('Download as markdown file')}
           >
             <Download size={11} />
-            Download
+            {t('Download')}
           </button>
 
           <button
             onClick={closeEditor}
             className="p-1 rounded transition-colors hover:bg-[var(--color-bg-hover)]"
             style={{ color: 'var(--color-text-muted)' }}
-            aria-label="Close report"
+            aria-label={t('Close report')}
           >
             <X size={14} />
           </button>
@@ -111,7 +113,7 @@ export default function ReportViewer() {
             color: 'var(--color-error)',
           }}
         >
-          AI generation failed — falling back to the default format: {error}
+          {t('AI generation failed — falling back to the default format: {error}', { error })}
         </div>
       )}
 
@@ -122,7 +124,7 @@ export default function ReportViewer() {
       >
         {!markdown && isStreaming ? (
           <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-            Generating the report…
+            {t('Generating the report…')}
           </div>
         ) : (
           <ReactMarkdown

@@ -17,6 +17,7 @@ import CommandPalette from '@/components/shared/CommandPalette'
 import ErrorBoundary from '@/components/shared/ErrorBoundary'
 import { useUIStore } from '@/stores/uiStore'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { useT } from '@/i18n'
 
 const LEFT_MIN = 140
 const LEFT_MAX = 340
@@ -27,6 +28,7 @@ const COLLAPSE_TRANSITION = { type: 'spring', stiffness: 300, damping: 30 } as c
 const NO_TRANSITION = { duration: 0 } as const
 
 export default function MainLayout() {
+  const t = useT()
   const {
     centerTab, editingDocId, leftPanelCollapsed,
     leftPanelWidth: leftWidth,
@@ -67,7 +69,7 @@ export default function MainLayout() {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             height: '100%', color: 'var(--color-text-muted)', fontSize: '0.875rem',
           }}>
-            Graph rendering failed. Click to retry.
+            {t('Graph rendering failed. Click to retry.')}
           </div>
         }>
           <GraphPanel />

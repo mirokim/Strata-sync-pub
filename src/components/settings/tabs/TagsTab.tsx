@@ -5,8 +5,10 @@ import { useVaultStore } from '@/stores/vaultStore'
 import { useVaultLoader } from '@/hooks/useVaultLoader'
 import { getAutoPaletteColor } from '@/lib/nodeColors'
 import type { BulkTagProgress } from '@/services/tagService'
+import { useT } from '@/i18n'
 
 export default function TagsTab() {
+  const t = useT()
   const { tagPresets, addTagPreset, removeTagPreset, tagColors, setTagColor } = useSettingsStore()
   const { loadedDocuments } = useVaultStore()
   const { vaultPath, loadVault } = useVaultLoader()
@@ -35,19 +37,19 @@ export default function TagsTab() {
   const handleBulkAssign = async () => {
     if (isBulkAssigning) return
     if (!loadedDocuments?.length) {
-      setBulkDoneMsg('Please load a vault first')
+      setBulkDoneMsg(t('Please load a vault first'))
       setTimeout(() => setBulkDoneMsg(null), 3000)
       return
     }
     if (tagPresets.length === 0) {
-      setBulkDoneMsg('Please add tag presets first')
+      setBulkDoneMsg(t('Please add tag presets first'))
       setTimeout(() => setBulkDoneMsg(null), 3000)
       return
     }
 
     setIsBulkAssigning(true)
     setBulkDoneMsg(null)
-    setBulkProgress({ current: 0, total: loadedDocuments.length, docName: 'Preparing…', done: false })
+    setBulkProgress({ current: 0, total: loadedDocuments.length, docName: t('Preparing…'), done: false })
 
     try {
       const { bulkAssignTagsToAllDocs } = await import('@/services/tagService')
@@ -57,10 +59,10 @@ export default function TagsTab() {
       )
       // Reload vault to apply tags
       if (vaultPath) await loadVault(vaultPath)
-      setBulkDoneMsg(`Done: ${saved} document(s) tagged, ${skipped} skipped`)
+      setBulkDoneMsg(t('Done: {saved} document(s) tagged, {skipped} skipped', { saved, skipped }))
       setTimeout(() => setBulkDoneMsg(null), 6000)
     } catch {
-      setBulkDoneMsg('An error occurred')
+      setBulkDoneMsg(t('An error occurred'))
       setTimeout(() => setBulkDoneMsg(null), 3000)
     } finally {
       setIsBulkAssigning(false)
@@ -77,14 +79,14 @@ export default function TagsTab() {
       <section>
         <div className="flex items-center gap-1.5 mb-1.5">
           <Tag size={13} style={{ color: 'var(--color-text-muted)' }} />
-          <h3 className="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Tag Presets</h3>
+          <h3 className="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>{t('Tag Presets')}</h3>
           {tagPresets.length > 0 && (
             <button
               onClick={handleBulkAssign}
               disabled={isBulkAssigning}
               title={docCount > 0
-                ? `AI will auto-assign tags to all ${docCount} documents in the vault`
-                : 'Please load a vault first'}
+                ? t('AI will auto-assign tags to all {count} documents in the vault', { count: docCount })
+                : t('Please load a vault first')}
               className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded text-[10px] transition-colors"
               style={{
                 background: 'var(--color-bg-surface)',
@@ -99,7 +101,7 @@ export default function TagsTab() {
               {isBulkAssigning
                 ? <Loader2 size={10} className="animate-spin" />
                 : <Wand2 size={10} />}
-              {isBulkAssigning ? 'Assigning…' : 'Auto-Assign'}
+              {isBulkAssigning ? t('Assigning…') : t('Auto-Assign')}
             </button>
           )}
         </div>
@@ -117,7 +119,7 @@ export default function TagsTab() {
               }} />
             </div>
             <p style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>
-              {bulkProgress.current}/{bulkProgress.total} — {bulkProgress.docName}
+              {t('{current}/{total} — {name}', { current: bulkProgress.current, total: bulkProgress.total, name: bulkProgress.docName })}
             </p>
           </div>
         )}
@@ -130,7 +132,7 @@ export default function TagsTab() {
         )}
 
         <p className="text-[11px] mb-4" style={{ color: 'var(--color-text-muted)' }}>
-          AI tag suggestions will only select from this list. Click the color dot on the left to set the graph node color.
+          {t('AI tag suggestions will only select from this list. Click the color dot on the left to set the graph node color.')}
         </p>
 
         {/* Current preset list */}
@@ -139,7 +141,7 @@ export default function TagsTab() {
             className="flex items-center justify-center py-6 rounded-lg mb-4"
             style={{ border: '1px dashed var(--color-border)', color: 'var(--color-text-muted)', fontSize: 12 }}
           >
-            No tag presets yet
+            {t('No tag presets yet')}
           </div>
         ) : (
           <div className="flex flex-wrap gap-2 mb-4">
@@ -159,7 +161,7 @@ export default function TagsTab() {
                 >
                   {/* Color picker swatch */}
                   <label
-                    title={`Change node color for "${tag}"`}
+                    title={t('Change node color for "{tag}"', { tag })}
                     style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'pointer', flexShrink: 0 }}
                   >
                     <span style={{
@@ -178,7 +180,7 @@ export default function TagsTab() {
                   #{tag}
                   <button
                     onClick={() => removeTagPreset(tag)}
-                    title={`Remove "${tag}"`}
+                    title={t('Remove "{tag}"', { tag })}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -206,7 +208,7 @@ export default function TagsTab() {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAdd() } }}
-            placeholder="Enter new tag name"
+            placeholder={t('Enter new tag name')}
             className="flex-1 px-3 py-2 rounded-lg text-xs outline-none"
             style={{
               background: 'var(--color-bg-surface)',
@@ -228,7 +230,7 @@ export default function TagsTab() {
             }}
           >
             <Plus size={12} />
-            Add
+            {t('Add')}
           </button>
         </div>
       </section>

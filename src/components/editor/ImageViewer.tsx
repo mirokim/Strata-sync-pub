@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { X } from 'lucide-react'
 import { useUIStore } from '@/stores/uiStore'
 import { useVaultStore } from '@/stores/vaultStore'
+import { useT } from '@/i18n'
 
 /**
  * ImageViewer — Viewer displayed in the editor area when an image gallery node is double-clicked.
@@ -99,6 +100,7 @@ function Thumbnail({
 // ── Main viewer ────────────────────────────────────────────────────────────
 
 export default function ImageViewer() {
+  const t = useT()
   const { editingDocId, closeEditor } = useUIStore()
   const loadedDocuments = useVaultStore(s => s.loadedDocuments)
   const imagePathRegistry = useVaultStore(s => s.imagePathRegistry)
@@ -129,12 +131,12 @@ export default function ImageViewer() {
 
   // Display name for the currently active image
   const activeDisplayName = useMemo(() => {
-    if (!activeRef) return 'Image'
+    if (!activeRef) return t('Image')
     const origKey = Object.keys(imagePathRegistry ?? {}).find(
       k => k.toLowerCase().replace(/\s+/g, '_') === activeRef
     )
     return origKey ?? activeRef
-  }, [activeRef, imagePathRegistry])
+  }, [activeRef, imagePathRegistry, t])
 
   const isGallery = galleryRefs.length > 1
   const galleryIndex = activeRef ? galleryRefs.indexOf(activeRef) : 0
@@ -151,14 +153,14 @@ export default function ImageViewer() {
           style={{ color: 'var(--color-text-secondary)' }}
         >
           🖼️ {isGallery
-            ? `${activeDisplayName} (${galleryIndex + 1}/${galleryRefs.length})`
+            ? t('{name} ({current}/{total})', { name: activeDisplayName, current: galleryIndex + 1, total: galleryRefs.length })
             : activeDisplayName}
         </span>
         <button
           onClick={closeEditor}
           className="p-1 rounded transition-colors hover:bg-[var(--color-bg-hover)]"
           style={{ color: 'var(--color-text-muted)' }}
-          aria-label="Close image viewer"
+          aria-label={t('Close image viewer')}
         >
           <X size={14} />
         </button>
@@ -180,7 +182,7 @@ export default function ImageViewer() {
           />
         ) : (
           <div className="text-sm text-center" style={{ color: 'var(--color-text-muted)' }}>
-            <div>Unable to load image</div>
+            <div>{t('Unable to load image')}</div>
             <div className="text-xs mt-1 font-mono opacity-60">{activeDisplayName}</div>
           </div>
         )}

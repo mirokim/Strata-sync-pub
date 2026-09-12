@@ -9,6 +9,7 @@ import { Play, ChevronDown, ChevronRight, Clock, Download, Filter } from 'lucide
 import { useCronStore } from '@/stores/cronStore'
 import type { CronLogEntry } from '@/stores/cronStore'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { t, useT } from '@/i18n'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -28,14 +29,14 @@ const JOB_LABELS: Record<string, string> = {
 function relativeTime(iso: string | null): string {
   if (!iso) return '-'
   const diff = Date.now() - new Date(iso).getTime()
-  if (diff < 0) return 'just now'
+  if (diff < 0) return t('just now')
   const s = Math.floor(diff / 1000)
-  if (s < 60) return `${s}s ago`
+  if (s < 60) return t('{s}s ago', { s })
   const m = Math.floor(s / 60)
-  if (m < 60) return `${m}m ago`
+  if (m < 60) return t('{m}m ago', { m })
   const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h ago`
-  return `${Math.floor(h / 24)}d ago`
+  if (h < 24) return t('{h}h ago', { h })
+  return t('{d}d ago', { d: Math.floor(h / 24) })
 }
 
 function formatTime(iso: string | null): string {
@@ -122,6 +123,7 @@ export default function CronJobTab() {
     logFiles, refreshLogFiles, loadHistory,
   } = useCronStore()
   const { cronConfigs, setCronConfig } = useSettingsStore()
+  const t = useT()
 
   const [logsOpen, setLogsOpen] = useState(false)
   const [filterJob, setFilterJob] = useState<string>('__all__')
@@ -218,7 +220,7 @@ export default function CronJobTab() {
   const handleExport = (fmt: 'json' | 'csv') => {
     // JSON export size guard
     if (fmt === 'json' && filtered.length > 50000) {
-      alert('Over 50000 lines — CSV recommended')
+      alert(t('Over 50000 lines — CSV recommended'))
       return
     }
     const csvEscape = (v: unknown) => {
@@ -299,7 +301,7 @@ export default function CronJobTab() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Clock size={15} style={{ color: 'var(--color-accent)', flexShrink: 0 }} />
             <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-              Daily Auto Run
+              {t('Daily Auto Run')}
             </span>
           </div>
           <label style={{ position: 'relative', display: 'inline-block', width: 36, height: 20, flexShrink: 0 }}>
@@ -319,13 +321,12 @@ export default function CronJobTab() {
         </div>
 
         <div style={{ fontSize: 11, color: 'var(--color-text-muted)', lineHeight: 1.6 }}>
-          Edit Agent cycle (Confluence/Jira sync → document refinement → quality check)
-          · then vault reload + automatic vector embedding rebuild
+          {t('Edit Agent cycle (Confluence/Jira sync → document refinement → quality check) · then vault reload + automatic vector embedding rebuild')}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--color-text-muted)' }}>
-            <span>Every day at</span>
+            <span>{t('Every day at')}</span>
             <input type="number" min={0} max={23} value={dailyTime.hour}
               onChange={e => handleTime(Math.min(23, Math.max(0, Number(e.target.value) || 0)), dailyTime.minute)}
               style={{ ...inputStyle, width: 34 }} />
@@ -345,15 +346,15 @@ export default function CronJobTab() {
               color: dailyStatus === 'running' ? 'var(--color-text-muted)' : '#fff',
               opacity: dailyStatus === 'running' ? 0.5 : 1, whiteSpace: 'nowrap',
             }}>
-            <Play size={10} /> Run Now
+            <Play size={10} /> {t('Run Now')}
           </button>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--color-text-muted)', borderTop: '1px solid var(--color-border)', paddingTop: 10 }}>
           <div style={{ width: 7, height: 7, borderRadius: '50%', background: statusColor, flexShrink: 0 }} />
-          <span>{dailyStatus === 'running' ? 'Running...' : dailyStatus === 'success' ? 'OK' : dailyStatus === 'error' ? 'Error' : 'Idle'}</span>
+          <span>{dailyStatus === 'running' ? t('Running...') : dailyStatus === 'success' ? t('OK') : dailyStatus === 'error' ? t('Error') : t('Idle')}</span>
           <span style={{ opacity: 0.6 }}>·</span>
-          <span>Last run {relativeTime(dailyJob?.lastRunAt ?? null)}</span>
+          <span>{t('Last run {time}', { time: relativeTime(dailyJob?.lastRunAt ?? null) })}</span>
           {dailyJob?.lastResult && (
             <span style={{ color: dailyStatus === 'error' ? 'var(--color-error)' : undefined, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
               title={dailyJob.lastResult}>
@@ -375,10 +376,10 @@ export default function CronJobTab() {
         }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)' }}>
-            System Health Check
+            {t('System Health Check')}
           </span>
           <span style={{ fontSize: 11, color: 'var(--color-text-muted)', marginLeft: 8 }}>
-            Every 5 min · checks bot process + memory
+            {t('Every 5 min · checks bot process + memory')}
           </span>
         </div>
         <span style={{ fontSize: 11, color: 'var(--color-text-muted)', flexShrink: 0 }}>
@@ -408,7 +409,7 @@ export default function CronJobTab() {
           color: 'var(--color-text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0',
         }}>
         {logsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        Run Logs {runGroups.length > 0 && `· ${runGroups.length} runs / ${filtered.length} lines`}
+        {t('Run Logs')} {runGroups.length > 0 && t('· {runs} runs / {lines} lines', { runs: runGroups.length, lines: filtered.length })}
       </button>
 
       {logsOpen && (
@@ -421,34 +422,34 @@ export default function CronJobTab() {
           }}>
             <Filter size={12} style={{ color: 'var(--color-text-muted)' }} />
             <select value={filterJob} onChange={e => setFilterJob(e.target.value)} style={selectStyle}>
-              <option value="__all__">All jobs</option>
-              {uniqueJobs.map(j => <option key={j} value={j}>{JOB_LABELS[j] ?? j}</option>)}
+              <option value="__all__">{t('All jobs')}</option>
+              {uniqueJobs.map(j => <option key={j} value={j}>{t(JOB_LABELS[j] ?? j)}</option>)}
             </select>
             <select value={filterLevel} onChange={e => setFilterLevel(e.target.value as 'all' | 'info' | 'warn' | 'error')} style={selectStyle}>
-              <option value="all">All levels</option>
+              <option value="all">{t('All levels')}</option>
               <option value="info">info</option>
               <option value="warn">warn</option>
               <option value="error">error</option>
             </select>
-            <input type="text" placeholder="Search (message / runId)" value={search}
+            <input type="text" placeholder={t('Search (message / runId)')} value={search}
               onChange={e => setSearch(e.target.value)}
               style={{ ...selectStyle, flex: 1, minWidth: 120, textAlign: 'left' }} />
 
             {/* History date picker */}
             <select value={historyDate ?? ''} onChange={e => loadHistory(e.target.value || null)} style={selectStyle}>
-              <option value="">Live</option>
+              <option value="">{t('Live')}</option>
               {logFiles.map(f => <option key={f.date} value={f.date}>{f.date}</option>)}
             </select>
-            {historyLoading && <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>Loading...</span>}
+            {historyLoading && <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>{t('Loading...')}</span>}
 
             {/* export */}
-            <button onClick={() => handleExport('json')} title="Export JSON"
+            <button onClick={() => handleExport('json')} title={t('Export {format}', { format: 'JSON' })}
               style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '3px 8px', fontSize: 10,
                 background: 'var(--color-bg-base)', border: '1px solid var(--color-border)', borderRadius: 2,
                 color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
               <Download size={10} /> JSON
             </button>
-            <button onClick={() => handleExport('csv')} title="Export CSV"
+            <button onClick={() => handleExport('csv')} title={t('Export {format}', { format: 'CSV' })}
               style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '3px 8px', fontSize: 10,
                 background: 'var(--color-bg-base)', border: '1px solid var(--color-border)', borderRadius: 2,
                 color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
@@ -463,7 +464,7 @@ export default function CronJobTab() {
           }}>
             {runGroups.length === 0
               ? <div style={{ padding: 12, textAlign: 'center', fontSize: 11, color: 'var(--color-text-muted)' }}>
-                  No logs.
+                  {t('No logs.')}
                 </div>
               : runGroups.map(g => {
                 const expanded = expandedRuns.has(g.runId)
@@ -487,7 +488,7 @@ export default function CronJobTab() {
                         width: 7, height: 7, borderRadius: '50%',
                         background: STATUS_DOT[g.status], flexShrink: 0,
                       }} />
-                      <span style={{ fontWeight: 600, minWidth: 90 }}>{JOB_LABELS[g.jobId] ?? g.jobId}</span>
+                      <span style={{ fontWeight: 600, minWidth: 90 }}>{t(JOB_LABELS[g.jobId] ?? g.jobId)}</span>
                       <span style={{ color: 'var(--color-text-muted)', fontVariantNumeric: 'tabular-nums' }}>
                         {formatTime(g.firstTs)}
                       </span>
@@ -500,17 +501,17 @@ export default function CronJobTab() {
                         <span style={{ color: 'var(--color-text-muted)' }}>· {formatDuration(duration)}</span>
                       )}
                       {typeof fileCount === 'number' && fileCount > 0 && (
-                        <span style={{ color: 'var(--color-text-muted)' }}>· {fileCount} files</span>
+                        <span style={{ color: 'var(--color-text-muted)' }}>· {t('{count} files', { count: fileCount })}</span>
                       )}
                       {tokens != null && tokens > 0 && (
                         <span style={{ color: 'var(--color-text-muted)' }}>· {tokens.toLocaleString()} tok</span>
                       )}
                       {g.errorCount > 0 && (
-                        <span style={{ color: 'var(--color-error)' }}>· {g.errorCount} errors</span>
+                        <span style={{ color: 'var(--color-error)' }}>· {t('{count} errors', { count: g.errorCount })}</span>
                       )}
                       <span style={{ flex: 1 }} />
                       <span style={{ color: 'var(--color-text-muted)', fontSize: 10 }}>
-                        {g.entries.length} lines
+                        {t('{count} lines', { count: g.entries.length })}
                       </span>
                     </div>
                     {expanded && (

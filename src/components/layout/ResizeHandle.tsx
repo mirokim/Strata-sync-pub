@@ -1,10 +1,12 @@
 import { useRef, useCallback, useEffect } from 'react'
+import { useT } from '@/i18n'
 
 interface ResizeHandleProps {
   onResize: (delta: number) => void
 }
 
 export default function ResizeHandle({ onResize }: ResizeHandleProps) {
+  const t = useT()
   const isDragging = useRef(false)
   const lastX = useRef(0)
   const cleanupRef = useRef<(() => void) | null>(null)
@@ -47,7 +49,7 @@ export default function ResizeHandle({ onResize }: ResizeHandleProps) {
       onMouseDown={handleMouseDown}
       style={{ cursor: 'col-resize', width: 8, flexShrink: 0 }}
       className="h-full group flex items-stretch"
-      aria-label="Resize panel"
+      aria-label={t('Resize panel')}
       role="separator"
     >
       <div

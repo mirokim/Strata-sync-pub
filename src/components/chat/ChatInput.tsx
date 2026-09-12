@@ -6,12 +6,13 @@ import { useVaultStore } from '@/stores/vaultStore'
 import { generateId } from '@/lib/utils'
 import { MAX_FILE_SIZE } from '@/lib/constants'
 import type { Attachment } from '@/types'
+import { t, useT } from '@/i18n'
 
 // ── File → Attachment converter ───────────────────────────────────────────────
 
 async function fileToAttachment(file: File): Promise<Attachment> {
   if (file.size > MAX_FILE_SIZE) {
-    throw new Error(`File is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is 10MB.`)
+    throw new Error(t('File is too large ({size}MB). Maximum size is 10MB.', { size: (file.size / 1024 / 1024).toFixed(1) }))
   }
 
   const id = generateId()
@@ -19,7 +20,7 @@ async function fileToAttachment(file: File): Promise<Attachment> {
 
   return new Promise<Attachment>((resolve, reject) => {
     const reader = new FileReader()
-    reader.onerror = () => reject(new Error(`Failed to read file: ${file.name}`))
+    reader.onerror = () => reject(new Error(t('Failed to read file: {name}', { name: file.name })))
 
     if (isImage) {
       // Read as base64 data URL for vision API
@@ -57,6 +58,7 @@ interface ChatInputProps {
 }
 
 export default function ChatInput({ debateMode, onToggleDebate }: ChatInputProps) {
+  const t = useT()
   const [text, setText] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [fileError, setFileError] = useState<string | null>(null)
@@ -140,7 +142,7 @@ export default function ChatInput({ debateMode, onToggleDebate }: ChatInputProps
         const att = await fileToAttachment(file)
         newAttachments.push(att)
       } catch (err) {
-        errors.push(err instanceof Error ? err.message : `${file.name}: read failed`)
+        errors.push(err instanceof Error ? err.message : t('{name}: read failed', { name: file.name }))
       }
     }
     if (errors.length > 0) {
@@ -196,7 +198,7 @@ export default function ChatInput({ debateMode, onToggleDebate }: ChatInputProps
                 onClick={() => removeAttachment(att.id)}
                 className="flex items-center justify-center p-1 mr-0.5 shrink-0 rounded transition-colors hover:bg-[var(--color-bg-hover)]"
                 style={{ color: 'var(--color-text-muted)' }}
-                aria-label={`Remove attachment: ${att.name}`}
+                aria-label={t('Remove attachment: {name}', { name: att.name })}
               >
                 <X size={10} />
               </button>
@@ -212,7 +214,7 @@ export default function ChatInput({ debateMode, onToggleDebate }: ChatInputProps
           style={{ color: 'var(--color-text-muted)', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)' }}
         >
           <span>🖼️</span>
-          <span>{selectedDocImageRefs.length} image(s) auto-attached</span>
+          <span>{t('{count} image(s) auto-attached', { count: selectedDocImageRefs.length })}</span>
         </div>
       )}
 
@@ -240,8 +242,8 @@ export default function ChatInput({ debateMode, onToggleDebate }: ChatInputProps
                   ? { background: 'rgba(82,156,202,0.15)', color: 'var(--color-accent)', border: '1px solid rgba(82,156,202,0.3)' }
                   : { background: 'var(--color-bg-surface)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }
               }
-              title={debateMode ? 'Switch to chat mode' : 'Switch to AI debate mode'}
-              aria-label={debateMode ? 'Switch to chat mode' : 'Switch to AI debate mode'}
+              title={debateMode ? t('Switch to chat mode') : t('Switch to AI debate mode')}
+              aria-label={debateMode ? t('Switch to chat mode') : t('Switch to AI debate mode')}
               data-testid="debate-mode-toggle"
             >
               <Swords size={14} />
@@ -258,8 +260,8 @@ export default function ChatInput({ debateMode, onToggleDebate }: ChatInputProps
               color: 'var(--color-text-muted)',
               border: '1px solid var(--color-border)',
             }}
-            title="Attach file (images PNG/JPG/WebP, text .txt/.md)"
-            aria-label="Attach file"
+            title={t('Attach file (images PNG/JPG/WebP, text .txt/.md)')}
+            aria-label={t('Attach file')}
             data-testid="chat-attach-button"
           >
             <Paperclip size={14} />
@@ -289,7 +291,7 @@ export default function ChatInput({ debateMode, onToggleDebate }: ChatInputProps
           value={text}
           onChange={e => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask the directors… (Enter to send / Shift+Enter for newline)"
+          placeholder={t('Ask the directors… (Enter to send / Shift+Enter for newline)')}
           disabled={isLoading}
           rows={1}
           data-testid="chat-textarea"
@@ -309,8 +311,8 @@ export default function ChatInput({ debateMode, onToggleDebate }: ChatInputProps
             onClick={stopStreaming}
             data-testid="chat-stop-button"
             className="shrink-0 p-2 rounded-lg transition-colors"
-            title="Stop streaming"
-            aria-label="Stop streaming"
+            title={t('Stop streaming')}
+            aria-label={t('Stop streaming')}
             style={{
               background: 'rgba(239,68,68,0.15)',
               color: '#ef4444',
@@ -325,7 +327,7 @@ export default function ChatInput({ debateMode, onToggleDebate }: ChatInputProps
             disabled={!canSend}
             data-testid="chat-send-button"
             className="shrink-0 p-2 rounded-lg transition-colors"
-            aria-label="Send message"
+            aria-label={t('Send message')}
             style={{
               background: canSend ? 'var(--color-accent)' : 'var(--color-bg-secondary)',
               color: canSend ? '#fff' : 'var(--color-text-muted)',

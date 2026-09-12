@@ -8,6 +8,7 @@ import { Cloud, Loader2, AlertTriangle, ArrowRight, KeyRound } from 'lucide-reac
 import { defaultServerUrl, normalizeServerUrl, saveWebConfig, type WebConfig } from './config'
 import { testConnection } from './remoteVault'
 import { startSignIn } from './auth'
+import { useT } from '@/i18n'
 
 interface Props {
   initial?: Partial<WebConfig>
@@ -29,6 +30,7 @@ const primary = (enabled: boolean): React.CSSProperties => ({
 const linkButton: React.CSSProperties = { background: 'none', border: 'none', color: 'var(--color-text-muted)', fontSize: 11, cursor: 'pointer', padding: 0, textDecoration: 'underline' }
 
 export default function ConnectScreen({ initial, initialError, onConnected }: Props) {
+  const t = useT()
   const preset = defaultServerUrl()
   const [url, setUrl] = useState(initial?.url ?? preset ?? '')
   const [token, setToken] = useState(initial?.token ?? '')
@@ -62,11 +64,11 @@ export default function ConnectScreen({ initial, initialError, onConnected }: Pr
 
   const connectWithToken = async (e?: React.FormEvent) => {
     e?.preventDefault()
-    if (!normalized) { setError('Enter the server address, e.g. https://strata-sync.<account>.workers.dev'); return }
+    if (!normalized) { setError(t('Enter the server address, e.g. https://strata-sync.<account>.workers.dev')); return }
     setBusy('token'); setError(null)
     const result = await testConnection(normalized, token.trim())
     setBusy(null)
-    if (!result.ok) { setError(result.error ?? 'Could not reach the server'); return }
+    if (!result.ok) { setError(result.error ?? t('Could not reach the server')); return }
     const config: WebConfig = { url: normalized, token: token.trim(), author: author.trim(), auth: 'token' }
     saveWebConfig(config)
     onConnected(config)
@@ -79,21 +81,21 @@ export default function ConnectScreen({ initial, initialError, onConnected }: Pr
           <Cloud size={20} color="var(--color-accent)" />
           <div>
             <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: '-0.01em' }}>Strata Sync</div>
-            <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>Your team's vault, in the browser</div>
+            <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{t("Your team's vault, in the browser")}</div>
           </div>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 16, borderRadius: 2, background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}>
           {preset ? (
             <div>
-              <label style={label}>Server</label>
+              <label style={label}>{t('Server')}</label>
               <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', wordBreak: 'break-all' }} data-testid="connect-url-preset">{preset}</div>
             </div>
           ) : (
             <div>
-              <label style={label} htmlFor="connect-url">Server</label>
+              <label style={label} htmlFor="connect-url">{t('Server')}</label>
               <input id="connect-url" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://strata-sync.<account>.workers.dev" style={field} spellCheck={false} autoFocus autoComplete="url" data-testid="connect-url" />
-              <div style={hint}>The team's Cloudflare Worker. Ask whoever deployed it.</div>
+              <div style={hint}>{t("The team's Cloudflare Worker. Ask whoever deployed it.")}</div>
             </div>
           )}
 
@@ -101,24 +103,24 @@ export default function ConnectScreen({ initial, initialError, onConnected }: Pr
             <>
               <button type="button" onClick={google} disabled={busy !== null} style={primary(busy === null)} data-testid="connect-google">
                 {busy === 'google' ? <Loader2 size={14} className="animate-spin" /> : <ArrowRight size={14} />}
-                {busy === 'google' ? 'Opening Google…' : 'Sign in with Google'}
+                {busy === 'google' ? t('Opening Google…') : t('Sign in with Google')}
               </button>
-              <div style={hint}>Any Google account works. Your name and e-mail are recorded on the documents you edit.</div>
-              <button type="button" onClick={() => setUseToken(true)} style={linkButton}>Use a team token instead</button>
+              <div style={hint}>{t('Any Google account works. Your name and e-mail are recorded on the documents you edit.')}</div>
+              <button type="button" onClick={() => setUseToken(true)} style={linkButton}>{t('Use a team token instead')}</button>
             </>
           ) : (
             <>
               <div>
-                <label style={label} htmlFor="connect-token">Team token</label>
-                <input id="connect-token" type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="shared team secret" style={field} autoComplete="off" autoFocus={Boolean(preset)} data-testid="connect-token" />
-                <div style={hint}>Stored in this browser only. The same token the desktop app and bots use.</div>
+                <label style={label} htmlFor="connect-token">{t('Team token')}</label>
+                <input id="connect-token" type="password" value={token} onChange={e => setToken(e.target.value)} placeholder={t('shared team secret')} style={field} autoComplete="off" autoFocus={Boolean(preset)} data-testid="connect-token" />
+                <div style={hint}>{t('Stored in this browser only. The same token the desktop app and bots use.')}</div>
               </div>
               <div>
-                <label style={label} htmlFor="connect-author">Your name</label>
-                <input id="connect-author" value={author} onChange={e => setAuthor(e.target.value)} placeholder="shown on your edits and conflict copies" style={field} autoComplete="name" data-testid="connect-author" />
+                <label style={label} htmlFor="connect-author">{t('Your name')}</label>
+                <input id="connect-author" value={author} onChange={e => setAuthor(e.target.value)} placeholder={t('shown on your edits and conflict copies')} style={field} autoComplete="name" data-testid="connect-author" />
               </div>
               {signIn === 'google' && (
-                <button type="button" onClick={() => setUseToken(false)} style={linkButton}>Sign in with Google instead</button>
+                <button type="button" onClick={() => setUseToken(false)} style={linkButton}>{t('Sign in with Google instead')}</button>
               )}
             </>
           )}
@@ -126,14 +128,14 @@ export default function ConnectScreen({ initial, initialError, onConnected }: Pr
 
         {error && (
           <div role="alert" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12, color: 'var(--color-error)' }}>
-            <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} /> <span>{error}</span>
+            <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} /> <span>{t(error)}</span>
           </div>
         )}
 
         {!googleAvailable && (
           <button type="submit" disabled={!tokenReady} data-testid="connect-submit" style={primary(tokenReady)}>
             {busy === 'token' ? <Loader2 size={14} className="animate-spin" /> : <KeyRound size={14} />}
-            {busy === 'token' ? 'Checking…' : 'Connect with token'}
+            {busy === 'token' ? t('Checking…') : t('Connect with token')}
           </button>
         )}
       </form>

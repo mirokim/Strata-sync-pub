@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useGraphStore, DEFAULT_PHYSICS } from '@/stores/graphStore'
 import { Settings, RotateCcw, ChevronRight, ChevronDown, Home } from 'lucide-react'
 import { graphCallbacks } from '@/lib/graphEvents'
+import { useT } from '@/i18n'
 
 const CLUSTER_MODES = [
   { value: 'none',   label: 'Off' },
@@ -27,6 +28,7 @@ const SLIDERS: SliderDef[] = [
 ]
 
 export default function PhysicsControls() {
+  const t = useT()
   const { physics, updatePhysics, resetPhysics, clusterMode, setClusterMode } = useGraphStore()
   const [isOpen, setIsOpen] = useState(false)
 
@@ -38,7 +40,7 @@ export default function PhysicsControls() {
         borderRadius: 2,
         overflow: 'hidden',
       }}
-      aria-label="Physics controls"
+      aria-label={t('Physics controls')}
     >
       {/* Header / toggle button */}
       <button
@@ -55,7 +57,7 @@ export default function PhysicsControls() {
           color: isOpen ? 'var(--color-accent)' : 'var(--color-text-muted)',
           transition: 'color 0.15s',
         }}
-        title="Toggle Physics controls"
+        title={t('Toggle Physics controls')}
       >
         <Settings size={11} />
         <span
@@ -68,7 +70,7 @@ export default function PhysicsControls() {
             textAlign: 'left',
           }}
         >
-          Physics
+          {t('Physics')}
         </span>
         {isOpen ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
       </button>
@@ -85,8 +87,8 @@ export default function PhysicsControls() {
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4, marginBottom: 6 }}>
             <button
               onClick={() => graphCallbacks.resetCamera?.()}
-              title="Reset viewport"
-              aria-label="Reset viewport"
+              title={t('Reset viewport')}
+              aria-label={t('Reset viewport')}
               style={{
                 background: 'transparent',
                 border: 'none',
@@ -100,8 +102,8 @@ export default function PhysicsControls() {
             </button>
             <button
               onClick={resetPhysics}
-              title="Reset Physics"
-              aria-label="Reset Physics"
+              title={t('Reset Physics')}
+              aria-label={t('Reset Physics')}
               style={{
                 background: 'transparent',
                 border: 'none',
@@ -127,7 +129,7 @@ export default function PhysicsControls() {
                     color: 'var(--color-text-secondary)',
                   }}
                 >
-                  {label}
+                  {t(label)}
                 </label>
                 <input
                   id={`slider-${key}`}
@@ -138,7 +140,7 @@ export default function PhysicsControls() {
                   value={physics[key]}
                   onChange={e => updatePhysics({ [key]: Number(e.target.value) })}
                   style={{ flex: 1 }}
-                  aria-label={label}
+                  aria-label={t(label)}
                 />
                 <span
                   style={{
@@ -160,7 +162,7 @@ export default function PhysicsControls() {
             {/* Cluster mode toggle — 3D only */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
               <span style={{ fontSize: 10, width: 56, flexShrink: 0, color: 'var(--color-text-secondary)' }}>
-                Cluster
+                {t('Cluster')}
               </span>
               <div style={{ display: 'flex', gap: 3, flex: 1 }}>
                 {CLUSTER_MODES.map(({ value, label }) => (
@@ -180,7 +182,7 @@ export default function PhysicsControls() {
                       transition: 'all 0.12s',
                     }}
                   >
-                    {label}
+                    {t(label)}
                   </button>
                 ))}
               </div>

@@ -3,12 +3,14 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ChatMessage } from '@/types'
 import { SPEAKER_CONFIG } from '@/lib/speakerConfig'
+import { useT } from '@/i18n'
 
 interface Props {
   message: ChatMessage
 }
 
 function MessageBubble({ message }: Props) {
+  const t = useT()
   const isUser = message.role === 'user'
   const speakerMeta = SPEAKER_CONFIG[message.persona]
   const [thinkingOpen, setThinkingOpen] = useState(false)
@@ -139,7 +141,7 @@ function MessageBubble({ message }: Props) {
               }}
             >
               <span style={{ fontSize: 12 }}>💭</span>
-              <span>Agent Processing</span>
+              <span>{t('Agent Processing')}</span>
               <span style={{ marginLeft: 'auto', fontSize: 10, opacity: 0.7 }}>
                 {thinkingOpen ? '▲' : '▼'}
               </span>
@@ -175,7 +177,7 @@ function MessageBubble({ message }: Props) {
               }}
             >
               <span style={{ fontSize: 12 }}>🔧</span>
-              <span>Tools used {message.toolCalls.length} times</span>
+              <span>{t('Tools used {count} times', { count: message.toolCalls.length })}</span>
               <span style={{ marginLeft: 'auto', fontSize: 10, opacity: 0.7 }}>
                 {toolsOpen ? '▲' : '▼'}
               </span>
@@ -218,7 +220,7 @@ function MessageBubble({ message }: Props) {
         >
         {message.streaming && message.content === '' ? (
           /* Dots typing indicator while waiting for first token */
-          <span className="inline-flex gap-1 items-center" aria-label="Typing">
+          <span className="inline-flex gap-1 items-center" aria-label={t('Typing')}>
             {[0, 1, 2].map((i) => (
               <span
                 key={i}

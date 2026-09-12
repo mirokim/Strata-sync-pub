@@ -4,6 +4,7 @@ import { useUIStore } from '@/stores/uiStore'
 import { cn } from '@/lib/utils'
 import { FileText, EyeOff } from 'lucide-react'
 import type { ContextMenuState } from './ContextMenu'
+import { useT } from '@/i18n'
 
 interface FileTreeItemProps {
   doc: MockDocument
@@ -11,6 +12,7 @@ interface FileTreeItemProps {
 }
 
 export default function FileTreeItem({ doc, onContextMenu }: FileTreeItemProps) {
+  const t = useT()
   const { editingDocId, openInEditor } = useUIStore()
   const isSelected = editingDocId === doc.id
   const speakerColor = SPEAKER_CONFIG[doc.speaker].color
@@ -57,7 +59,7 @@ export default function FileTreeItem({ doc, onContextMenu }: FileTreeItemProps) 
     >
       <FileText size={11} style={{ color: speakerColor, flexShrink: 0 }} />
       <span className="truncate">{displayName}</span>
-      {doc.personal && <EyeOff size={10} style={{ color: 'var(--color-text-muted)', flexShrink: 0, marginLeft: 'auto' }} aria-label="Only you can see this" data-testid="personal-mark" />}
+      {doc.personal && <EyeOff size={10} style={{ color: 'var(--color-text-muted)', flexShrink: 0, marginLeft: 'auto' }} aria-label={t('Only you can see this')} data-testid="personal-mark" />}
     </button>
   )
 }

@@ -8,6 +8,7 @@ import { useDebateStore } from '@/stores/debateStore'
 import { generateId } from '@/lib/utils'
 import { MAX_FILE_SIZE } from '@/lib/constants'
 import type { ReferenceFile } from '@/types'
+import { useT } from '@/i18n'
 const MAX_FILES = 5
 const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf']
 const ACCEPTED_EXTENSIONS = '.png,.jpg,.jpeg,.gif,.webp,.pdf'
@@ -22,6 +23,7 @@ function readFileAsDataUrl(file: File): Promise<string> {
 }
 
 export function DebateUserInput() {
+  const t = useT()
   const status = useDebateStore((s) => s.status)
   const userIntervene = useDebateStore((s) => s.userIntervene)
   const [input, setInput] = useState('')
@@ -70,9 +72,9 @@ export function DebateUserInput() {
 
   const placeholder = disabled
     ? (status === 'completed' || status === 'stopped'
-        ? 'Debate has ended'
-        : 'You can intervene once the debate starts')
-    : 'Intervene in the debate... (Enter to send)'
+        ? t('Debate has ended')
+        : t('You can intervene once the debate starts'))
+    : t('Intervene in the debate... (Enter to send)')
 
   return (
     <div
@@ -131,7 +133,7 @@ export function DebateUserInput() {
             opacity: disabled || files.length >= MAX_FILES ? 0.3 : 1,
             cursor: disabled || files.length >= MAX_FILES ? 'not-allowed' : 'pointer',
           }}
-          title="Attach file"
+          title={t('Attach file')}
         >
           <Paperclip className="w-3.5 h-3.5" />
         </button>

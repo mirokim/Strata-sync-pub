@@ -7,6 +7,7 @@
 import { useState } from 'react'
 import { Terminal, Copy, Check, Plug } from 'lucide-react'
 import { isWebMode, loadWebConfig } from '@/web/config'
+import { useT } from '@/i18n'
 
 const sectionLabel: React.CSSProperties = {
   fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase',
@@ -42,13 +43,14 @@ const TOOLS: [string, string][] = [
 ]
 
 function CopyButton({ text, id }: { text: string; id: string }) {
+  const t = useT()
   const [done, setDone] = useState(false)
   const copy = async () => {
     try { await navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1500) } catch { /* clipboard blocked */ }
   }
   return (
-    <button onClick={copy} data-testid={`copy-${id}`} title="Copy" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 2, fontSize: 11, border: '1px solid var(--color-border)', background: 'transparent', color: done ? 'var(--color-success)' : 'var(--color-text-secondary)', cursor: 'pointer' }}>
-      {done ? <Check size={11} /> : <Copy size={11} />} {done ? 'Copied' : 'Copy'}
+    <button onClick={copy} data-testid={`copy-${id}`} title={t('Copy')} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 2, fontSize: 11, border: '1px solid var(--color-border)', background: 'transparent', color: done ? 'var(--color-success)' : 'var(--color-text-secondary)', cursor: 'pointer' }}>
+      {done ? <Check size={11} /> : <Copy size={11} />} {done ? t('Copied') : t('Copy')}
     </button>
   )
 }
@@ -67,6 +69,7 @@ function Snippet({ id, title, text, note }: { id: string; title: string; text: s
 }
 
 export default function McpTab() {
+  const t = useT()
   const web = isWebMode()
   const config = loadWebConfig()
   const serverUrl = config?.url ?? ''
@@ -90,48 +93,51 @@ export default function McpTab() {
         <Plug size={16} color="var(--color-accent)" />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>
-            {serverUrl ? 'This vault is an MCP server' : 'No team server connected'}
+            {serverUrl ? t('This vault is an MCP server') : t('No team server connected')}
           </div>
           <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2, wordBreak: 'break-all' }} data-testid="mcp-url">
-            {mcpUrl || (web ? 'Connect to a server first (Settings → Server).' : 'Team Sync is not configured; the local MCP server in mcp/ still works.')}
+            {mcpUrl || (web ? t('Connect to a server first (Settings → Server).') : t('Team Sync is not configured; the local MCP server in mcp/ still works.'))}
           </div>
         </div>
       </div>
 
       {serverUrl && (
         <div>
-          <div style={sectionLabel}>Connect a client</div>
+          <div style={sectionLabel}>{t('Connect a client')}</div>
           <div style={card}>
             <Snippet id="claude-code" title="Claude Code" text={claudeCode}
-              note={signedIn ? 'The first tool call opens a Google sign-in in your browser; the token is then kept by Claude Code.' : 'Uses the shared team token. With Google sign-in enabled on the server the header is not needed.'} />
+              note={signedIn ? t('The first tool call opens a Google sign-in in your browser; the token is then kept by Claude Code.') : t('Uses the shared team token. With Google sign-in enabled on the server the header is not needed.')} />
             <Snippet id="json" title="Cursor · Claude Desktop · Windsurf (mcp.json)" text={jsonConfig}
-              note="Add to the client's MCP configuration file. Clients that support OAuth sign in on first use." />
+              note={t('Add to the client\'s MCP configuration file. Clients that support OAuth sign in on first use.')} />
           </div>
         </div>
       )}
 
       {!web && (
         <div>
-          <div style={sectionLabel}>Local MCP server (desktop)</div>
+          <div style={sectionLabel}>{t('Local MCP server (desktop)')}</div>
           <div style={card}>
-            <Snippet id="local" title="Run from the repository" text={'cd mcp && npm install && npm start'}
-              note="Reads the vault folder from mcp-config.json. Includes the Python tools and Slack process control that the hosted server does not have." />
+            <Snippet id="local" title={t('Run from the repository')} text={'cd mcp && npm install && npm start'}
+              note={t('Reads the vault folder from mcp-config.json. Includes the Python tools and Slack process control that the hosted server does not have.')} />
           </div>
         </div>
       )}
 
       <div>
-        <div style={sectionLabel}>Tools</div>
+        <div style={sectionLabel}>{t('Tools')}</div>
         <div style={card}>
           {TOOLS.map(([name, desc]) => (
             <div key={name} style={{ display: 'flex', gap: 10, alignItems: 'baseline', fontSize: 11 }}>
               <code style={{ color: 'var(--color-accent)', flexShrink: 0, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{name}</code>
-              <span style={{ color: 'var(--color-text-muted)' }}>{desc}</span>
+              <span style={{ color: 'var(--color-text-muted)' }}>{t(desc)}</span>
             </div>
           ))}
           <div style={{ ...hint, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
             <Terminal size={12} style={{ flexShrink: 0, marginTop: 2 }} />
-            <span>Ask your client things like “what do we know about the stamina system?”, “lint the vault”, or “remember that we decided X” — the last one lands in <code>_agent/</code> as a proposal for a person to promote.</span>
+            <span>{(() => {
+              const [before, after] = t('Ask your client things like “what do we know about the stamina system?”, “lint the vault”, or “remember that we decided X” — the last one lands in {tag} as a proposal for a person to promote.').split('{tag}')
+              return <>{before}<code>_agent/</code>{after}</>
+            })()}</span>
           </div>
         </div>
       </div>

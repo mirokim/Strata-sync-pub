@@ -3,6 +3,7 @@
  * No caching or policy here — that lives in remoteVault.ts.
  */
 import type { WebConfig } from './config'
+import { t } from '@/i18n'
 
 export interface RemoteRow {
   path: string
@@ -93,10 +94,10 @@ export class RemoteClient {
   private async request(path: string, init: RequestInit & { headers?: Record<string, string> } = {}, retried = false): Promise<Response> {
     const res = await this.fetchImpl(`${this.config.url}${path}`, { ...init, headers: this.headers(init.headers) })
     if (res.status === 401 && !retried && this.onUnauthorized && await this.onUnauthorized()) return this.request(path, init, true)
-    if (res.status === 401) throw new RemoteError(401, this.config.auth === 'oauth' ? 'session expired — sign in again' : 'team token rejected')
+    if (res.status === 401) throw new RemoteError(401, this.config.auth === 'oauth' ? t('session expired — sign in again') : t('team token rejected'))
     if (res.status === 503) {
       const body = await res.clone().json().catch(() => ({})) as { error?: string }
-      throw new RemoteError(503, body.error || 'server unavailable')
+      throw new RemoteError(503, body.error || t('server unavailable'))
     }
     return res
   }

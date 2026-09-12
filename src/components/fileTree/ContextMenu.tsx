@@ -9,6 +9,7 @@ import {
   Trash2,
   FolderInput,
 } from 'lucide-react'
+import { useT } from '@/i18n'
 
 export interface ContextMenuState {
   docId: string
@@ -48,6 +49,7 @@ export default function ContextMenu({
   onDelete,
   onMove,
 }: ContextMenuProps) {
+  const t = useT()
   const ref = useRef<HTMLDivElement>(null)
 
   // Close on outside click or Escape
@@ -192,9 +194,9 @@ export default function ContextMenu({
             }}
           >
             <span style={{ flexShrink: 0 }}>{item.icon}</span>
-            {item.label}
+            {t(item.label)}
             {item.disabled && (
-              <span style={{ marginLeft: 'auto', fontSize: 9, opacity: 0.5 }}>Coming soon</span>
+              <span style={{ marginLeft: 'auto', fontSize: 9, opacity: 0.5 }}>{t('Coming soon')}</span>
             )}
           </button>
         </div>

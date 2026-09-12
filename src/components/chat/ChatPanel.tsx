@@ -13,8 +13,10 @@ import { useChatStore } from '@/stores/chatStore'
 import { useUIStore } from '@/stores/uiStore'
 import { useMemoryStore } from '@/stores/memoryStore'
 import { summarizeConversation } from '@/services/llmClient'
+import { useT } from '@/i18n'
 
 export default function ChatPanel() {
+  const t = useT()
   const [debateMode, setDebateMode] = useState(false)
   const [isSummarizing, setIsSummarizing] = useState(false)
   const debateStatus = useDebateStore((s) => s.status)
@@ -41,7 +43,7 @@ export default function ChatPanel() {
       const result = summaryChunksRef.current.join('').trim()
       if (result) appendToMemory(result)
     } catch (e) {
-      setSummarizeError('Summarization failed: ' + (e instanceof Error ? e.message : String(e)))
+      setSummarizeError(t('Summarization failed: {message}', { message: e instanceof Error ? e.message : String(e) }))
     } finally {
       setIsSummarizing(false)
     }
@@ -61,7 +63,7 @@ export default function ChatPanel() {
                 className="text-xs mb-2"
                 style={{ color: 'var(--color-text-muted)', fontFamily: 'var(--ea-font-mono)' }}
               >
-                ⚔️ AI Debate
+                ⚔️ {t('AI Debate')}
               </div>
             )}
             {!debateMode && <PersonaChips />}
@@ -76,8 +78,8 @@ export default function ChatPanel() {
                   disabled={isSummarizing}
                   className="p-1.5 rounded transition-colors hover:bg-[var(--color-bg-hover)]"
                   style={{ color: summarizeError ? 'var(--color-error)' : memoryText.trim() ? 'var(--color-accent)' : 'var(--color-text-secondary)', opacity: isSummarizing ? 0.5 : 1 }}
-                  title={isSummarizing ? 'Summarizing...' : summarizeError ?? 'Summarize conversation and save to memory'}
-                  aria-label="Save conversation summary"
+                  title={isSummarizing ? t('Summarizing...') : summarizeError ?? t('Summarize conversation and save to memory')}
+                  aria-label={t('Save conversation summary')}
                 >
                   <NotebookPen size={13} />
                 </button>
@@ -87,8 +89,8 @@ export default function ChatPanel() {
                   onClick={() => openInEditor('report:latest')}
                   className="p-1.5 rounded transition-colors hover:bg-[var(--color-bg-hover)]"
                   style={{ color: 'var(--color-text-secondary)' }}
-                  title="View conversation report"
-                  aria-label="View conversation report"
+                  title={t('View conversation report')}
+                  aria-label={t('View conversation report')}
                 >
                   <FileText size={13} />
                 </button>

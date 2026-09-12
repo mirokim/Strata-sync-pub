@@ -6,6 +6,7 @@
 import { useState } from 'react'
 import { Play, ArrowLeft, Settings } from 'lucide-react'
 import { useDebateStore } from '@/stores/debateStore'
+import { useT } from '@/i18n'
 
 interface DebateSetupProps {
   onBack?: () => void
@@ -13,6 +14,7 @@ interface DebateSetupProps {
 }
 
 export function DebateSetup({ onBack, onOpenSettings }: DebateSetupProps) {
+  const t = useT()
   const [topic, setTopic] = useState('')
   const settings = useDebateStore((s) => s.settings)
   const startDebate = useDebateStore((s) => s.startDebate)
@@ -52,7 +54,7 @@ export function DebateSetup({ onBack, onOpenSettings }: DebateSetupProps) {
             style={{ color: 'var(--color-text-muted)' }}
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            Back to chat
+            {t('Back to chat')}
           </button>
         )}
 
@@ -62,12 +64,12 @@ export function DebateSetup({ onBack, onOpenSettings }: DebateSetupProps) {
             className="block text-[11px] font-semibold uppercase tracking-wider"
             style={{ color: 'var(--color-text-muted)' }}
           >
-            Debate Topic
+            {t('Debate Topic')}
           </label>
           <textarea
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
-            placeholder="Enter debate topic..."
+            placeholder={t('Enter debate topic...')}
             className="w-full px-3 py-2.5 text-sm rounded-lg resize-none focus:outline-none transition"
             style={{
               background: 'var(--color-bg-surface)',
@@ -81,21 +83,21 @@ export function DebateSetup({ onBack, onOpenSettings }: DebateSetupProps) {
         {/* Validation messages */}
         {selectedProviders.length < 2 && (
           <p className="text-[11px]" style={{ color: '#ff9800' }}>
-            Please select 2 or more AIs in Settings.{' '}
+            {t('Please select 2 or more AIs in Settings.')}{' '}
             {onOpenSettings && (
               <button
                 onClick={onOpenSettings}
                 className="underline transition"
                 style={{ color: 'var(--color-accent)' }}
               >
-                Open Debate Settings
+                {t('Open Debate Settings')}
               </button>
             )}
           </p>
         )}
         {mode === 'battle' && selectedProviders.length >= 2 && selectedProviders.length < 3 && (
           <p className="text-[11px]" style={{ color: '#ff9800' }}>
-            Battle mode requires 3 AIs (2 debaters + 1 judge)
+            {t('Battle mode requires 3 AIs (2 debaters + 1 judge)')}
           </p>
         )}
 
@@ -111,7 +113,7 @@ export function DebateSetup({ onBack, onOpenSettings }: DebateSetupProps) {
           }
         >
           <Play className="w-4 h-4" />
-          {mode === 'battle' ? 'Start Battle' : 'Start Debate'}
+          {mode === 'battle' ? t('Start Battle') : t('Start Debate')}
         </button>
 
         {/* Settings shortcut */}
@@ -125,7 +127,7 @@ export function DebateSetup({ onBack, onOpenSettings }: DebateSetupProps) {
             }}
           >
             <Settings className="w-3.5 h-3.5" />
-            Debate Settings
+            {t('Debate Settings')}
           </button>
         )}
       </div>

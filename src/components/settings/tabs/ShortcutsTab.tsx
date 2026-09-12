@@ -1,5 +1,7 @@
 // ── ShortcutsTab — keyboard shortcut reference ───────────────────────────────
 
+import { useT } from '@/i18n'
+
 interface ShortcutRow {
   keys: string[]
   desc: string
@@ -68,6 +70,7 @@ function Kbd({ children }: { children: string }) {
 }
 
 export default function ShortcutsTab() {
+  const t = useT()
   const row: React.CSSProperties = {
     display: 'flex',
     justifyContent: 'space-between',
@@ -90,10 +93,10 @@ export default function ShortcutsTab() {
     <div className="flex flex-col gap-6">
       {GROUPS.map(group => (
         <div key={group.label}>
-          <p style={sectionTitle}>{group.label}</p>
+          <p style={sectionTitle}>{t(group.label)}</p>
           {group.rows.map(({ keys, desc }) => (
             <div key={desc} style={row}>
-              <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{desc}</span>
+              <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{t(desc)}</span>
               <div style={{ display: 'flex', gap: 3, alignItems: 'center', flexShrink: 0 }}>
                 {keys.map((k, i) => (
                   <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>

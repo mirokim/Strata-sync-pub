@@ -17,6 +17,7 @@ import { completeSignIn, freshAccessToken, refreshInto } from './auth'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useUIStore } from '@/stores/uiStore'
 import { showToast } from '@/stores/toastStore'
+import { t } from '@/i18n'
 
 /** Make the remote vault the one and only vault in the store (persisted local paths are useless here). */
 export function bindVaultStore(config: WebConfig): void {
@@ -50,7 +51,7 @@ export async function resolveBootConfig(): Promise<{ config: WebConfig | null; e
   if (!saved) return { config: null }
   if (saved.auth === 'oauth') {
     const token = await freshAccessToken(saved.url)
-    if (!token) return { config: null, error: 'Your session expired — sign in again.' }
+    if (!token) return { config: null, error: t('Your session expired — sign in again.') }
     return { config: { ...saved, token } }
   }
   return { config: saved }
