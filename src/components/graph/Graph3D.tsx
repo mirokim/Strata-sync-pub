@@ -17,6 +17,7 @@ import { buildNodeColorMap, getNodeColor, lightenColor, degreeScaleFactor, degre
 import { useActivityHeat } from '@/hooks/useActivityHeat'
 import type { GraphLink } from '@/types'
 import NodeTooltip from './NodeTooltip'
+import { sphereSegmentsFor, chooseLabelledNodes } from '@/lib/graphLabels'
 
 interface Props {
   width: number
@@ -28,6 +29,19 @@ const RING_SEGMENTS = 32
 const EDGE_DEF_R = 0x44 / 0xff
 const EDGE_DEF_G = 0x44 / 0xff
 const EDGE_DEF_B = 0x44 / 0xff
+// Labels are DOM elements (CSS2D). One per node was fine for a few hundred documents, but a
+// 5,000-node vault meant 5,000 text-shadowed divs repositioned every frame — the graph crawled.
+// Now a fixed pool is shared: on a big graph the labels go to the hubs and the nodes nearest the
+// camera, reassigned a few times a second; a small graph still labels every node.
+const LABEL_POOL_MAX = 160
+const LABEL_REASSIGN_MS = 120
+// Above this size the scene is updated on every second simulation tick (the layout still runs at
+// full speed, the GPU upload and render just happen at ~30 fps) and spheres use fewer segments.
+const BIG_GRAPH_NODES = 2000
+// Opt-in timing (perf/graph3d.html sets window.__graph3dPerf): performance.measure entries
+// 'graph3d.tick' / 'graph3d.render' / 'graph3d.labels' so a profiler-less run can still be read.
+const perfOn = () => (globalThis as { __graph3dPerf?: boolean }).__graph3dPerf === true
+const perfMeasure = (name: string, start: number) => { if (perfOn()) performance.measure(name, { start, end: performance.now() }) }
 
 interface NodeInstanceData {
   iMesh: THREE.InstancedMesh
@@ -37,7 +51,13 @@ interface NodeInstanceData {
   baseColor: THREE.Color
   docId: string
   pos: THREE.Vector3
-  labelContainer: THREE.Object3D
+  deg: number
+}
+
+interface PooledLabel {
+  obj: CSS2DObject
+  div: HTMLElement
+  nodeId: string | null
 }
 
 export default function Graph3D({ width, height }: Props) {
@@ -72,7 +92,13 @@ export default function Graph3D({ width, height }: Props) {
   const raycasterRef = useRef(new THREE.Raycaster())
   const aiHighlightRef = useRef<Set<string>>(new Set())
   const prevAiHighlightRef = useRef<Set<string>>(new Set())
-  const labelDivsRef = useRef<Map<string, HTMLElement>>(new Map())
+  const labelPoolRef = useRef<PooledLabel[]>([])
+  const labelByNodeRef = useRef<Map<string, PooledLabel>>(new Map())
+  const labelGroupRef = useRef<THREE.Group | null>(null)
+  const labelAssignDueRef = useRef(true)
+  const lastLabelAssignRef = useRef(0)
+  const maxDegRef = useRef(0)
+  const simTickCountRef = useRef(0)
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const renderBudgetRef = useRef(0)
@@ -164,6 +190,13 @@ export default function Graph3D({ width, height }: Props) {
     const dummy = dummyRef.current
     let sphereDirty = false, octaDirty = false
 
+    // Big graph: upload positions to the GPU every other tick — the simulation keeps its pace,
+    // the render loop just sees ~30 updates a second instead of 60
+    simTickCountRef.current++
+    if (simNodes.length > BIG_GRAPH_NODES && simTickCountRef.current % 2 === 1) return
+    labelAssignDueRef.current = true
+    const tickStart = perfOn() ? performance.now() : 0
+
     // Throttle simPositions updates to ~2s to avoid store churn
     const now = Date.now()
     if (now - simPosThrottleRef.current > 2000) {
@@ -182,9 +215,14 @@ export default function Graph3D({ width, height }: Props) {
       dummy.scale.setScalar(data.scaledRadius)
       dummy.updateMatrix()
       data.iMesh.setMatrixAt(data.idx, dummy.matrix)
-      data.labelContainer.position.set(x, y, z)
       if (data.iMesh === sphereInstancedRef.current) sphereDirty = true
       else octaDirty = true
+    }
+    // Only the labelled nodes have a DOM element to move
+    for (const label of labelPoolRef.current) {
+      if (!label.nodeId) continue
+      const data = dataMap.get(label.nodeId)
+      if (data) label.obj.position.set(data.pos.x, data.pos.y - NODE_RADIUS - 6, data.pos.z)
     }
     if (sphereDirty && sphereInstancedRef.current) {
       sphereInstancedRef.current.instanceMatrix.needsUpdate = true
@@ -219,6 +257,7 @@ export default function Graph3D({ width, height }: Props) {
       }
     }
     renderBudgetRef.current = Math.max(renderBudgetRef.current, 3)
+    perfMeasure('graph3d.tick', tickStart)
   }, [])
 
   const { simRef, simNodesRef } = useGraphSimulation3D({ onTick: handleTick })
@@ -289,6 +328,7 @@ export default function Graph3D({ width, height }: Props) {
     controls.addEventListener('end', onInteractEnd)
     const onControlsChange = () => {
       renderBudgetRef.current = Math.max(renderBudgetRef.current, 10)
+      labelAssignDueRef.current = true   // a moved camera changes which nodes are nearest
     }
     controls.addEventListener('change', onControlsChange)
     controlsRef.current = controls
@@ -317,10 +357,13 @@ export default function Graph3D({ width, height }: Props) {
     graphCallbacks.resetCamera = fitCameraToNodes
 
     const { degreeMap: degMap, maxDegree: maxDeg3D } = useGraphStore.getState()
+    maxDegRef.current = maxDeg3D
 
     // ── Shared geometries ────────────────────────────────────────────────────
-    // One shared geometry for every instance, so the extra segments cost nothing per node
-    const sphereGeo = new THREE.SphereGeometry(NODE_RADIUS, 20, 14)
+    // One shared geometry for every instance; the tessellation drops as the graph grows so a
+    // 5,000-node vault does not push millions of triangles per frame
+    const [sphereW, sphereH] = sphereSegmentsFor(nodes.length)
+    const sphereGeo = new THREE.SphereGeometry(NODE_RADIUS, sphereW, sphereH)
     const octaGeo = new THREE.OctahedronGeometry(NODE_RADIUS * 1.25)
 
     const sphereNodes = nodes.filter(n => !n.isImage)
@@ -362,30 +405,6 @@ export default function Graph3D({ width, height }: Props) {
       iMesh.setMatrixAt(idx, dummy.matrix)
       iMesh.setColorAt(idx, baseColor)
 
-      // CSS2DObject label — the document title, created for every node so the label toggle
-      // works without rebuilding the graph; visibility is driven by the effect below.
-      const labelContainer = new THREE.Object3D()
-      {
-        const labelDiv = document.createElement('div')
-        labelDiv.textContent = node.label.length > 28 ? node.label.slice(0, 27) + '…' : node.label
-        labelDiv.title = node.label
-        // Hubs get slightly larger type so the important documents stand out at a glance
-        labelDiv.style.fontSize = deg >= Math.max(3, maxDeg3D * 0.5) ? '13px' : deg >= 2 ? '11.5px' : '10.5px'
-        labelDiv.style.fontWeight = deg >= Math.max(3, maxDeg3D * 0.5) ? '600' : 'normal'
-        labelDiv.style.color = '#e3e2de'
-        labelDiv.style.pointerEvents = 'none'
-        labelDiv.style.whiteSpace = 'nowrap'
-        labelDiv.style.textShadow = '0 0 6px #000, 0 0 4px #000, 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000'
-        labelDiv.style.userSelect = 'none'
-        labelDiv.style.letterSpacing = '0.01em'
-        labelDiv.style.opacity = useSettingsStore.getState().showNodeLabels ? '' : '0'
-        const labelObj = new CSS2DObject(labelDiv)
-        labelObj.position.set(0, -NODE_RADIUS - 6, 0)
-        labelContainer.add(labelObj)
-        labelDivsRef.current.set(node.id, labelDiv)
-      }
-      scene.add(labelContainer)
-
       newDataMap.set(node.id, {
         iMesh,
         idx,
@@ -394,9 +413,34 @@ export default function Graph3D({ width, height }: Props) {
         baseColor,
         docId: node.docId ?? node.id,
         pos: new THREE.Vector3(0, 0, 0),
-        labelContainer,
+        deg,
       })
     }
+
+    // ── Label pool: a bounded set of DOM labels shared by all nodes ──────────
+    // Assigned in assignLabels() (animation loop) — every node when the graph is small, otherwise
+    // hubs and the nodes in front of the camera. Hidden pool entries cost nothing to render.
+    const labelGroup = new THREE.Group()
+    const poolSize = Math.min(nodes.length, LABEL_POOL_MAX)
+    const pool: PooledLabel[] = []
+    for (let i = 0; i < poolSize; i++) {
+      const div = document.createElement('div')
+      div.style.color = '#e3e2de'
+      div.style.pointerEvents = 'none'
+      div.style.whiteSpace = 'nowrap'
+      div.style.textShadow = '0 0 6px #000, 0 0 4px #000, 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000'
+      div.style.userSelect = 'none'
+      div.style.letterSpacing = '0.01em'
+      const obj = new CSS2DObject(div)
+      obj.visible = false
+      labelGroup.add(obj)
+      pool.push({ obj, div, nodeId: null })
+    }
+    scene.add(labelGroup)
+    labelGroupRef.current = labelGroup
+    labelPoolRef.current = pool
+    labelByNodeRef.current = new Map()
+    labelAssignDueRef.current = true
 
     sphereNodes.forEach((node, idx) => setupNode(node, sphereInstanced, idx))
     octaNodes.forEach((node, idx) => setupNode(node, octaInstanced, idx))
@@ -476,6 +520,60 @@ export default function Graph3D({ width, height }: Props) {
     scene.add(pts)
     particlesRef.current = pts
 
+    // ── Label assignment ──────────────────────────────────────────────────────
+    const labelTextById = new Map(nodes.map(n => [n.id, n.label]))
+    const camForward = new THREE.Vector3()
+    const assignLabels = () => {
+      labelAssignDueRef.current = false
+      lastLabelAssignRef.current = performance.now()
+      const dataMap = nodeDataRef.current
+      const byNode = labelByNodeRef.current
+      const pool = labelPoolRef.current
+      if (pool.length === 0) return
+
+      // Hovered, selected and AI-highlighted nodes are always labelled (when they are in the graph)
+      const pinned = [lastHoveredRef.current, selectedNodeIdRef.current, ...aiHighlightRef.current].filter((id): id is string => !!id && dataMap.has(id))
+      let chosen: string[]
+      if (showNodeLabelsRef.current) {
+        camera.getWorldDirection(camForward)
+        const candidates: { id: string; deg: number; x: number; y: number; z: number }[] = []
+        dataMap.forEach((d, id) => candidates.push({ id, deg: d.deg, x: d.pos.x, y: d.pos.y, z: d.pos.z }))
+        chosen = chooseLabelledNodes(candidates, pool.length, { position: camera.position, forward: camForward }, pinned)
+      } else {
+        chosen = pinned.slice(0, pool.length)
+      }
+      const chosenSet = new Set(chosen)
+
+      // Keep labels that stay chosen where they are; free the rest, then hand free entries out
+      const free: PooledLabel[] = []
+      for (const label of pool) {
+        if (label.nodeId && chosenSet.has(label.nodeId)) continue
+        if (label.nodeId) byNode.delete(label.nodeId)
+        label.nodeId = null
+        label.obj.visible = false
+        free.push(label)
+      }
+      const maxDeg = maxDegRef.current
+      for (const id of chosen) {
+        if (byNode.has(id)) continue
+        const data = dataMap.get(id)
+        if (!data) continue                 // e.g. an AI-highlighted document that is not in the graph
+        const label = free.pop()
+        if (!label) break
+        const text = labelTextById.get(id) ?? id
+        label.nodeId = id
+        label.div.textContent = text.length > 28 ? text.slice(0, 27) + '…' : text
+        label.div.title = text
+        // Hubs get slightly larger type so the important documents stand out at a glance
+        const hub = data.deg >= Math.max(3, maxDeg * 0.5)
+        label.div.style.fontSize = hub ? '13px' : data.deg >= 2 ? '11.5px' : '10.5px'
+        label.div.style.fontWeight = hub ? '600' : 'normal'
+        label.obj.position.set(data.pos.x, data.pos.y - NODE_RADIUS - 6, data.pos.z)
+        label.obj.visible = true
+        byNode.set(id, label)
+      }
+    }
+
     // ── Animation loop (dirty-render) ─────────────────────────────────────────
     function animate() {
       rafRef.current = requestAnimationFrame(animate)
@@ -546,10 +644,15 @@ export default function Graph3D({ width, height }: Props) {
           ;(pGeo.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true
         }
 
+        const renderStart = perfOn() ? performance.now() : 0
         renderer.render(scene, camera)
+        perfMeasure('graph3d.render', renderStart)
         // Labels are DOM elements positioned per frame; also needed for the hover label
-        if (showNodeLabelsRef.current || lastHoveredRef.current) {
+        if (showNodeLabelsRef.current || lastHoveredRef.current || labelByNodeRef.current.size > 0) {
+          const labelStart = perfOn() ? performance.now() : 0
+          if (labelAssignDueRef.current && performance.now() - lastLabelAssignRef.current >= LABEL_REASSIGN_MS) assignLabels()
           css2dRenderer.render(scene, camera)
+          perfMeasure('graph3d.labels', labelStart)
         }
         renderBudgetRef.current--
       }
@@ -599,11 +702,12 @@ export default function Graph3D({ width, height }: Props) {
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
       controls.dispose()
 
-      // Explicitly remove CSS2DObject labelContainers from scene so Three.js
-      // releases DOM element references — prevents accumulation across rebuilds
-      nodeDataRef.current.forEach(data => {
-        scene.remove(data.labelContainer)
-      })
+      // Remove the label pool (and its DOM elements) so nothing accumulates across rebuilds
+      scene.remove(labelGroup)
+      for (const label of pool) label.div.remove()
+      labelPoolRef.current = []
+      labelByNodeRef.current = new Map()
+      labelGroupRef.current = null
       // Dispose InstancedMeshes before scene.clear()
       scene.remove(sphereInstanced)
       scene.remove(octaInstanced)
@@ -631,7 +735,6 @@ export default function Graph3D({ width, height }: Props) {
       pGeo.dispose()
       pMat.dispose()
       nodeDataRef.current.clear()
-      labelDivsRef.current.clear()
       linePosRef.current = null
       lineColorArrayRef.current = null
       lineColorAttrRef.current = null
@@ -762,18 +865,13 @@ export default function Graph3D({ width, height }: Props) {
     css2d.domElement.style.display = centerTab === 'graph' ? '' : 'none'
   }, [centerTab])
 
-  // ── Per-node label visibility: hidden by default, shown on hover ──────────
+  // ── Label pool reassignment: the label toggle, hover, selection and AI highlight change who
+  // gets a label; the animation loop does the actual assignment on its next rendered frame
   useEffect(() => {
-    const divMap = labelDivsRef.current
-    if (divMap.size === 0) return
-    divMap.forEach((div, nodeId) => {
-      if (showNodeLabels) {
-        div.style.opacity = ''
-      } else {
-        div.style.opacity = nodeId === hoveredNodeId ? '1' : '0'
-      }
-    })
-  }, [showNodeLabels, hoveredNodeId])
+    labelAssignDueRef.current = true
+    lastLabelAssignRef.current = 0
+    renderBudgetRef.current = Math.max(renderBudgetRef.current, 3)
+  }, [showNodeLabels, hoveredNodeId, selectedNodeId, aiHighlightNodeIds])
 
   // ── AI highlight: sync aiHighlightNodeIds → ref for animation loop ────────
   useEffect(() => {

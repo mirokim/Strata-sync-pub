@@ -161,6 +161,7 @@ vi.mock('three', () => {
     PointsMaterial: Material,
     LineSegments: class { constructor(public geometry?: any, public material?: any) {} },
     Object3D,
+    Group: Object3D,
     InstancedMesh,
     Color,
     DynamicDrawUsage: 35048,
