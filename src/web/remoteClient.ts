@@ -44,6 +44,13 @@ export interface BatchStatus {
   runs: BatchRun[]
 }
 
+export interface JobRun { at: number; by: string; summary: string; proposals: string[] }
+export interface Job { id: string; title: string; instructions: string; cadence: 'daily' | 'weekly' | 'manual'; enabled: boolean; runs: JobRun[] }
+export interface JobsConfig { version: 1; jobs: Job[] }
+
+export interface Reviewer { id: string; name: string; focus: string; enabled: boolean }
+export interface ReviewerConfig { version: 1; context: string; reviewers: Reviewer[]; synthesizer: string }
+
 export class RemoteError extends Error {
   constructor(public status: number, message: string, public current?: RemoteRow) {
     super(message)
@@ -170,6 +177,36 @@ export class RemoteClient {
   async runBatch(): Promise<BatchRun> {
     const res = await this.request('/v1/lint/run', { method: 'POST' })
     if (!res.ok) throw new RemoteError(res.status, `batch run failed (${res.status})`)
+    return res.json()
+  }
+
+  async jobs(): Promise<JobsConfig> {
+    const res = await this.request('/v1/jobs')
+    if (!res.ok) throw new RemoteError(res.status, `jobs failed (${res.status})`)
+    return res.json()
+  }
+
+  async saveJobs(config: JobsConfig): Promise<JobsConfig> {
+    const res = await this.request('/v1/jobs', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(config) })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({})) as { error?: string }
+      throw new RemoteError(res.status, body.error || `save failed (${res.status})`)
+    }
+    return res.json()
+  }
+
+  async reviewers(): Promise<{ config: ReviewerConfig; presets: Record<string, ReviewerConfig> }> {
+    const res = await this.request('/v1/reviewers')
+    if (!res.ok) throw new RemoteError(res.status, `reviewers failed (${res.status})`)
+    return res.json()
+  }
+
+  async saveReviewers(config: ReviewerConfig): Promise<{ config: ReviewerConfig }> {
+    const res = await this.request('/v1/reviewers', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(config) })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({})) as { error?: string }
+      throw new RemoteError(res.status, body.error || `save failed (${res.status})`)
+    }
     return res.json()
   }
 

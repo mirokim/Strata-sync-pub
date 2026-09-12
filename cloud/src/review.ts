@@ -2,8 +2,9 @@
  * Save-triggered director review.
  *
  * When a design document lands on the server (API PUT or an external write picked up by the R2
- * bridge), a review job is queued. The consumer asks five director personas — chief, art, design,
- * level, programming — to read the document independently, then has the chief synthesise the
+ * bridge), a review job is queued. The consumer asks the configured reviewers (Settings →
+ * Reviewers; five generic lenses by default) to read the document independently, then has one of
+ * them synthesise the
  * disagreements and open questions. The result is written into the vault as
  * `_reviews/<document name>.md`, wikilinked back to the document, so it is on everyone's machine
  * before the next stand-up without anyone pressing a button.
@@ -13,6 +14,7 @@
  * so this module is tested without network.
  */
 import { putFile, type FileRow, type SyncDeps } from './sync.js'
+import { readReviewers, type Reviewer, type ReviewerConfig } from './reviewers.js'
 import { parseVaultDoc } from '../../mcp/src/lint/vaultDoc.js'
 
 export const REVIEW_FOLDER = '_reviews'
@@ -27,15 +29,8 @@ export const REVIEW_MAX_CHARS = 12_000
 
 export interface ReviewJob { path: string; etag?: string }
 
-export interface Persona { id: string; name: string; focus: string }
-
-export const PERSONAS: Persona[] = [
-  { id: 'chief', name: 'Chief Director', focus: 'Does this serve the product vision and the player? What decision is this document actually asking for, and is it clear who owns it? Where does it contradict other known decisions?' },
-  { id: 'art', name: 'Art Director', focus: 'Visual identity, readability, tone and manner. What does this imply for concept, character, environment, UI and VFX work, and what asset or pipeline cost is hidden in it?' },
-  { id: 'design', name: 'Design Director', focus: 'Systems and rules: are the mechanics fully specified, are edge cases covered, does it interact with existing systems (economy, progression, combat) in ways the author has not stated? What would you prototype first?' },
-  { id: 'level', name: 'Level Director', focus: 'Spatial and pacing consequences: how does this play out in an actual level, encounter or session? What does it demand from layout, navigation, difficulty curve and content volume?' },
-  { id: 'prog', name: 'Programming Director', focus: 'Feasibility and risk: what has to be built or changed, what is technically vague, where are the performance, networking, save-data or tooling implications, and what is the smallest version that proves it works?' },
-]
+/** Kept as an alias: reviewers are configured data (see reviewers.ts). */
+export type Persona = Reviewer
 
 export interface ReviewState {
   version: 1
@@ -52,6 +47,8 @@ export interface ReviewDeps extends SyncDeps {
   log?: (msg: string) => void
   /** Vault-relative folder prefixes eligible for review; empty = every folder not starting with `_` or `.`. */
   reviewFolders?: string[]
+  /** Reviewer set; read from _system/reviewers.json when absent. */
+  reviewers?: ReviewerConfig
 }
 
 export type ReviewOutcome =
@@ -98,9 +95,9 @@ async function writeReviewState(deps: SyncDeps, state: ReviewState): Promise<voi
 
 // ── Prompts ──────────────────────────────────────────────────────────────────
 
-function personaSystem(p: Persona): string {
+function personaSystem(p: Persona, context: string): string {
   return [
-    `You are the ${p.name} of a game studio reviewing a design document a colleague just saved to the team wiki.`,
+    `You are the ${p.name} reviewing a document a colleague just saved to ${context}.`,
     `Your lens: ${p.focus}`,
     '',
     'Write for the author, who will read this tomorrow morning. Be specific to this document — quote or name the parts you mean. No praise, no summary of the document.',
@@ -115,13 +112,13 @@ function personaSystem(p: Persona): string {
   ].join('\n')
 }
 
-function synthesisSystem(): string {
+function synthesisSystem(synth: Persona, others: number, context: string): string {
   return [
-    'You are the Chief Director of a game studio. Four directors and you have each reviewed the same design document.',
+    `You are the ${synth.name} of ${context}. ${others} other reviewer${others === 1 ? '' : 's'} and you have each reviewed the same document.`,
     'Combine the reviews into a short brief for the author and the team. Do not repeat every point — surface where reviewers disagree, what several of them worry about, and the decision the document is really asking for.',
     'Answer in the language the document is written in.',
     'Format exactly:',
-    '## Where the directors disagree',
+    '## Where the reviewers disagree',
     '- bullets (omit the section if they agree)',
     '## Shared concerns',
     '- bullets',
@@ -159,14 +156,18 @@ export async function reviewDocument(deps: ReviewDeps, job: ReviewJob): Promise<
 
   const userMessage = `Document: ${doc.title}\nPath: ${path}\nAuthor of this save: ${row.author || 'unknown'}\n\n---\n\n${clip(doc.body)}`
 
-  // Five independent reads, in parallel — they must not see each other.
-  const reviews = await Promise.all(PERSONAS.map(async p => ({
+  const config = deps.reviewers ?? await readReviewers(deps)
+  const reviewers = config.reviewers.filter(r => r.enabled)
+  const synth = reviewers.find(r => r.id === config.synthesizer) ?? reviewers[0]
+
+  // Independent reads, in parallel — they must not see each other.
+  const reviews = await Promise.all(reviewers.map(async p => ({
     persona: p,
-    text: (await deps.llm({ system: personaSystem(p), user: userMessage, maxTokens: 1200, effort: 'medium' })).trim(),
+    text: (await deps.llm({ system: personaSystem(p, config.context), user: userMessage, maxTokens: 1200, effort: 'medium' })).trim(),
   })))
 
   const synthesis = (await deps.llm({
-    system: synthesisSystem(),
+    system: synthesisSystem(synth, reviewers.length - 1, config.context),
     user: `Document: ${doc.title}\n\n${reviews.map(r => `# ${r.persona.name}\n${r.text}`).join('\n\n')}`,
     maxTokens: 1500,
     effort: 'high',
@@ -183,7 +184,7 @@ export async function reviewDocument(deps: ReviewDeps, job: ReviewJob): Promise<
   state.reviewed[path] = { etag: row.etag, at: now, reviewPath }
   await writeReviewState(deps, state)
   log(`[review] ${path} → ${reviewPath}`)
-  return { status: 'reviewed', reviewPath, personas: PERSONAS.length }
+  return { status: 'reviewed', reviewPath, personas: reviewers.length }
 }
 
 export function renderReview(input: {
@@ -206,10 +207,10 @@ export function renderReview(input: {
     '---',
     '',
     // Wikilinks resolve by file name, not by the frontmatter title
-    `# Director review — [[${input.doc.filename.replace(/\.md$/i, '')}]]`,
+    `# Review — [[${input.doc.filename.replace(/\.md$/i, '')}]]`,
     '',
     ...(input.doc.title !== input.doc.filename.replace(/\.md$/i, '') ? [`_${input.doc.title}_`, ''] : []),
-    `Saved by ${input.doc.author || 'unknown'} · reviewed ${date.slice(0, 16).replace('T', ' ')} UTC · five independent reads, then a synthesis.`,
+    `Saved by ${input.doc.author || 'unknown'} · reviewed ${date.slice(0, 16).replace('T', ' ')} UTC · ${input.reviews.length} independent read${input.reviews.length === 1 ? '' : 's'}, then a synthesis.`,
     '',
     input.synthesis,
     '',

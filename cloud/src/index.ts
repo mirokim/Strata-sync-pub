@@ -21,6 +21,8 @@ import { invalidateVaultView } from './vaultIndex.js'
 import { buildProposal } from '../../mcp/src/proposals.js'
 import OAuthProvider from '@cloudflare/workers-oauth-provider'
 import { handleAuth, SCOPE, type AuthEnv, type Identity } from './auth.js'
+import { readReviewers, writeReviewers, validateReviewers, normalizeReviewers, PRESETS, type ReviewerConfig } from './reviewers.js'
+import { readJobs, saveJobDefinitions, validateJobs, type JobsConfig } from './jobs.js'
 
 export interface Env extends AuthEnv {
   VAULT: R2Bucket
@@ -291,6 +293,25 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
     }
     if (url.pathname === '/v1/batch' && req.method === 'GET') {
       return json(200, await batchStatus(deps))
+    }
+    if (url.pathname === '/v1/reviewers' && req.method === 'GET') {
+      return json(200, { config: await readReviewers(deps), presets: Object.fromEntries(Object.entries(PRESETS).map(([k, v]) => [k, v])) })
+    }
+    if (url.pathname === '/v1/jobs' && req.method === 'GET') {
+      return json(200, await readJobs(deps))
+    }
+    if (url.pathname === '/v1/jobs' && req.method === 'PUT') {
+      const body = await req.json().catch(() => null)
+      const error = validateJobs(body)
+      if (error) return json(400, { error })
+      return json(200, await saveJobDefinitions(deps, body as JobsConfig))
+    }
+    if (url.pathname === '/v1/reviewers' && req.method === 'PUT') {
+      const body = await req.json().catch(() => null)
+      const error = validateReviewers(body)
+      if (error) return json(400, { error })
+      await writeReviewers(deps, normalizeReviewers(body as ReviewerConfig))
+      return json(200, { config: await readReviewers(deps) })
     }
     if (url.pathname === '/v1/manifest' && req.method === 'GET') {
       const since = Number(url.searchParams.get('since') ?? '0')

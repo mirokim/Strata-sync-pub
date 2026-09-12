@@ -33,6 +33,8 @@ const TOOLS: [string, string][] = [
   ['vault_proposals', 'List pending proposals'],
   ['vault_promote', 'Promote a proposal into the vault — after a person approves it'],
   ['vault_write', 'Create or replace a document directly (only when explicitly asked)'],
+  ['vault_changes', 'What changed since a date — authors, titles, deletions'],
+  ['jobs_list · jobs_report', 'The standing jobs (Settings → Jobs) and the run log; the `jobs` prompt runs the due ones'],
 ]
 
 function CopyButton({ text, id }: { text: string; id: string }) {

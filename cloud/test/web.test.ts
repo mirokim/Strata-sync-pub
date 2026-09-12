@@ -299,7 +299,7 @@ describe('handleMcpRequest', () => {
 
     const list = await (await handleMcpRequest(rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' }), deps)).json() as { result: { tools: { name: string }[] } }
     expect(list.result.tools.map(t => t.name).sort()).toEqual([
-      'graph_lint', 'graph_suggest_links', 'vault_list', 'vault_promote', 'vault_proposals', 'vault_propose', 'vault_read', 'vault_search', 'vault_write',
+      'graph_lint', 'graph_suggest_links', 'jobs_list', 'jobs_report', 'vault_changes', 'vault_list', 'vault_promote', 'vault_proposals', 'vault_propose', 'vault_read', 'vault_search', 'vault_write',
     ])
 
     const call = await (await handleMcpRequest(rpc({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'vault_read', arguments: { path: 'active/Stamina.md' } } }), deps)).json() as { result: { content: { text: string }[] } }
@@ -404,6 +404,18 @@ describe('routes', () => {
   it('GET /v1/batch reports index coverage and the run log', async () => {
     const res = await (await call('/v1/batch')).json() as { totalDocs: number; embeddedDocs: number; pendingDocs: number; runs: unknown[] }
     expect(res).toEqual({ totalDocs: 3, embeddedDocs: 0, pendingDocs: 3, runs: [] })
+  })
+
+  it('GET/PUT /v1/reviewers round-trips the configuration and rejects bad ones', async () => {
+    const before = await (await call('/v1/reviewers')).json() as { config: { synthesizer: string }; presets: Record<string, unknown> }
+    expect(before.config.synthesizer).toBe('editor')
+    expect(Object.keys(before.presets)).toContain('legal')
+    const legal = (before.presets as Record<string, { context: string }>).legal
+    const ok = await call('/v1/reviewers', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(legal) })
+    expect(ok.status).toBe(200)
+    expect(((await (await call('/v1/reviewers')).json()) as { config: { context: string } }).config.context).toBe(legal.context)
+    const bad = await call('/v1/reviewers', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...legal, synthesizer: 'ghost' }) })
+    expect(bad.status).toBe(400)
   })
 
   it('/mcp is reachable through the router with the same token', async () => {

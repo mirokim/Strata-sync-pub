@@ -11,7 +11,7 @@ import {
   X, BarChart2, Trash2,
   Settings, Keyboard, Info, Clock,
   Tag, Download, Bot, Fish, Send,
-  HardDrive, Cloud, Plug,
+  HardDrive, Cloud, Plug, Users,
 } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
@@ -39,6 +39,8 @@ import ConfluencePublishTab from './tabs/ConfluencePublishTab'
 import CronJobTab from './tabs/CronJobTab'
 import ServerTab from './tabs/ServerTab'
 import McpTab from './tabs/McpTab'
+import ReviewersTab from './tabs/ReviewersTab'
+import JobsTab from './tabs/JobsTab'
 import { isWebMode } from '@/web/config'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -47,7 +49,7 @@ type SettingsTab =
   | 'stats' | 'trash'
   | 'general' | 'ai' | 'search' | 'vector-embed' | 'personas' | 'debate' | 'shortcuts' | 'project' | 'tags'
   | 'confluence' | 'confluence-publish' | 'slack-bot' | 'jira' | 'jira-dispatch' | 'vault-manager' | 'mirofish'
-  | 'edit-agent' | 'cron-jobs' | 'usage' | 'team-sync' | 'server' | 'mcp'
+  | 'edit-agent' | 'cron-jobs' | 'usage' | 'team-sync' | 'server' | 'mcp' | 'reviewers' | 'jobs'
   | 'about'
 
 type NavItem = { id: SettingsTab; icon: React.ElementType; label: string }
@@ -79,6 +81,8 @@ const NAV: NavGroup[] = [
       { id: 'stats',         icon: BarChart2, label: 'Statistics' },
       { id: 'server',        icon: Cloud,     label: 'Server' },
       { id: 'mcp',           icon: Plug,      label: 'MCP' },
+      { id: 'reviewers',     icon: Users,     label: 'Reviewers' },
+      { id: 'jobs',          icon: Bot,       label: 'Jobs' },
       { id: 'vault-manager', icon: HardDrive, label: 'Vault Manager' },
       { id: 'team-sync',     icon: Cloud,     label: 'Team Sync' },
       { id: 'trash',         icon: Trash2,    label: 'Trash' },
@@ -109,9 +113,12 @@ const ELECTRON_ONLY: ReadonlySet<SettingsTab> = new Set<SettingsTab>([
   'cron-jobs', 'mirofish', 'vault-manager', 'team-sync', 'trash',
 ])
 
+/** Tabs that talk to the team server through the browser adapter. */
+const WEB_ONLY: ReadonlySet<SettingsTab> = new Set<SettingsTab>(['server', 'reviewers', 'jobs'])
+
 export function visibleNav(web = isWebMode()): NavGroup[] {
   return NAV
-    .map(g => ({ ...g, items: g.items.filter(i => (web ? !ELECTRON_ONLY.has(i.id) : i.id !== 'server')) }))
+    .map(g => ({ ...g, items: g.items.filter(i => (web ? !ELECTRON_ONLY.has(i.id) : !WEB_ONLY.has(i.id))) }))
     .filter(g => g.items.length > 0)
 }
 
@@ -141,6 +148,8 @@ function renderTabContent(tab: SettingsTab) {
     case 'team-sync':     return <TeamSyncTab />
     case 'server':        return <ServerTab />
     case 'mcp':           return <McpTab />
+    case 'reviewers':     return <ReviewersTab />
+    case 'jobs':          return <JobsTab />
     case 'mirofish':   return <MirofishTab />
     case 'cron-jobs':  return <CronJobTab />
     case 'usage':      return <UsageTab />

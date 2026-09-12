@@ -10,12 +10,13 @@
  */
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
-import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+import { CallToolRequestSchema, ListToolsRequestSchema, ListPromptsRequestSchema, GetPromptRequestSchema, type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { runLint, reportToMarkdown, ALL_RULES, type LintRuleId, type LintSeverity, type LintSnapshot } from '../../mcp/src/lint/index.js'
 import { buildProposal, isProposalPath, stripProposalFrontmatter, promotedPath, PROPOSAL_FOLDER } from '../../mcp/src/proposals.js'
 import { deleteFile, getFile, putFile, normalizeVaultPath, type FileRow, type SyncDeps } from './sync.js'
 import { loadVaultView, invalidateVaultView } from './vaultIndex.js'
 import { SNAPSHOT_KEY } from './nightly.js'
+import { readJobs, recordJobRun, dueJobs, renderJobsPrompt } from './jobs.js'
 import type { SearchHit } from './nightly.js'
 
 export interface McpDeps extends SyncDeps {
@@ -41,6 +42,9 @@ const TOOLS = [
   { name: 'vault_proposals', description: 'List pending agent proposals in _agent/.', inputSchema: { type: 'object' as const, properties: {} } },
   { name: 'vault_promote', description: 'Promote a proposal into the vault (strip proposal frontmatter, move out of _agent/). Only when the user explicitly approves it.', inputSchema: { type: 'object' as const, properties: { path: { type: 'string' }, destFolder: { type: 'string', description: 'Destination folder (default vault root)' } }, required: ['path'] } },
   { name: 'vault_write', description: 'Write a document directly (create or replace). Prefer vault_propose for anything the team has not approved; use this only when the user explicitly asks to edit an existing document.', inputSchema: { type: 'object' as const, properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } },
+  { name: 'vault_changes', description: 'Documents created, changed or deleted since a point in time (ISO date or ms since epoch), newest first, with author and title. Use it to see what moved before reviewing premises or writing a digest.', inputSchema: { type: 'object' as const, properties: { since: { type: 'string', description: 'ISO 8601 date/time, or ms since epoch' }, limit: { type: 'number', description: 'default 100, max 500' } }, required: ['since'] } },
+  { name: 'jobs_list', description: 'The team\'s standing agent jobs (Settings → Jobs): id, title, cadence, instructions, last run. Pass due=true to get only the ones due now.', inputSchema: { type: 'object' as const, properties: { due: { type: 'boolean' } } } },
+  { name: 'jobs_report', description: 'Record that a job was run: a short summary and the proposal paths created. Call once per job after finishing it.', inputSchema: { type: 'object' as const, properties: { id: { type: 'string' }, summary: { type: 'string' }, proposals: { type: 'array', items: { type: 'string' } } }, required: ['id', 'summary'] } },
 ]
 
 type Args = Record<string, unknown>
@@ -161,17 +165,59 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       invalidateVaultView()
       return text({ path: rel, status: r.status === 201 ? 'created' : r.status === 204 ? 'unchanged' : 'replaced' })
     }
+    case 'vault_changes': {
+      const raw = String(args.since ?? '').trim()
+      const since = /^\d+$/.test(raw) ? Number(raw) : Date.parse(raw)
+      if (!Number.isFinite(since)) return fail('since must be an ISO date or ms since epoch')
+      const limit = Math.min(Math.max(Number(args.limit) || 100, 1), 500)
+      const view = await loadVaultView(deps)
+      // Every row (live or tombstone) newer than `since`; the vault view is keyed by path, so scan the store
+      const rows = await deps.meta.listSince(0, 100_000)
+      const changed = rows.filter(r => r.updatedAt >= since && !r.path.split('/').some(s => s.startsWith('.')))
+        .sort((a, b) => b.updatedAt - a.updatedAt || b.seq - a.seq).slice(0, limit)
+        .map(r => ({ path: r.path, title: view.docs.get(r.path)?.title ?? r.path.replace(/^.*\//, '').replace(/\.md$/i, ''), author: r.author, at: new Date(r.updatedAt).toISOString(), deleted: r.deleted, proposal: isProposalPath(r.path) || undefined }))
+      return text({ since: new Date(since).toISOString(), count: changed.length, changes: changed })
+    }
+    case 'jobs_list': {
+      const config = await readJobs(deps)
+      const jobs = args.due === true ? dueJobs(config, Date.now()) : config.jobs
+      return text({ jobs: jobs.map(j => ({ id: j.id, title: j.title, cadence: j.cadence, enabled: j.enabled, instructions: j.instructions, lastRun: j.runs.length ? j.runs[j.runs.length - 1] : null })) })
+    }
+    case 'jobs_report': {
+      const id = String(args.id ?? '').trim()
+      const summary = String(args.summary ?? '').trim().slice(0, 1000)
+      if (!id || !summary) return fail('id and summary are required')
+      const proposals = Array.isArray(args.proposals) ? (args.proposals as unknown[]).map(String).slice(0, 50) : []
+      const job = await recordJobRun(deps, id, { at: Date.now(), by: author, summary, proposals })
+      if (!job) return fail(`unknown job: ${id}`)
+      return text({ recorded: id, runs: job.runs.length, at: new Date(job.runs[job.runs.length - 1].at).toISOString() })
+    }
     default:
       return fail(`unknown tool: ${name}`)
   }
 }
 
+const PROMPTS = [
+  { name: 'jobs', description: 'Run the team\'s standing Strata Sync jobs that are due (draft missing documents, warn about changed premises, weekly digest…). Writes proposals only.', arguments: [{ name: 'all', description: 'Set to "true" to run every enabled job regardless of cadence', required: false }] },
+]
+
 /** Build a fresh MCP server + stateless transport per request and hand the request to it. */
 export async function handleMcpRequest(req: Request, deps: McpDeps): Promise<Response> {
   // Stateless: no server-initiated SSE stream (GET) and no session to terminate (DELETE).
   if (req.method !== 'POST') return new Response(null, { status: 405, headers: { Allow: 'POST' } })
-  const server = new Server({ name: 'strata-sync-cloud', version: '0.5.0' }, { capabilities: { tools: {} } })
+  const server = new Server({ name: 'strata-sync-cloud', version: '0.5.0' }, { capabilities: { tools: {}, prompts: {} } })
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }))
+  server.setRequestHandler(ListPromptsRequestSchema, async () => ({ prompts: PROMPTS }))
+  server.setRequestHandler(GetPromptRequestSchema, async request => {
+    if (request.params.name !== 'jobs') throw new Error(`unknown prompt: ${request.params.name}`)
+    const config = await readJobs(deps)
+    const force = String(request.params.arguments?.all ?? '') === 'true'
+    const jobs = dueJobs(config, Date.now(), force)
+    return {
+      description: `${jobs.length} job${jobs.length === 1 ? '' : 's'} due`,
+      messages: [{ role: 'user', content: { type: 'text', text: renderJobsPrompt(jobs, Date.now(), deps.author ?? '') } }],
+    }
+  })
   server.setRequestHandler(CallToolRequestSchema, async request => {
     try {
       return await callTool(deps, request.params.name, (request.params.arguments ?? {}) as Args)
