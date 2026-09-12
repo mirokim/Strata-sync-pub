@@ -32,11 +32,14 @@ export function runLint(input: LintInput, options: LintOptions = {}): LintReport
   const limitPerRule = options.limitPerRule ?? 50
   const ignoreFolders = new Set((options.ignoreFolders ?? DEFAULT_IGNORE_FOLDERS).map(f => f.toLowerCase()))
 
-  const graph = buildLintGraph(input.docs)
+  // Generated folders (reports, reviews, agent proposals) are left out of the graph entirely, not
+  // just out of the findings: yesterday's lint report links to every flagged document, and if it
+  // counted, no orphan would ever be reported twice.
+  const docs = input.docs.filter(d => !ignoreFolders.has(topFolder(d.folderPath).toLowerCase()))
+  const graph = buildLintGraph(docs)
   const reportable = new Set<string>()
   for (const n of graph.nodes) {
     if (n.graphWeight === 'skip') continue
-    if (ignoreFolders.has(topFolder(n.folderPath).toLowerCase())) continue
     reportable.add(n.id)
   }
 
@@ -85,7 +88,7 @@ export function runLint(input: LintInput, options: LintOptions = {}): LintReport
 
   return {
     generatedAt: snapshot.generatedAt,
-    docCount: input.docs.length,
+    docCount: docs.length,
     linkCount: graph.linkCount,
     phantomCount: graph.phantoms.size,
     communityCount: communities.communities.filter(c => c.length >= 2).length,

@@ -70,8 +70,9 @@ async function main(): Promise<number> {
   try { args = parseArgs(process.argv.slice(2)) } catch (e) { console.error((e as Error).message); console.error(USAGE); return 2 }
   if (args.help) { console.log(USAGE); return 0 }
 
-  const vaultPath = resolve(args.vault ?? getConfig().vaultPath)
-  if (!vaultPath) { console.error('no vault: pass --vault or set vaultPath in mcp-config.json'); return 2 }
+  const vaultArg = args.vault ?? getConfig().vaultPath
+  if (!vaultArg) { console.error('no vault: pass --vault or set vaultPath in mcp-config.json'); return 2 }
+  const vaultPath = resolve(vaultArg)
 
   const stats = await reloadVault(vaultPath)
   const docs = getDocuments()

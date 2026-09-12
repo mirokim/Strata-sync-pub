@@ -159,8 +159,13 @@ export function staleHub(ctx: RuleContext): LintFinding[] {
 export function nearDuplicate(ctx: RuleContext): LintFinding[] {
   if (!ctx.similarPairs) return []
   const out: LintFinding[] = []
+  const seenPairs = new Set<string>()
   for (const pair of ctx.similarPairs) {
     if (pair.similarity < ctx.opts.duplicateMinSimilarity) continue
+    if (pair.docA === pair.docB) continue
+    const key = pair.docA < pair.docB ? `${pair.docA} ${pair.docB}` : `${pair.docB} ${pair.docA}`
+    if (seenPairs.has(key)) continue
+    seenPairs.add(key)
     if (!ctx.reportable.has(pair.docA) || !ctx.reportable.has(pair.docB)) continue
     if (ctx.graph.adjacency.get(pair.docA)?.has(pair.docB)) continue
     const a = titleOf(ctx, pair.docA), b = titleOf(ctx, pair.docB)

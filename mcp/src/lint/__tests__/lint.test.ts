@@ -18,6 +18,8 @@ describe('normalizeWikiLink', () => {
     expect(normalizeWikiLink('Combat System#Loop')).toBe('combat system')
     expect(normalizeWikiLink('Combat System^abc12')).toBe('combat system')
     expect(normalizeWikiLink('Combat System.md')).toBe('combat system')
+    expect(normalizeWikiLink('Combat System\\')).toBe('combat system')   // [[Doc\|alias]] in a table cell
+    expect(normalizeWikiLink('#Just a heading')).toBe('')
   })
 })
 
@@ -135,7 +137,7 @@ describe('runLint — fixture vault', () => {
     expect(report.summary.bySeverity.error).toBe(2)
     expect(report.summary.byRule['orphan']).toBe(3)
     expect(report.communityCount).toBeGreaterThanOrEqual(2)
-    expect(report.snapshot.communities.flat().length).toBe(docs.length)
+    expect(report.snapshot.communities.flat().length).toBe(docs.length - 1)  // the _reports doc is not in the graph
   })
 })
 
@@ -148,6 +150,7 @@ describe('runLint — optional inputs', () => {
       { docA: a, docB: copy, similarity: 0.95 },
       { docA: a, docB: b, similarity: 0.97 },      // linked → not a finding
       { docA: a, docB: copy, similarity: 0.5 },    // below threshold
+      { docA: copy, docB: a, similarity: 0.95 },   // same pair reversed → not a second finding
     ] }, { now: NOW, rules: ['near-duplicate'] })
     expect(report.findings.length).toBe(1)
     expect(report.findings[0].title).toBe('Character A ↔ Character A Copy')
@@ -173,6 +176,14 @@ describe('runLint — optional inputs', () => {
     const limited = runLint({ docs }, { now: NOW, rules: ['orphan'], limitPerRule: 1 })
     expect(limited.findings.length).toBe(1)
     expect(limited.rulesRun).toEqual(['orphan'])
+  })
+
+  it('ignored folders are left out of the graph, so a report linking to an orphan does not rescue it', () => {
+    const withReport = fixtureDocs({ 'Lint Old': { body: 'Yesterday: [[Random Note]] [[Broken Note]] [[Enemy AI Spec]]' } })
+    const report = runLint({ docs: withReport }, { now: NOW, rules: ['orphan', 'phantom-hot'] })
+    expect(report.findings.filter(f => f.rule === 'orphan').map(f => f.title).sort()).toEqual(['Broken Note', 'Character A Copy', 'Random Note'])
+    expect(report.findings.find(f => f.rule === 'phantom-hot')!.evidence.referrerCount).toBe(4)
+    expect(report.docCount).toBe(withReport.length - 1)
   })
 
   it('never reports graph_weight: skip documents', () => {
