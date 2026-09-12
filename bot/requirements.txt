@@ -4,3 +4,4 @@ slack-sdk>=3.26
 Pillow>=10.0
 python-dotenv>=1.0
 pdfkit>=1.0
+requests>=2.31
