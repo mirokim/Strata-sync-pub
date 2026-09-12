@@ -331,6 +331,23 @@ npx wrangler vectorize create strata-vault-vectors --dimensions=1024 --metric=co
 npx wrangler deploy
 ```
 
+## 에이전트 제안과 디렉터 리뷰
+
+### 에이전트는 볼트에 직접 쓰지 않는다 — `_agent/` 제안
+Claude Code나 슬랙봇이 "기록해 둘게" 하면 문서는 `_agent/YYYY-MM-DD-제목.md`에 **제안**으로 들어갑니다. 프론트매터에 `proposed_by: agent`가 붙고, 검색 점수는 절반, 린트는 이 폴더를 무시합니다. 사람이 앱에서 문서를 열면 위에 배너가 떠서 **승격**(프론트매터 정리 + 원하는 폴더로 이동) 또는 **폐기**를 고릅니다. 승격 전까지는 팀 지식이 아닙니다.
+
+MCP 툴: `vault_propose`(제안 쓰기, 관련 문서 위키링크 포함), `graph_suggest_links`(링크할 문서 추천), `vault_proposals`(대기 목록), `vault_promote`(승격). 슬랙: `/propose 제목 | 본문`.
+
+### 저장하면 디렉터 다섯 명이 읽는다 — `_reviews/`
+기획 문서가 서버에 저장되면(앱 동기화든 Obsidian 직접 저장이든) Worker Queue가 리뷰 작업을 받습니다. 총괄·아트·기획·레벨·프로그래밍 디렉터 페르소나가 문서를 **각자** 읽고 리스크/질문/다음 할 일을 내고, 총괄이 의견 충돌과 공통 우려, 필요한 결정을 종합합니다. 결과는 `_reviews/<폴더>/<문서명>.md`로 볼트에 들어가 다음 pull에 모두에게 도착합니다 — 아무도 버튼을 누르지 않아도 다음날 아침 회의 전에 리뷰가 있습니다.
+
+비용 통제: 같은 내용은 한 번만, 경로당 6시간 쿨다운(쿨다운 중 저장은 끝나고 리뷰), 400자 미만·`_`/`.` 폴더·충돌 사본·봇 저장은 제외, 문서당 12,000자 캡. `REVIEW_FOLDERS`로 대상 폴더를 좁힐 수 있고, 모델은 `REVIEW_MODEL`(기본 `claude-opus-5`; 비용을 낮추려면 `claude-sonnet-5`). 켜기:
+```bash
+npx wrangler queues create strata-review-jobs
+npx wrangler secret put ANTHROPIC_API_KEY
+npx wrangler deploy
+```
+
 ## 자동화 (크론)
 
 Electron 메인 프로세스의 스케줄러(`electron/cronScheduler.cjs`, node-cron)가 두 가지 작업을 돌립니다.
@@ -830,6 +847,23 @@ A Cron Trigger runs in the Worker at 04:00 Asia/Seoul, once for the whole team v
 To enable embeddings:
 ```bash
 npx wrangler vectorize create strata-vault-vectors --dimensions=1024 --metric=cosine
+npx wrangler deploy
+```
+
+## Agent proposals and director reviews
+
+### Agents never write into the vault — `_agent/` proposals
+When Claude Code or the Slack bot "records" something, it lands in `_agent/YYYY-MM-DD-title.md` as a **proposal**: `proposed_by: agent` in the frontmatter, half weight in search, ignored by the lint. Opening it in the app shows a banner to **promote** (strip the bookkeeping, move to a folder of your choice) or **discard**. Until promoted it is not team knowledge.
+
+MCP tools: `vault_propose` (write a proposal with wikilinks to related documents), `graph_suggest_links` (what it should link to), `vault_proposals` (pending list), `vault_promote`. Slack: `/propose title | body`.
+
+### Save a document, five directors read it — `_reviews/`
+When a design document reaches the server (app sync or a direct Obsidian save), a Worker Queue job runs five director personas — chief, art, design, level, programming — **independently** over the document (risks, questions, one next step), then the chief synthesises disagreements, shared concerns and the decision needed. The result is written to `_reviews/<folder>/<document>.md` and arrives on every machine with the next pull — a review is waiting before the morning stand-up without anyone pressing a button.
+
+Cost controls: one review per content version, a 6-hour cooldown per path (a save inside the window is reviewed when it ends), no reviews for files under 400 characters, `_`/`.` folders, conflict copies or bot writes, 12,000-character cap per document. `REVIEW_FOLDERS` narrows the scope; `REVIEW_MODEL` picks the model (default `claude-opus-5`; `claude-sonnet-5` to spend less). Enable with:
+```bash
+npx wrangler queues create strata-review-jobs
+npx wrangler secret put ANTHROPIC_API_KEY
 npx wrangler deploy
 ```
 
