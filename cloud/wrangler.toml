@@ -20,7 +20,7 @@ bucket_name = "strata-vault"
 [[d1_databases]]
 binding = "DB"
 database_name = "strata-sync-db"
-database_id = "REPLACE_WITH_D1_ID"
+database_id = "794343d3-268f-4601-8f63-8e831633dd6f"
 migrations_dir = "migrations"
 
 [vars]
@@ -33,9 +33,11 @@ REVIEW_FOLDERS = ""
 # Browser origins of the web app (Vercel). `*` while the API is token-protected and origins are not final.
 ALLOWED_ORIGINS = "*"
 
-# The nightly batch parses every document and runs Louvain; give it CPU headroom (paid plans).
-[limits]
-cpu_ms = 300000
+# The nightly batch parses every document and runs Louvain. On the Workers Paid plan raise the CPU
+# budget with the block below; the Free plan rejects `[limits]` entirely (and caps CPU at 10 ms,
+# which is enough for the API but not for the nightly lint of a large vault).
+# [limits]
+# cpu_ms = 300000
 
 # ── Nightly batch: lint report + embeddings. 19:00 UTC = 04:00 Asia/Seoul. ──
 [triggers]

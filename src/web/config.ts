@@ -37,6 +37,12 @@ export function normalizeServerUrl(raw: string): string | null {
   }
 }
 
+/** Server baked into the build (Vercel env `VITE_STRATA_SERVER_URL`); users then never type a URL. */
+export function defaultServerUrl(): string | null {
+  const raw = (import.meta.env?.VITE_STRATA_SERVER_URL as string | undefined) ?? ''
+  return normalizeServerUrl(raw)
+}
+
 /** Pseudo vault path used as `vaultPath` inside the app for a remote vault. */
 export function remoteVaultPath(serverUrl: string): string {
   return `remote://${new URL(serverUrl).host}`

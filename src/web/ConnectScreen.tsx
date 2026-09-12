@@ -4,7 +4,7 @@
  */
 import { useState } from 'react'
 import { Cloud, Loader2, AlertTriangle, ArrowRight } from 'lucide-react'
-import { normalizeServerUrl, saveWebConfig, type WebConfig } from './config'
+import { defaultServerUrl, normalizeServerUrl, saveWebConfig, type WebConfig } from './config'
 import { testConnection } from './remoteVault'
 
 interface Props {
@@ -20,7 +20,8 @@ const label: React.CSSProperties = { fontSize: 11, fontWeight: 500, color: 'var(
 const hint: React.CSSProperties = { fontSize: 11, color: 'var(--color-text-muted)', marginTop: 5, lineHeight: 1.5 }
 
 export default function ConnectScreen({ initial, onConnected }: Props) {
-  const [url, setUrl] = useState(initial?.url ?? '')
+  const preset = defaultServerUrl()
+  const [url, setUrl] = useState(initial?.url ?? preset ?? '')
   const [token, setToken] = useState(initial?.token ?? '')
   const [author, setAuthor] = useState(initial?.author ?? '')
   const [busy, setBusy] = useState(false)
@@ -53,14 +54,21 @@ export default function ConnectScreen({ initial, onConnected }: Props) {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 16, borderRadius: 2, background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}>
-          <div>
-            <label style={label} htmlFor="connect-url">Server</label>
-            <input id="connect-url" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://strata-sync.<account>.workers.dev" style={field} spellCheck={false} autoFocus autoComplete="url" data-testid="connect-url" />
-            <div style={hint}>The team's Cloudflare Worker. Ask whoever deployed it.</div>
-          </div>
+          {preset ? (
+            <div>
+              <label style={label}>Server</label>
+              <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', wordBreak: 'break-all' }} data-testid="connect-url-preset">{preset}</div>
+            </div>
+          ) : (
+            <div>
+              <label style={label} htmlFor="connect-url">Server</label>
+              <input id="connect-url" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://strata-sync.<account>.workers.dev" style={field} spellCheck={false} autoFocus autoComplete="url" data-testid="connect-url" />
+              <div style={hint}>The team's Cloudflare Worker. Ask whoever deployed it.</div>
+            </div>
+          )}
           <div>
             <label style={label} htmlFor="connect-token">Team token</label>
-            <input id="connect-token" type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="shared team secret" style={field} autoComplete="off" data-testid="connect-token" />
+            <input id="connect-token" type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="shared team secret" style={field} autoComplete="off" autoFocus={Boolean(preset)} data-testid="connect-token" />
             <div style={hint}>Stored in this browser only. The same token the desktop app and MCP clients use.</div>
           </div>
           <div>
