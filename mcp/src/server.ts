@@ -980,7 +980,7 @@ This prompt is automatically injected when passing through the MCP gate.`
 
 export function createServer(): Server {
   const server = new Server(
-    { name: 'strata-sync', version: '0.3.0' },
+    { name: 'strata-sync', version: '0.4.0' },
     { capabilities: { tools: {}, resources: {}, prompts: {} } },
   )
 

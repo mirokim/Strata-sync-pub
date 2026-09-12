@@ -1,6 +1,6 @@
 {
   "name": "strata-sync-mcp",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "MCP server for Strata Sync — full vault/chat/graph/agent control",
   "type": "module",
   "main": "dist/src/index.js",
