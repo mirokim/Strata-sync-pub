@@ -15,9 +15,9 @@ import { EditorView, keymap, drawSelection, highlightActiveLine } from '@codemir
 import { EditorState, Compartment } from '@codemirror/state'
 import { history, defaultKeymap, historyKeymap } from '@codemirror/commands'
 import { syntaxHighlighting } from '@codemirror/language'
-import { markdown } from '@codemirror/lang-markdown'
+import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import matter from 'gray-matter'
-import { ArrowLeft, Save, CheckCircle, AlertCircle, X, Lock, Unlock, Pencil, Wand2, RotateCcw, Loader2, Brain, EyeOff, Users } from 'lucide-react'
+import { ArrowLeft, Save, CheckCircle, AlertCircle, X, Lock, Unlock, Pencil, Wand2, RotateCcw, Loader2, Brain, EyeOff, Users, Eye, Code2 } from 'lucide-react'
 import { useUIStore } from '@/stores/uiStore'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useSettingsStore } from '@/stores/settingsStore'
@@ -36,11 +36,14 @@ import { currentRemoteVault } from '@/web/remoteVault'
 import { imageFileFrom, imageExtension } from '@/lib/imageDoc'
 import { docPath } from '@/lib/brain'
 import { showToast } from '@/stores/toastStore'
+import { useT } from '@/i18n'
 import ProposalBanner from './ProposalBanner'
 import BrainPanel from './BrainPanel'
 import type { LoadedDocument } from '@/types'
 import { markdownHighlight, vaultTheme } from '@/lib/editor/codemirrorTheme'
 import { buildWikiLinkPlugin, buildHighlightPlugin, buildCommentPlugin } from '@/lib/editor/wikiLinkPlugin'
+import { livePreview } from '@/lib/editor/livePreview'
+import { findFrontmatter } from '@/lib/editor/frontmatterProps'
 import {
   mdIndentList,
   mdDedentList,
@@ -153,6 +156,7 @@ function SuggestDropdown({ docs, selectedIdx, rect, onSelect }: SuggestDropdownP
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function MarkdownEditor() {
+  const t = useT()
   const { editingDocId, closeEditor, openInEditor, brainPanelOpen, toggleBrainPanel } = useUIStore()
   const { loadedDocuments, setLoadedDocuments, vaultPath } = useVaultStore()
   const vaultFolders = useVaultStore(s => s.vaultFolders)
@@ -195,6 +199,17 @@ export default function MarkdownEditor() {
   const editorMountRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const readOnlyCompartment = useRef(new Compartment())
+  const livePreviewCompartment = useRef(new Compartment())
+  const editorLivePreview = useSettingsStore(s => s.editorLivePreview)
+  const toggleEditorLivePreview = useSettingsStore(s => s.toggleEditorLivePreview)
+  const language = useSettingsStore(s => s.language)
+  // Live preview extension for the current language (labels are baked into the widgets)
+  const livePreviewExtension = useCallback(() => livePreview({
+    isLockedRef,
+    labels: { properties: t('Properties'), editSource: t('Edit source'), multiline: t('Multi-line value — edit in source'), addProperty: t('Add property'), key: t('key') },
+  }), [t])
+  const livePreviewExtensionRef = useRef(livePreviewExtension)
+  livePreviewExtensionRef.current = livePreviewExtension
 
   // Document list for autocomplete (always up to date)
   const docInfoRef = useRef<DocInfo[]>([])
@@ -274,9 +289,9 @@ export default function MarkdownEditor() {
       }
     } catch (e) {
       console.error('[MarkdownEditor] rename failed:', e)
-      showToast(`Rename failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
+      showToast(t('Rename failed: {error}', { error: e instanceof Error ? e.message : String(e) }), 'error')
     }
-  }, [vaultPath, setLoadedDocuments, setNodes, setLinks, openInEditor])
+  }, [vaultPath, setLoadedDocuments, setNodes, setLinks, openInEditor, t])
 
   // ── Save ──────────────────────────────────────────────────────────────────
 
@@ -361,10 +376,10 @@ export default function MarkdownEditor() {
       setTimeout(() => setSaveStatus('idle'), 2000)
     } catch (e) {
       console.error('[MarkdownEditor] save failed:', e)
-      showToast(`File save failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
+      showToast(t('File save failed: {error}', { error: e instanceof Error ? e.message : String(e) }), 'error')
       setSaveStatus('error')
     }
-  }, [setLoadedDocuments, setNodes, setLinks])
+  }, [setLoadedDocuments, setNodes, setLinks, t])
 
   const doSaveRef = useRef(doSave)
   doSaveRef.current = doSave
@@ -398,8 +413,8 @@ export default function MarkdownEditor() {
     const copyAbs = vaultRoot ? `${vaultRoot}${sep}${copyRel.replace(/\//g, sep)}` : null
     if (copyAbs && window.vaultAPI) {
       window.vaultAPI.saveFile(copyAbs, current)
-        .then(() => showToast(`${doc.filename} was changed elsewhere — your unsaved edits are kept as "${copyRel.split('/').pop()}"`, 'warn', 6000))
-        .catch(e => showToast(`Could not keep your edits as a conflict copy: ${e instanceof Error ? e.message : String(e)}`, 'error'))
+        .then(() => showToast(t('{filename} was changed elsewhere — your unsaved edits are kept as "{copyName}"', { filename: doc.filename, copyName: copyRel.split('/').pop() ?? '' }), 'warn', 6000))
+        .catch(e => showToast(t('Could not keep your edits as a conflict copy: {error}', { error: e instanceof Error ? e.message : String(e) }), 'error'))
     }
     adopt()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -431,38 +446,38 @@ export default function MarkdownEditor() {
     const remote = currentRemoteVault()
     if (!remote || !doc) return
     const makePersonal = !doc.personal
-    if (!makePersonal && !window.confirm(`Share "${doc.filename.replace(/\.md$/i, '')}" with the team? Everyone will see it from now on, members will react to it, and its history starts here.`)) return
+    if (!makePersonal && !window.confirm(t('Share "{name}" with the team? Everyone will see it from now on, members will react to it, and its history starts here.', { name: doc.filename.replace(/\.md$/i, '') }))) return
     setTogglingPersonal(true)
     try {
       if (isDirty.current && viewRef.current) await doSaveRef.current(viewRef.current.state.doc.toString())
       const r = await remote.setPersonal(doc.absolutePath, makePersonal)
-      showToast(r.personal ? 'Only you can see this document now.' : 'Shared with the team.', 'success')
+      showToast(r.personal ? t('Only you can see this document now.') : t('Shared with the team.'), 'success')
     } catch (e) {
       showToast(e instanceof Error ? e.message : String(e), 'error')
     } finally {
       setTogglingPersonal(false)
     }
-  }, [doc])
+  }, [doc, t])
 
   // ── Image paste / drop → attachments/ + image document (web build) ──────────────
   const handleImagePaste = useCallback(async (file: File, view: EditorView) => {
     const remote = currentRemoteVault()
     const current = loadedDocsRef.current?.find(d => d.id === editingDocId)
-    if (!remote || !current) { showToast('Pasting images needs the team server (web app).', 'warn'); return }
+    if (!remote || !current) { showToast(t('Pasting images needs the team server (web app).'), 'warn'); return }
     const ext = imageExtension(file.type)
     if (!ext) return
-    if (file.size > 6 * 1024 * 1024) { showToast('Image is larger than 6 MB — resize it first.', 'warn'); return }
+    if (file.size > 6 * 1024 * 1024) { showToast(t('Image is larger than 6 MB — resize it first.'), 'warn'); return }
     try {
       const bytes = new Uint8Array(await file.arrayBuffer())
       const { embed } = await remote.pasteImage(bytes, ext, docPath(current))
       const pos = view.state.selection.main.head
       view.dispatch({ changes: { from: pos, insert: `${embed}
 ` }, selection: { anchor: pos + embed.length + 1 } })
-      showToast('Image saved — describe it from your MCP client (images_undescribed) to make it searchable.', 'success')
+      showToast(t('Image saved — describe it from your MCP client (images_undescribed) to make it searchable.'), 'success')
     } catch (e) {
-      showToast(`Image upload failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
+      showToast(t('Image upload failed: {error}', { error: e instanceof Error ? e.message : String(e) }), 'error')
     }
-  }, [editingDocId])
+  }, [editingDocId, t])
   const handleImagePasteRef = useRef(handleImagePaste)
   handleImagePasteRef.current = handleImagePaste
 
@@ -517,9 +532,13 @@ export default function MarkdownEditor() {
       },
     )
 
+    // Open with the cursor below the frontmatter, so the properties render instead of raw YAML
+    const raw = doc.rawContent ?? ''
+    const fmEnd = findFrontmatter(raw)?.to
     const view = new EditorView({
       state: EditorState.create({
-        doc: doc.rawContent ?? '',
+        doc: raw,
+        selection: fmEnd != null ? { anchor: Math.min(raw.length, fmEnd + 1) } : undefined,
         extensions: [
           history(),
           drawSelection(),
@@ -601,10 +620,10 @@ export default function MarkdownEditor() {
             { key: 'Ctrl-s', run: () => { handleManualSaveRef.current(); return true } },
             { key: 'Mod-s', run: () => { handleManualSaveRef.current(); return true } },
           ]),
-          markdown(),
+          markdown({ base: markdownLanguage }),   // GFM: tables, task lists, strikethrough
           syntaxHighlighting(markdownHighlight),
           wikiPlugin,
-          buildHighlightPlugin(),
+          buildHighlightPlugin({ isLockedRef }),
           buildCommentPlugin(),
           EditorView.domEventHandlers({
             paste: (event, view) => {
@@ -625,6 +644,7 @@ export default function MarkdownEditor() {
           vaultTheme,
           EditorView.lineWrapping,
           readOnlyCompartment.current.of([]),
+          livePreviewCompartment.current.of(useSettingsStore.getState().editorLivePreview ? livePreviewExtensionRef.current() : []),
           EditorView.updateListener.of((update) => {
             // Auto-save
             if (update.docChanged) {
@@ -686,6 +706,13 @@ export default function MarkdownEditor() {
       ),
     })
   }, [isLocked])
+
+  // Live preview ↔ source, and relabel the widgets when the UI language changes
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: livePreviewCompartment.current.reconfigure(editorLivePreview ? livePreviewExtension() : []),
+    })
+  }, [editorLivePreview, language, livePreviewExtension])
 
   // Sync localTags on document switch
   useEffect(() => {
@@ -765,14 +792,14 @@ export default function MarkdownEditor() {
     const parsed = matter(raw)
     const pageId = parsed.data?.confluence_page_id as string | undefined
     if (!pageId) {
-      alert('No confluence_page_id in frontmatter.\nExample: confluence_page_id: "12345"')
+      alert(t('No confluence_page_id in frontmatter.\nExample: confluence_page_id: "12345"'))
       return
     }
     const { activeVaultId } = useVaultStore.getState()
     const { confluenceConfigs } = useSettingsStore.getState()
     const cfg = confluenceConfigs[activeVaultId]
     if (!cfg?.baseUrl) {
-      alert('Please configure Confluence integration in settings first.')
+      alert(t('Please configure Confluence integration in settings first.'))
       return
     }
     const authHeader = cfg.authType === 'cloud' || cfg.authType === 'server_basic'
@@ -791,10 +818,10 @@ export default function MarkdownEditor() {
       setTimeout(() => setConfluenceUploadStatus('idle'), 3000)
     } catch (e) {
       setConfluenceUploadStatus('error')
-      alert(`Confluence upload failed: ${e instanceof Error ? e.message : String(e)}`)
+      alert(t('Confluence upload failed: {error}', { error: e instanceof Error ? e.message : String(e) }))
       setTimeout(() => setConfluenceUploadStatus('idle'), 3000)
     }
-  }, [])
+  }, [t])
 
   const applySuggestedSpeaker = useCallback(() => {
     if (!suggestedSpeaker) return
@@ -819,7 +846,7 @@ export default function MarkdownEditor() {
           color: 'var(--color-text-muted)', fontSize: 13,
         }}
       >
-        <span>No file open</span>
+        <span>{t('No file open')}</span>
         <button
           onClick={closeEditor}
           style={{
@@ -832,7 +859,7 @@ export default function MarkdownEditor() {
           onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-text-secondary)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)' }}
         >
           <ArrowLeft size={13} />
-          Back to Graph
+          {t('Back to Graph')}
         </button>
       </div>
     )
@@ -853,13 +880,13 @@ export default function MarkdownEditor() {
     if (result.kind === 'promoted') {
       const target = result.newAbsolutePath.replace(/\\/g, '/')
       const newDoc = docs.find(d => d.absolutePath.replace(/\\/g, '/') === target)
-      showToast('Proposal promoted into the vault', 'success')
+      showToast(t('Proposal promoted into the vault'), 'success')
       if (newDoc) openInEditor(newDoc.id); else closeEditor()
     } else {
-      showToast('Proposal discarded', 'success')
+      showToast(t('Proposal discarded'), 'success')
       closeEditor()
     }
-  }, [vaultPath, setLoadedDocuments, setNodes, setLinks, openInEditor, closeEditor])
+  }, [vaultPath, setLoadedDocuments, setNodes, setLinks, openInEditor, closeEditor, t])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -869,7 +896,7 @@ export default function MarkdownEditor() {
           vaultPath={vaultPath}
           folders={vaultFolders}
           onDone={handleProposalDone}
-          onError={msg => showToast(`Proposal action failed: ${msg}`, 'error')}
+          onError={msg => showToast(t('Proposal action failed: {message}', { message: msg }), 'error')}
         />
       )}
       {/* ── Toolbar ── */}
@@ -879,7 +906,7 @@ export default function MarkdownEditor() {
           style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', padding: '3px 6px', borderRadius: 4, fontSize: 11, transition: 'color 0.1s' }}
           onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-primary)')}
           onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
-          title="Close editor"
+          title={t('Close editor')}
         >
           <ArrowLeft size={13} />
         </button>
@@ -906,7 +933,7 @@ export default function MarkdownEditor() {
         ) : (
           <button
             onClick={canSave ? startRename : undefined}
-            title={canSave ? 'Click to rename' : doc.filename}
+            title={canSave ? t('Click to rename') : doc.filename}
             style={{
               flex: 1, fontSize: 12, fontWeight: 500,
               color: 'var(--color-text-primary)',
@@ -929,26 +956,36 @@ export default function MarkdownEditor() {
             data-testid="personal-toggle"
             aria-pressed={Boolean(doc?.personal)}
             style={{ display: 'flex', alignItems: 'center', gap: 4, background: doc?.personal ? 'var(--color-bg-active)' : 'transparent', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 4, color: doc?.personal ? 'var(--color-accent)' : 'var(--color-text-muted)', cursor: 'pointer', padding: '3px 7px', fontSize: 11, transition: 'color 0.15s, border-color 0.15s' }}
-            title={doc?.personal ? 'Only you can see this document — click to share it with the team' : 'Keep this document to yourself (only you will see it)'}
+            title={doc?.personal ? t('Only you can see this document — click to share it with the team') : t('Keep this document to yourself (only you will see it)')}
           >
             {doc?.personal ? <EyeOff size={11} /> : <Users size={11} />}
-            {doc?.personal ? 'Only me' : ''}
+            {doc?.personal ? t('Only me') : ''}
           </button>
         )}
 
         <button
+          onClick={toggleEditorLivePreview}
+          aria-pressed={editorLivePreview}
+          data-testid="live-preview-toggle"
+          style={{ display: 'flex', alignItems: 'center', gap: 3, background: 'transparent', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 4, color: editorLivePreview ? 'var(--color-accent)' : 'var(--color-text-muted)', cursor: 'pointer', padding: '3px 7px', fontSize: 11, transition: 'color 0.15s, border-color 0.15s' }}
+          title={editorLivePreview ? t('Live preview on — click for raw source') : t('Source mode — click for live preview')}
+        >
+          {editorLivePreview ? <Eye size={11} /> : <Code2 size={11} />}
+        </button>
+
+        <button
           onClick={() => setIsLocked(v => !v)}
           style={{ display: 'flex', alignItems: 'center', gap: 3, background: 'transparent', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 4, color: isLocked ? 'var(--color-error)' : 'var(--color-text-muted)', cursor: 'pointer', padding: '3px 7px', fontSize: 11, transition: 'color 0.15s, border-color 0.15s' }}
-          title={isLocked ? 'Unlock (allow editing)' : 'Lock (restrict editing)'}
+          title={isLocked ? t('Unlock (allow editing)') : t('Lock (restrict editing)')}
         >
           {isLocked ? <Lock size={11} /> : <Unlock size={11} />}
         </button>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: !canSave ? 'var(--color-text-muted)' : saveStatus === 'saved' ? 'var(--color-success)' : saveStatus === 'error' ? 'var(--color-error)' : 'var(--color-text-muted)', transition: 'color 0.2s' }}>
-          {!canSave && 'Read-only'}
-          {canSave && saveStatus === 'saved' && <><CheckCircle size={11} />Saved</>}
-          {canSave && saveStatus === 'saving' && 'Saving...'}
-          {canSave && saveStatus === 'error' && <><AlertCircle size={11} />Save failed</>}
+          {!canSave && t('Read-only')}
+          {canSave && saveStatus === 'saved' && <><CheckCircle size={11} />{t('Saved')}</>}
+          {canSave && saveStatus === 'saving' && t('Saving...')}
+          {canSave && saveStatus === 'error' && <><AlertCircle size={11} />{t('Save failed')}</>}
         </div>
 
         <button
@@ -957,7 +994,7 @@ export default function MarkdownEditor() {
           style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'transparent', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 4, color: 'var(--color-text-muted)', cursor: canSave ? 'pointer' : 'not-allowed', opacity: canSave ? 1 : 0.3, padding: '3px 7px', fontSize: 11, transition: 'color 0.1s, border-color 0.1s' }}
           onMouseEnter={e => { if (canSave) { e.currentTarget.style.color = 'var(--color-text-primary)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)' } }}
           onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-text-muted)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)' }}
-          title={canSave ? 'Save (Ctrl+S)' : 'Cannot save non-vault files'}
+          title={canSave ? t('Save (Ctrl+S)') : t('Cannot save non-vault files')}
         >
           <Save size={11} />
         </button>
@@ -983,10 +1020,10 @@ export default function MarkdownEditor() {
                 cursor: uploading ? 'default' : 'pointer', opacity: uploading ? 0.5 : 1,
                 padding: '3px 7px', transition: 'all 0.1s',
               }}
-              title="Upload to Confluence page"
+              title={t('Upload to Confluence page')}
             >
               {uploading ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : '↑'}
-              {done ? 'Uploaded' : err ? 'Failed' : 'Confluence'}
+              {done ? t('Uploaded') : err ? t('Failed') : 'Confluence'}
             </button>
           )
         })()}
@@ -996,7 +1033,7 @@ export default function MarkdownEditor() {
           data-testid="brain-toggle"
           aria-pressed={brainPanelOpen}
           style={{ display: 'flex', alignItems: 'center', background: 'transparent', border: 'none', color: brainPanelOpen ? 'var(--color-accent)' : 'var(--color-text-muted)', cursor: 'pointer', padding: '3px', borderRadius: 4, transition: 'color 0.1s' }}
-          title={brainPanelOpen ? 'Hide what the vault knows around this document' : 'Show what the vault knows around this document'}
+          title={brainPanelOpen ? t('Hide what the vault knows around this document') : t('Show what the vault knows around this document')}
         >
           <Brain size={13} />
         </button>
@@ -1005,7 +1042,7 @@ export default function MarkdownEditor() {
           style={{ display: 'flex', alignItems: 'center', background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', padding: '3px', borderRadius: 4, transition: 'color 0.1s' }}
           onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-primary)')}
           onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
-          title="Close"
+          title={t('Close')}
         >
           <X size={13} />
         </button>
@@ -1028,9 +1065,9 @@ export default function MarkdownEditor() {
               #{tag}
               {!isLocked && (
                 <button
-                  onClick={() => handleTagChange(localTags.filter(t => t !== tag))}
+                  onClick={() => handleTagChange(localTags.filter(existing => existing !== tag))}
                   style={{ display: 'flex', alignItems: 'center', background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', padding: 0, fontSize: 10, lineHeight: 1 }}
-                  title={`Remove "${tag}" tag`}
+                  title={t('Remove "{tag}" tag', { tag })}
                 >
                   ×
                 </button>
@@ -1051,7 +1088,7 @@ export default function MarkdownEditor() {
                         setIsAddingTag(false)
                       }}
                       style={{ fontSize: 10, color: 'var(--color-accent)', background: 'var(--color-bg-active)', border: '1px solid rgba(96,165,250,0.3)', cursor: 'pointer', padding: '1px 5px', borderRadius: 3, transition: 'opacity 0.1s' }}
-                      title={`Add #${p} tag`}
+                      title={t('Add #{tag} tag', { tag: p })}
                     >
                       #{p}
                     </button>
@@ -1059,7 +1096,7 @@ export default function MarkdownEditor() {
                   <input
                     autoFocus
                     value={tagInput}
-                    placeholder="Type tag..."
+                    placeholder={t('Type tag...')}
                     onChange={e => setTagInput(e.target.value)}
                     onKeyDown={e => {
                       if (e.key === 'Enter') { e.preventDefault(); commitTag() }
@@ -1074,9 +1111,9 @@ export default function MarkdownEditor() {
                   style={{ fontSize: 10, color: 'var(--color-text-muted)', background: 'transparent', border: 'none', cursor: 'pointer', padding: '1px 4px', borderRadius: 3, transition: 'color 0.1s' }}
                   onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-primary)')}
                   onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
-                  title="Add tag"
+                  title={t('Add tag')}
                 >
-                  + Tag
+                  + {t('Tag')}
                 </button>
           )}
 
@@ -1086,7 +1123,7 @@ export default function MarkdownEditor() {
               style={{ display: 'flex', alignItems: 'center', background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', padding: '1px 4px', borderRadius: 3, transition: 'color 0.1s' }}
               onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-primary)')}
               onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
-              title="Undo tag changes"
+              title={t('Undo tag changes')}
             >
               <RotateCcw size={10} />
             </button>
@@ -1094,7 +1131,7 @@ export default function MarkdownEditor() {
 
           {suggestedSpeaker !== null && (
             <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 5, paddingTop: 3 }}>
-              <span style={{ fontSize: 9, color: 'var(--color-text-muted)' }}>Persona suggestion:</span>
+              <span style={{ fontSize: 9, color: 'var(--color-text-muted)' }}>{t('Persona suggestion:')}</span>
               <span style={{ fontSize: 10, color: 'var(--color-accent)', background: 'var(--color-bg-active)', borderRadius: 3, padding: '1px 5px' }}>
                 {suggestedSpeaker}
               </span>
@@ -1104,7 +1141,7 @@ export default function MarkdownEditor() {
                 onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-primary)')}
                 onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
               >
-                Apply
+                {t('Apply')}
               </button>
               <button
                 onClick={() => setSuggestedSpeaker(null)}
@@ -1112,18 +1149,18 @@ export default function MarkdownEditor() {
                 onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-primary)')}
                 onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
               >
-                Cancel
+                {t('Cancel')}
               </button>
             </div>
           )}
 
           {suggestedTags !== null && (
             <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 5, paddingTop: 3 }}>
-              <span style={{ fontSize: 9, color: 'var(--color-text-muted)' }}>Suggestions:</span>
+              <span style={{ fontSize: 9, color: 'var(--color-text-muted)' }}>{t('Suggestions:')}</span>
               {suggestedTags.length === 0
-                ? <span style={{ fontSize: 9, color: 'var(--color-text-muted)' }}>No suitable tags</span>
-                : suggestedTags.map(t => (
-                    <span key={t} style={{ fontSize: 10, color: 'var(--color-accent)', background: 'var(--color-bg-active)', borderRadius: 3, padding: '1px 5px' }}>#{t}</span>
+                ? <span style={{ fontSize: 9, color: 'var(--color-text-muted)' }}>{t('No suitable tags')}</span>
+                : suggestedTags.map(kw => (
+                    <span key={kw} style={{ fontSize: 10, color: 'var(--color-accent)', background: 'var(--color-bg-active)', borderRadius: 3, padding: '1px 5px' }}>#{kw}</span>
                   ))
               }
               {suggestedTags.length > 0 && (
@@ -1133,7 +1170,7 @@ export default function MarkdownEditor() {
                   onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-primary)')}
                   onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
                 >
-                  Apply
+                  {t('Apply')}
                 </button>
               )}
               <button
@@ -1142,7 +1179,7 @@ export default function MarkdownEditor() {
                 onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-primary)')}
                 onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
               >
-                Cancel
+                {t('Cancel')}
               </button>
             </div>
           )}

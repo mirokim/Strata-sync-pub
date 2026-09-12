@@ -145,24 +145,34 @@ export function buildWikiLinkPlugin(
 
 // ── ==Highlight== decorator ───────────────────────────────────────────────────
 
-export function buildHighlightPlugin() {
+export function buildHighlightPlugin(options?: { isLockedRef?: { current: boolean } }) {
   return ViewPlugin.fromClass(
     class {
       decorations: DecorationSet
       constructor(view: EditorView) { this.decorations = this.compute(view) }
       update(u: ViewUpdate) {
-        if (u.docChanged || u.selectionSet || u.viewportChanged)
+        if (u.docChanged || u.selectionSet || u.viewportChanged || u.transactions.some(tr => tr.effects.length > 0))
           this.decorations = this.compute(u.view)
       }
       compute(view: EditorView): DecorationSet {
         const { state } = view
         const decs: Range<Decoration>[] = []
         const re = /==([^=\n]+)==/g
+        const locked = options?.isLockedRef?.current ?? false
         for (const { from, to } of view.visibleRanges) {
           const text = state.doc.sliceString(from, to)
           let m
           while ((m = re.exec(text)) !== null) {
-            decs.push(Decoration.mark({ class: 'cm-highlight-mark' }).range(from + m.index, from + m.index + m[0].length))
+            const start = from + m.index, end = start + m[0].length
+            // Like the other live-preview markers, `==` shows only on the line being edited
+            const line = state.doc.lineAt(start)
+            const active = !locked && state.selection.ranges.some(r => r.from <= line.to && r.to >= line.from)
+            if (active) decs.push(Decoration.mark({ class: 'cm-highlight-mark' }).range(start, end))
+            else {
+              decs.push(Decoration.replace({}).range(start, start + 2))
+              decs.push(Decoration.mark({ class: 'cm-highlight-mark' }).range(start + 2, end - 2))
+              decs.push(Decoration.replace({}).range(end - 2, end))
+            }
           }
         }
         return Decoration.set(decs.sort((a, b) => a.from - b.from))

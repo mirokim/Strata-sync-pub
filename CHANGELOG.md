@@ -6,6 +6,20 @@ The product is a shared brain for a team, not a wiki maintenance tool: one vault
 into, a graph over it, and AI members who read it through a role of their own.
 
 ### Added
+- **Korean UI (i18n)** — every user-visible string goes through `t()` / `useT()` (`src/i18n`): the English
+  text is the key, `src/i18n/ko/<area>.ts` holds the Korean, a missing entry falls back to English.
+  Settings → General → Language: System (browser language) / 한국어 / English; `<html lang>` follows.
+  1,350 translated strings; `node scripts/i18n-check.mjs` reports conflicting or missing translations.
+  Retired tabs (AI, Personas, Search, Vector, Debate, Edit Agent) stay English.
+- **Live preview editor** — Obsidian-style rendering in place (`src/lib/editor/livePreview.ts`):
+  frontmatter becomes an editable Properties table (text, number, date, checkbox, list chips; each
+  edit rewrites just that YAML line), headings at size with `#` hidden, `**` `*` `~~` backtick and
+  link markers hidden off the cursor line, bullets, clickable task checkboxes, blockquote bars,
+  callouts (`> [!warning]`), `#tags`, GFM tables rendered as tables, horizontal rules, code fences
+  with a language label. The lines the selection touches show their source; a locked document
+  renders everything (reading view). Toggle live preview / source in the editor toolbar
+  (persisted). The editor now parses GFM (tables, task lists, strikethrough were not parsed before)
+  and uses the body font in live preview. `perf/editor.html` mounts the editor on a sample document.
 - **Around this document** — the editor's Brain panel: what the AI members said when it was
   saved, its version history with diffs, which documents link here and which it links to,
   proposals citing it, documents in the same neighbourhood (`src/lib/brain.ts`, `BrainPanel`).

@@ -66,6 +66,9 @@ export const vaultTheme = EditorView.theme({
     fontStyle: 'italic',
   },
   '&.cm-readonly .cm-content': { opacity: '0.6' },
+  // Live preview reads like a document: body font, a little larger; code stays monospace (livePreviewTheme)
+  '&.cm-live .cm-scroller': { fontFamily: 'inherit', fontSize: '14px', lineHeight: '1.75' },
+  '&.cm-live .cm-line': { color: 'var(--color-text-primary)' },
 })
 
 // Re-export syntaxHighlighting bound to markdownHighlight for convenience
