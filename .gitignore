@@ -53,3 +53,6 @@ venv/
 bot/cron-logs/
 bot/slackbot_logs/
 logs/
+
+# Unpacked DOCX intermediate (regenerate with scripts/office/unpack.py)
+manual/manual_unpacked/

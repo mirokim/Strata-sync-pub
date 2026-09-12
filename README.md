@@ -17,7 +17,9 @@ Vault 폴더 (.md 파일)
 딥 인사이트 (스트리밍)
 ```
 
-**완전한 로컬 + 오프라인 동작** — 백엔드 서버 불필요. 모든 RAG가 BM25, TF-IDF, 벡터 임베딩, 그래프 탐색으로 디바이스에서 실행됩니다.
+**로컬 모드** — 백엔드 서버 없이 동작합니다. BM25, TF-IDF, 그래프 탐색은 디바이스에서 실행되고, 벡터 임베딩은 로컬 BGE-M3 서버(오프라인)나 Gemini API 중 가용한 쪽을 씁니다.
+
+**팀 모드 (진행 중)** — 볼트를 Cloudflare R2로 동기화하고, 임베딩·볼트 린트·리뷰를 서버 배치로 돌려 팀 전체가 같은 그래프를 보게 하는 작업이 진행 중입니다. 계획은 `docs/plan-team-vault-2026-09.html`을 참고하세요.
 
 ---
 
@@ -50,13 +52,13 @@ Vault 폴더 (.md 파일)
 - **브릿지 노드 탐지**: 다중 클러스터를 연결하는 아키텍처 핵심 문서 식별
 
 ### 벡터 임베딩 검색
+- **임베딩 프로바이더 자동 선택**: 로컬 BGE-M3 서버(`scripts/local_embed_server.py`, 1,024차원, 오프라인)가 떠 있으면 우선 사용, 없으면 Google Gemini `gemini-embedding-001`(3,072차원, API 키 필요). 프로바이더가 바뀌면 캐시를 전량 재빌드해 차원 불일치를 막습니다
 - **3단계 검색 전략**: 벡터 검색 → ChromaDB → BM25 폴백 (가용성 기반 자동 전환)
-- **프론트엔드 임베딩**: Google Gemini `gemini-embedding-001` (3,072차원) — API 키 있을 때 활성화
 - **하이브리드 리랭킹**: BM25 스코어 40% + 코사인 유사도 60% 가중 합산으로 최종 순위 결정
 - **백엔드 임베딩**: ChromaDB + `sentence-transformers/all-MiniLM-L6-v2` (384차원, 오프라인, API 키 불필요)
-- **IndexedDB 캐싱**: 볼트 핑거프린트 기반 임베딩 캐시 — 재오픈 시 API 호출 없이 즉시 복원
-- **백그라운드 빌드**: 볼트 로드 후 비동기 임베딩 생성 (20개/배치, 5개 동시 요청)
-- **텍스트 청킹**: LangChain `RecursiveCharacterTextSplitter` (512자 청크, 64자 오버랩)
+- **증분 캐시**: 볼트 안 `.vector_cache_v6.json`에 섹션별 임베딩을 mtime과 함께 저장 — 문서 하나를 고치면 그 문서만 다시 임베딩합니다. 청커 버전이 바뀌면 자동 재빌드
+- **백그라운드 빌드**: 볼트 로드 후 비동기 임베딩 생성 (20개/배치)
+- **섹션 단위 청킹**: 마크다운 헤딩 기준으로 나누고 300자 미만 섹션은 이웃과 병합 (`src/lib/markdownParser.ts`)
 
 ### 멀티에이전트 RAG
 - **Chief + Worker 구조**: 핵심 문서는 Chief LLM이 전체(20K)를 읽고, 보조 문서는 Worker LLM이 병렬 요약(200자)
@@ -286,6 +288,17 @@ cd bot && pytest      # Bot
 
 ---
 
+## 자동화 (크론)
+
+Electron 메인 프로세스의 스케줄러(`electron/cronScheduler.cjs`, node-cron)가 두 가지 작업을 돌립니다.
+
+| 작업 | 기본 스케줄 | 내용 |
+|------|-------------|------|
+| `daily-run` | 매일 04:00 (Asia/Seoul) | 편집 에이전트 → 볼트 리로드 → 벡터 재빌드 체인 |
+| `health-check` | 5분마다 | 앱·봇 상태 점검 |
+
+Settings → Cron 탭에서 스케줄 변경, 수동 실행, 실행 로그 확인이 가능합니다. Jira·Confluence 자동 동기화(Settings → Jira / Confluence)는 별도 주기로 돌며 결과를 볼트에 마크다운으로 씁니다.
+
 ## 봇 연동
 
 ### Slack Bot
@@ -448,7 +461,9 @@ Context collection
 Deep insights (streaming)
 ```
 
-**Fully local and offline-capable** — no backend server required. All RAG runs on-device via BM25, TF-IDF, vector embeddings, and graph traversal.
+**Local mode** — runs without a backend server. BM25, TF-IDF and graph traversal execute on-device; vector embeddings use whichever is available: a local BGE-M3 server (offline) or the Gemini API.
+
+**Team mode (in progress)** — syncing the vault to Cloudflare R2 and running embeddings, vault lint and reviews as a server batch so the whole team sees the same graph. See `docs/plan-team-vault-2026-09.html` for the plan.
 
 ---
 
@@ -481,13 +496,13 @@ Deep insights (streaming)
 - **Bridge node detection**: Identifies keystone documents connecting multiple clusters
 
 ### Vector Embedding Search
+- **Automatic provider selection**: a local BGE-M3 server (`scripts/local_embed_server.py`, 1,024 dims, offline) is preferred when running; otherwise Google Gemini `gemini-embedding-001` (3,072 dims, API key required). A provider change triggers a full cache rebuild to avoid dimension mismatches
 - **3-tier retrieval strategy**: Vector search → ChromaDB → BM25 fallback (auto-switches based on availability)
-- **Frontend embeddings**: Google Gemini `gemini-embedding-001` (3,072 dimensions) — activated when API key is present
 - **Hybrid reranking**: Weighted combination of BM25 score (40%) + cosine similarity (60%) for final ranking
 - **Backend embeddings**: ChromaDB + `sentence-transformers/all-MiniLM-L6-v2` (384 dimensions, offline, no API key required)
-- **IndexedDB caching**: Fingerprint-based embedding cache — instant restore on vault re-open without API calls
-- **Background build**: Async embedding generation after vault load (20 docs/batch, 5 concurrent requests)
-- **Text chunking**: LangChain `RecursiveCharacterTextSplitter` (512-char chunks, 64-char overlap)
+- **Incremental cache**: per-section embeddings stored with mtimes in `.vector_cache_v6.json` inside the vault — editing one document re-embeds only that document; a chunker version change rebuilds everything
+- **Background build**: Async embedding generation after vault load (20 items/batch)
+- **Section-based chunking**: split on markdown headings, sections under 300 chars are merged with a neighbour (`src/lib/markdownParser.ts`)
 
 ### Multi-Agent RAG
 - **Chief + Worker structure**: Key documents read in full (20K) by Chief LLM; secondary documents summarized in parallel by Worker LLM (200 chars each)
@@ -714,6 +729,17 @@ Launch app → "Open Vault" → select Obsidian vault folder → knowledge graph
 - Auto image attachment: If selected doc has `![[...]]` images, they're sent automatically
 
 ---
+
+## Automation (cron)
+
+The scheduler in the Electron main process (`electron/cronScheduler.cjs`, node-cron) runs two jobs.
+
+| Job | Default schedule | What it does |
+|-----|------------------|--------------|
+| `daily-run` | daily at 04:00 (Asia/Seoul) | edit agent → vault reload → vector rebuild chain |
+| `health-check` | every 5 minutes | app / bot health probe |
+
+Settings → Cron lets you change schedules, trigger runs manually and read run logs. Jira and Confluence auto-sync (Settings → Jira / Confluence) run on their own interval and write results into the vault as markdown.
 
 ## Bot Integration
 
