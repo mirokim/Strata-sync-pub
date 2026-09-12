@@ -21,10 +21,11 @@ export interface VaultView {
   bm25(): Bm25
   /** Resolved link graph over `docs`, built on first use. */
   graph(): LintGraph
+  /** The BM25 index if this view has built one (the next view starts from it). */
+  builtIndex(): Bm25 | null
 }
 
 let _cache: { view: VaultView; builtAt: number } | null = null
-const CACHE_TTL_MS = 30_000
 
 /**
  * One R2 object holding every document's text, keyed by content hash. A cold isolate reads it
@@ -47,7 +48,8 @@ const enc = new TextEncoder()
 export async function loadVaultView(deps: SyncDeps, force = false): Promise<VaultView> {
   const head = await deps.meta.head()
   const now = Date.now()
-  if (!force && _cache && _cache.view.head === head && now - _cache.builtAt < CACHE_TTL_MS) return _cache.view
+  // The D1 head moves on every write (API, bridge, batch), so an unchanged head means an unchanged vault
+  if (!force && _cache && _cache.view.head === head) return _cache.view
 
   const rows = await listLiveRows(deps.meta)
   const docs = new Map<string, ParsedVaultDoc>()
@@ -89,7 +91,14 @@ export async function loadVaultView(deps: SyncDeps, force = false): Promise<Vaul
   }
   let index: Bm25 | null = null
   let graph: LintGraph | null = null
-  const view: VaultView = { head, docs, rows: rowMap, contents, bm25: () => (index ??= new Bm25(docs)), graph: () => (graph ??= buildLintGraph([...docs.values()])) }
+  const previous = _cache?.view
+  const view: VaultView = {
+    head, docs, rows: rowMap, contents,
+    // Built on top of the previous isolate view's index when there is one: unchanged documents keep their tokens
+    bm25: () => (index ??= new Bm25(docs, previous?.builtIndex() ?? undefined)),
+    graph: () => (graph ??= buildLintGraph([...docs.values()])),
+    builtIndex: () => index,
+  }
   // Persist when this load did real work, so the next cold isolate does not repeat it
   if (reads.length >= SNAPSHOT_REWRITE_AFTER || (reads.length > 0 && !snapshot && !_cache)) {
     await writeVaultSnapshot(deps, view).catch(e => console.error('[vault-view] snapshot write failed', e))
@@ -135,21 +144,46 @@ export class Bm25 {
   private avgLen = 1
   private titles = new Map<string, { docId: string; title: string }>()
 
-  /** @param docs vault path → parsed document */
-  constructor(docs: Map<string, ParsedVaultDoc>, private readonly k1 = 1.5, private readonly b = 0.75) {
+  /**
+   * @param docs vault path → parsed document
+   * @param base an index over an earlier version of the vault; only documents whose parsed
+   *   object differs from the base's are re-tokenised (tokenising a large Korean vault is the
+   *   expensive part, and between two calls only a handful of documents move)
+   */
+  constructor(docs: Map<string, ParsedVaultDoc>, base?: Bm25, private readonly k1 = 1.5, private readonly b = 0.75) {
     let total = 0
-    for (const [path, d] of docs) {
-      const text = `${d.title} ${d.title} ${d.tags.join(' ')} ${d.body}`
-      const tokens = tokenize(text)
-      const counts = new Map<string, number>()
-      for (const t of tokens) counts.set(t, (counts.get(t) ?? 0) + 1)
-      this.tf.set(path, counts)
-      this.len.set(path, tokens.length)
-      this.titles.set(path, { docId: d.id, title: d.title })
-      for (const t of counts.keys()) this.df.set(t, (this.df.get(t) ?? 0) + 1)
-      total += tokens.length
+    if (base) {
+      this.df = new Map(base.df)
+      for (const [path, d] of docs) {
+        const prev = base.docs.get(path)
+        if (prev === d) {
+          this.tf.set(path, base.tf.get(path)!); this.len.set(path, base.len.get(path)!); this.titles.set(path, base.titles.get(path)!)
+          total += base.len.get(path)!
+          continue
+        }
+        if (prev) for (const t of base.tf.get(path)!.keys()) this.df.set(t, (this.df.get(t) ?? 1) - 1)
+        total += this.add(path, d)
+      }
+      for (const [path, counts] of base.tf) if (!docs.has(path)) for (const t of counts.keys()) this.df.set(t, (this.df.get(t) ?? 1) - 1)
+      for (const [t, n] of this.df) if (n <= 0) this.df.delete(t)
+    } else {
+      for (const [path, d] of docs) total += this.add(path, d)
     }
+    this.docs = docs
     this.avgLen = this.tf.size ? total / this.tf.size : 1
+  }
+
+  private docs: Map<string, ParsedVaultDoc>
+
+  private add(path: string, d: ParsedVaultDoc): number {
+    const tokens = tokenize(`${d.title} ${d.title} ${d.tags.join(' ')} ${d.body}`)
+    const counts = new Map<string, number>()
+    for (const t of tokens) counts.set(t, (counts.get(t) ?? 0) + 1)
+    this.tf.set(path, counts)
+    this.len.set(path, tokens.length)
+    this.titles.set(path, { docId: d.id, title: d.title })
+    for (const t of counts.keys()) this.df.set(t, (this.df.get(t) ?? 0) + 1)
+    return tokens.length
   }
 
   search(query: string, topK = 10, exclude: Set<string> = new Set()): Bm25Hit[] {

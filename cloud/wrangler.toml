@@ -42,8 +42,8 @@ ALLOWED_EMAIL_DOMAINS = ""
 # The nightly batch parses every document and runs Louvain. On the Workers Paid plan raise the CPU
 # budget with the block below; the Free plan rejects `[limits]` entirely (and caps CPU at 10 ms,
 # which is enough for the API but not for the nightly lint of a large vault).
-# [limits]
-# cpu_ms = 300000
+[limits]
+cpu_ms = 300000
 
 # ── Nightly batch: lint report + embeddings. 19:00 UTC = 04:00 Asia/Seoul. ──
 [triggers]

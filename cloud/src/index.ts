@@ -37,7 +37,7 @@ export interface Env extends AuthEnv {
   REPORT_TIMEZONE?: string
   /** Optional — AI members react to saves in their scope; images get described. Needs the queue producer binding (reactions also need the API key secret). */
   REACTION_QUEUE?: Queue<ReactionJob | DescribeJob>
-  /** Workers AI vision model for image descriptions (default @cf/llava-hf/llava-1.5-7b-hf). */
+  /** Workers AI vision model for image descriptions (default @cf/llava-hf/llava-1.5-7b-hf; @cf/meta/llama-3.2-11b-vision-instruct is better but needs the Meta license accepted once). */
   VISION_MODEL?: string
   ANTHROPIC_API_KEY?: string
   /** Model for member reactions (default claude-opus-5). */

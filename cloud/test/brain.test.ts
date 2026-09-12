@@ -272,3 +272,35 @@ describe('image documents', () => {
     expect(sent).toEqual([{ kind: 'describe', path: 'attachments/new.png', etag: meta.rows.get('attachments/new.png')!.etag }])
   })
 })
+
+describe('incremental BM25', () => {
+  it('re-tokenises only changed documents and keeps scores identical to a fresh index', async () => {
+    const { Bm25 } = await import('../src/vaultIndex.js')
+    const { parseVaultDoc } = await import('../../mcp/src/lint/vaultDoc.js')
+    const mk = (path: string, text: string) => [path, parseVaultDoc(path, text, 1)] as const
+    const v1 = new Map([mk('a.md', '# A\n\n배터리 수명 결정'), mk('b.md', '# B\n\n모터 소음 이슈'), mk('c.md', '# C\n\n배터리 교체 주기')])
+    const base = new Bm25(v1)
+    const v2 = new Map(v1)
+    v2.set('b.md', parseVaultDoc('b.md', '# B\n\n배터리 팩 공급사', 2))   // changed
+    v2.delete('c.md')                                                       // removed
+    v2.set('d.md', parseVaultDoc('d.md', '# D\n\n소음 측정 리포트', 2))     // added
+    const incremental = new Bm25(v2, base)
+    const fresh = new Bm25(v2)
+    for (const q of ['배터리', '소음', '수명 결정', '공급사']) {
+      expect(incremental.search(q, 5).map(h => [h.path, Number(h.score.toFixed(6))])).toEqual(fresh.search(q, 5).map(h => [h.path, Number(h.score.toFixed(6))]))
+    }
+    expect(incremental.search('교체', 5)).toEqual([])   // the removed document is gone from df too
+  })
+
+  it('loadVaultView reuses the view while the head is unchanged and the index across heads', async () => {
+    await putFile(deps, { path: 'x.md', body: enc('# X\n\nalpha beta'), mtime: 1, author: 'a' })
+    const v1 = await loadVaultView(deps, true)
+    expect(v1.bm25().search('alpha', 3)).toHaveLength(1)
+    expect(await loadVaultView(deps)).toBe(v1)                       // same head → same view object
+    await putFile(deps, { path: 'y.md', body: enc('# Y\n\ngamma'), mtime: 1, author: 'a' })
+    const v2 = await loadVaultView(deps)
+    expect(v2).not.toBe(v1)
+    expect(v2.bm25().search('gamma', 3).map(h => h.path)).toEqual(['y.md'])
+    expect(v2.bm25().search('alpha', 3).map(h => h.path)).toEqual(['x.md'])
+  })
+})

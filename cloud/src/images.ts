@@ -23,7 +23,7 @@ export const DESCRIBE_PROMPT = [
   'Say what it shows and how it is composed, in two to five sentences.',
   'If there is visible text, transcribe it exactly under a line "Text:".',
   'End with a line "Tags:" followed by three to six lowercase tags separated by commas.',
-  'Be concrete. No preamble.',
+  'Write in Korean (transcribed text stays verbatim). Be concrete. No preamble.',
 ].join(' ')
 
 export interface DescribeJob { kind: 'describe'; path: string; etag?: string }
