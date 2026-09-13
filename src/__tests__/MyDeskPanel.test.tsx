@@ -10,8 +10,8 @@ const overview: MeOverview = {
   guiUrl: 'https://x.y/?view=me',
   counts: { authored: 1, personal: 1, remarks: 1, proposalsCitingMine: 1, proposalsOpen: 2, inboxOpen: 1, inboxWaiting: 1 },
   inbox: {
-    forMe: [{ path: '_inbox/Kim/2026-09-13 app-impact.md', kind: 'question', status: 'open', title: 'App impact?', to: 'Kim', toSub: '', from: 'Lee', fromSub: 'google|lee', created: new Date().toISOString(), about: [], body: 'Does X touch the app?', replies: [] }],
-    sent: [{ path: '_inbox/Lee/2026-09-13 check.md', kind: 'task', status: 'done', title: 'Check the dock', to: 'Lee', toSub: '', from: 'Kim', fromSub: 'google|kim', created: new Date().toISOString(), about: [], body: 'please', replies: [{ author: 'Lee', at: new Date().toISOString(), text: 'Checked, fine.' }] }],
+    forMe: [{ path: '_inbox/Kim/2026-09-13 app-impact.md', kind: 'question', status: 'open', title: 'App impact?', to: 'Kim', toSub: '', from: 'Lee', fromSub: 'google|lee', created: new Date().toISOString(), about: [], body: 'Does X touch the app?', replies: [], chain: [], previous: '' }],
+    sent: [{ path: '_inbox/Lee/2026-09-13 check.md', kind: 'task', status: 'done', title: 'Check the dock', to: 'Lee', toSub: '', from: 'Kim', fromSub: 'google|kim', created: new Date().toISOString(), about: [], body: 'please', replies: [{ author: 'Lee', at: new Date().toISOString(), text: 'Checked, fine.' }], chain: ['Park'], previous: '' }],
   },
   authored: [{ path: 'design/Menu.md', title: 'Menu', author: 'Kim', at: new Date(Date.now() - 5 * 60_000).toISOString() }],
   personal: [{ path: '_personal/google-kim/ideas/Secret.md', title: 'Secret', author: 'Kim', at: new Date().toISOString(), personal: true }],
@@ -89,6 +89,6 @@ describe('MyDeskPanel', () => {
     fireEvent.change(screen.getByTestId('inbox-title'), { target: { value: 'Dock height' } })
     fireEvent.change(screen.getByTestId('inbox-body'), { target: { value: 'Can the dock be 2 cm lower?' } })
     fireEvent.click(screen.getByTestId('inbox-send'))
-    await waitFor(() => expect(inboxSend).toHaveBeenCalledWith({ to: 'Lee', kind: 'question', title: 'Dock height', body: 'Can the dock be 2 cm lower?' }))
+    await waitFor(() => expect(inboxSend).toHaveBeenCalledWith({ to: 'Lee', kind: 'question', title: 'Dock height', body: 'Can the dock be 2 cm lower?', chain: [] }))
   })
 })

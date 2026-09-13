@@ -49,5 +49,9 @@ const me: Record<string, string> = {
   'Reply sent to {name}': '{name}에게 답변을 보냈어요',
   'Name, title and text are required': '이름·제목·내용이 필요해요',
   'Sent to {name} — their agent will see it next time it runs': '{name}에게 보냈어요 — 그 사람의 에이전트가 다음에 켜질 때 봅니다',
+  'Done — handed to {name}': '완료 — {name}에게 넘어갔어요',
+  'continues an earlier step': '이전 단계에서 이어짐',
+  'then → {names}': '다음 → {names}',
+  'Relay: who gets it next, comma-separated (optional)': '릴레이: 끝나면 이어받을 사람들, 쉼표로 구분 (선택)',
 }
 export default me

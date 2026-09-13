@@ -303,6 +303,11 @@ describe('review fixes — nothing leaks through side doors', () => {
     await putFile(deps, { path: `${KIM}notes/Secret.md`, body: enc(`# Secret\n\n${secret}`), mtime: 1, author: 'kim', authorSub: '1001' })
     const p = await callTool(mcp(kim), 'vault_propose', { title: 'Idea', body: `Some framing.\n${secret}` })
     expect(p.isError).toBe(true)
+    // A single Korean sentence copied into a longer proposal is caught wherever it sits
+    await putFile(deps, { path: `${KIM}notes/Korean.md`, body: enc('# 메모\n\n비밀 메모: 공급사 나래테크와의 협상 카드는 아직 팀에 말하지 않았다.'), mtime: 1, author: 'kim', authorSub: '1001' })
+    const k = await callTool(mcp(kim), 'vault_propose', { title: '협상 카드', body: '앞말. 비밀 메모: 공급사 나래테크와의 협상 카드는 아직 팀에 말하지 않았다. 이걸 제안으로 올린다.' })
+    expect(k.isError).toBe(true)
+    expect(textOf(k)).toContain('Korean.md')
     expect(textOf(p)).toContain(`${KIM}notes/Secret.md`)
     expect((await callTool(mcp(kim), 'member_remember', { member: 'librarian', text: secret })).isError).toBe(true)
     // Other people's text and short overlaps are fine

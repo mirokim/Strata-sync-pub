@@ -74,9 +74,10 @@ export function visibleRows<T extends { path: string }>(rows: T[], viewer?: View
  * Whether `text` repeats a stretch of one of the viewer's personal documents. Used before
  * anything team-visible is written on the viewer's behalf (proposals, member memory notes) so a
  * routine instruction cannot make an agent carry private thinking into the shared space.
- * Returns the offending document's path, or null. Windows of LEAK_WINDOW characters.
+ * Returns the offending document's path, or null. Windows of LEAK_WINDOW characters — Korean is dense, so a verbatim run that long is already a specific sentence.
  */
-export const LEAK_WINDOW = 80
+export const LEAK_WINDOW = 40
+const LEAK_STEP = 4
 export async function leaksPersonal(deps: Pick<SyncDeps, 'meta' | 'blobs'>, viewer: Viewer | undefined, text: string): Promise<string | null> {
   const root = viewer ? personalRoot(viewer) : null
   if (!root) return null
@@ -89,8 +90,10 @@ export async function leaksPersonal(deps: Pick<SyncDeps, 'meta' | 'blobs'>, view
     if (!bytes) continue
     const body = dec.decode(bytes).replace(/\s+/g, ' ')
     if (body.length < LEAK_WINDOW) continue
-    for (let i = 0; i + LEAK_WINDOW <= probe.length; i += Math.floor(LEAK_WINDOW / 2)) {
-      if (body.includes(probe.slice(i, i + LEAK_WINDOW))) return r.path
+    // Slide over the personal text, not the probe: a copied sentence of LEAK_WINDOW + step chars
+    // then always yields a whole window that the probe contains, wherever it sits in the probe
+    for (let i = 0; i + LEAK_WINDOW <= body.length; i += LEAK_STEP) {
+      if (probe.includes(body.slice(i, i + LEAK_WINDOW))) return r.path
     }
   }
   return null

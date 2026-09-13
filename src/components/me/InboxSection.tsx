@@ -29,7 +29,7 @@ export default function InboxSection({ inbox, onChanged, open, relative }: Props
   const [replyText, setReplyText] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [compose, setCompose] = useState(false)
-  const [draft, setDraft] = useState<{ to: string; kind: InboxKind; title: string; body: string }>({ to: '', kind: 'question', title: '', body: '' })
+  const [draft, setDraft] = useState<{ to: string; kind: InboxKind; title: string; body: string; chain: string }>({ to: '', kind: 'question', title: '', body: '', chain: '' })
 
   const client = () => currentRemoteVault()?.client
 
@@ -40,9 +40,9 @@ export default function InboxSection({ inbox, onChanged, open, relative }: Props
     if (!text && status !== 'declined') { showToast(t('Write a reply first'), 'error'); return }
     setBusy(item.path)
     try {
-      await c.inboxReply(item.path, text || t('(declined without a reply)'), status)
+      const r = await c.inboxReply(item.path, text || t('(declined without a reply)'), status)
       setReplyFor(null); setReplyText('')
-      showToast(status === 'declined' ? t('Declined') : t('Reply sent to {name}', { name: item.from }), 'success')
+      showToast(status === 'declined' ? t('Declined') : r.handedTo ? t('Done — handed to {name}', { name: r.handedTo }) : t('Reply sent to {name}', { name: item.from }), 'success')
       onChanged()
     } catch (e) { showToast(e instanceof Error ? e.message : String(e), 'error') }
     finally { setBusy(null) }
@@ -54,9 +54,10 @@ export default function InboxSection({ inbox, onChanged, open, relative }: Props
     if (!draft.to.trim() || !draft.title.trim() || !draft.body.trim()) { showToast(t('Name, title and text are required'), 'error'); return }
     setBusy('compose')
     try {
-      await c.inboxSend({ to: draft.to.trim(), kind: draft.kind, title: draft.title.trim(), body: draft.body.trim() })
+      const chain = draft.kind === 'task' ? draft.chain.split(',').map(s => s.trim()).filter(Boolean) : []
+      await c.inboxSend({ to: draft.to.trim(), kind: draft.kind, title: draft.title.trim(), body: draft.body.trim(), chain })
       showToast(t('Sent to {name} — their agent will see it next time it runs', { name: draft.to.trim() }), 'success')
-      setDraft({ to: '', kind: 'question', title: '', body: '' }); setCompose(false)
+      setDraft({ to: '', kind: 'question', title: '', body: '', chain: '' }); setCompose(false)
       onChanged()
     } catch (e) { showToast(e instanceof Error ? e.message : String(e), 'error') }
     finally { setBusy(null) }
@@ -78,6 +79,13 @@ export default function InboxSection({ inbox, onChanged, open, relative }: Props
         <span style={{ color: 'var(--color-text-muted)', fontSize: 11, flexShrink: 0 }}>{mine ? `→ ${item.to}` : `← ${item.from}`} · {relative(item.created)}</span>
         {item.status !== 'open' && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, background: 'var(--color-bg-hover)', color: 'var(--color-text-muted)' }}>{t(STATUS_LABEL[item.status])}</span>}
       </div>
+      {(item.chain.length > 0 || item.previous) && (
+        <div style={{ color: 'var(--color-text-muted)', fontSize: 11, margin: '2px 0 0 20px' }}>
+          {item.previous && <button onClick={() => open(item.previous)} className="hover:underline" style={{ color: 'inherit' }}>{t('continues an earlier step')}</button>}
+          {item.previous && item.chain.length > 0 && ' · '}
+          {item.chain.length > 0 && t('then → {names}', { names: item.chain.join(' → ') })}
+        </div>
+      )}
       <div style={{ color: 'var(--color-text-secondary)', margin: '3px 0 0 20px', whiteSpace: 'pre-wrap' }}>{item.body.length > 400 ? item.body.slice(0, 400) + '…' : item.body}</div>
       {item.replies.map((r, i) => (
         <div key={i} style={{ margin: '4px 0 0 20px', paddingLeft: 8, borderLeft: '2px solid var(--color-accent)', color: 'var(--color-text-primary)', whiteSpace: 'pre-wrap' }}>
@@ -124,6 +132,7 @@ export default function InboxSection({ inbox, onChanged, open, relative }: Props
               </select>
             </div>
             <input style={input} placeholder={t('Title')} value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })} data-testid="inbox-title" />
+            {draft.kind === 'task' && <input style={input} placeholder={t('Relay: who gets it next, comma-separated (optional)')} value={draft.chain} onChange={e => setDraft({ ...draft, chain: e.target.value })} data-testid="inbox-chain" />}
             <textarea style={{ ...input, resize: 'vertical' }} rows={3} placeholder={t('What do you want to know or have done? Their agent answers with their context.')} value={draft.body} onChange={e => setDraft({ ...draft, body: e.target.value })} data-testid="inbox-body" />
             <div className="flex gap-1.5">
               <button style={btn(true)} disabled={busy === 'compose'} onClick={() => void send()} data-testid="inbox-send"><Send size={11} />{t('Send')}</button>

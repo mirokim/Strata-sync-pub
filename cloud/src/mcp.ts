@@ -24,6 +24,7 @@ import { isImagePath, imageDocPath, mimeOf, undescribedImages, DESCRIBE_GUIDE } 
 import { canSee, isPersonalPath, toPersonalPath, setVisibility, leaksPersonal, type Viewer } from './personal.js'
 import { meOverview, renderMeOverview } from './me.js'
 import { readInbox, inboxFor, sendInbox, replyInbox, renderInbox, INBOX_STATUSES, type InboxStatus } from './inbox.js'
+import { radarCheck } from './radar.js'
 
 export interface McpDeps extends SyncDeps {
   /** Semantic search when Vectorize is configured; otherwise BM25 only. */
@@ -35,6 +36,8 @@ export interface McpDeps extends SyncDeps {
   onWrite?: (row: FileRow) => void
   /** ALLOWED_ORIGINS — the first public https origin is the web app, used for links back into the GUI. */
   webOrigin?: string
+  /** Server-side model for the contradiction radar; absent without ANTHROPIC_API_KEY. */
+  llm?: import('./reactions.js').LlmCall
 }
 
 const enc = new TextEncoder()
@@ -46,9 +49,10 @@ const TOOLS = [
   { name: 'vault_search', description: 'Search the vault. Uses the semantic index when available and BM25 keyword search always; returns paths with scores and a snippet. For "what do we know about X" prefer vault_recall.', inputSchema: { type: 'object' as const, properties: { query: { type: 'string' }, topK: { type: 'number', description: 'default 8' } }, required: ['query'] } },
   { name: 'vault_recall', description: 'What the team knows about a topic, as one bundle: the matching documents (excerpts), the documents linked around them, what the AI members remember about it, and what members said when those documents were saved. Use this before answering any question about the team\'s work; cite the paths it lists.', inputSchema: { type: 'object' as const, properties: { query: { type: 'string' }, budget: { type: 'number', description: 'Characters of document text to include (default 16000, max 60000)' }, seeds: { type: 'number', description: 'Matching documents (default 5)' }, neighbours: { type: 'number', description: 'Linked documents around them (default 8)' }, format: { type: 'string', enum: ['markdown', 'json'], description: 'default markdown' } }, required: ['query'] } },
   { name: 'vault_me', description: 'Your own desk: documents they saved last, their personal documents, AI-member remarks on their documents, open proposals that cite them, and what teammates changed recently — plus a link that opens the same view in the web app. Use when the user asks "what happened to my documents", "anything for me?", or wants their status page.', inputSchema: { type: 'object' as const, properties: { format: { type: 'string', enum: ['markdown', 'json'], description: 'default markdown' } } } },
-  { name: 'inbox_send', description: 'Ask a teammate (through their agent) a question, or hand them a task, via the vault: the item waits in their inbox until their agent or they themselves answer with their own context (their repo, their notes). Use when the user wants to ask/assign something to a specific person, or when only that person could know. Address by the teammate\'s display name.', inputSchema: { type: 'object' as const, properties: { to: { type: 'string', description: 'Teammate\'s name (as shown as author in the vault)' }, kind: { type: 'string', enum: ['question', 'task'], description: 'default question' }, title: { type: 'string' }, body: { type: 'string', description: 'The question or the task, with enough context to act on' }, about: { type: 'array', items: { type: 'string' }, description: 'Vault paths this concerns (linked from the item)' } }, required: ['to', 'title', 'body'] } },
+  { name: 'inbox_send', description: 'Ask a teammate (through their agent) a question, or hand them a task, via the vault: the item waits in their inbox until their agent or they themselves answer with their own context (their repo, their notes). Use when the user wants to ask/assign something to a specific person, or when only that person could know. Address by the teammate\'s display name.', inputSchema: { type: 'object' as const, properties: { to: { type: 'string', description: 'Teammate\'s name (as shown as author in the vault)' }, kind: { type: 'string', enum: ['question', 'task'], description: 'default question' }, title: { type: 'string' }, body: { type: 'string', description: 'The question or the task, with enough context to act on' }, about: { type: 'array', items: { type: 'string' }, description: 'Vault paths this concerns (linked from the item)' }, chain: { type: 'array', items: { type: 'string' }, description: 'Tasks only: names who get the task next, in order, after the addressee marks it done (relay)' } }, required: ['to', 'title', 'body'] } },
   { name: 'inbox_list', description: 'The caller\'s inbox: questions/tasks addressed to them (answer these with inbox_reply) and the ones they sent (with any replies). Check it at the start of a session.', inputSchema: { type: 'object' as const, properties: { status: { type: 'string', enum: ['open', 'answered', 'done', 'declined'] }, format: { type: 'string', enum: ['markdown', 'json'], description: 'default markdown' } } } },
   { name: 'inbox_reply', description: 'Answer a question or report a task result that was addressed to the caller; the reply is appended to the item and the sender sees it on their desk. Status: answered (question), done (task) or declined.', inputSchema: { type: 'object' as const, properties: { path: { type: 'string', description: 'The inbox item path' }, reply: { type: 'string' }, status: { type: 'string', enum: ['answered', 'done', 'declined'], description: 'default answered/done by kind' } }, required: ['path', 'reply'] } },
+  { name: 'radar_check', description: 'Run the contradiction radar on one document now: compares it with the closest documents in the vault (other people\'s included) and raises an inbox question to the document\'s author for each real collision. The same check runs automatically on every save when the server has a model key. Use after writing a decision to see what it collides with.', inputSchema: { type: 'object' as const, properties: { path: { type: 'string' } }, required: ['path'] } },
   { name: 'vault_history', description: 'How a document changed: its archived versions (who saved, when) and a line diff — by default between the previous version and the current one, or from a given version etag to now. Use it to answer "when did we change our mind about X" or to see what a save actually altered.', inputSchema: { type: 'object' as const, properties: { path: { type: 'string' }, etag: { type: 'string', description: 'Compare this archived version with the current one (default: the previous version)' }, limit: { type: 'number', description: 'Versions to list (default 10)' }, diff: { type: 'boolean', description: 'Include the diff (default true)' } }, required: ['path'] } },
   { name: 'graph_lint', description: 'Structural lint of the whole team vault: phantom-hot (missing documents linked from many places), bridge-spof (single points of failure), orphan, stale-hub, near-duplicate, cluster-drift. Run before creating or editing documents.', inputSchema: { type: 'object' as const, properties: { rules: { type: 'array', items: { type: 'string', enum: [...ALL_RULES] } }, minSeverity: { type: 'string', enum: ['error', 'warn', 'info'] }, limitPerRule: { type: 'number' }, format: { type: 'string', enum: ['json', 'markdown'] } } } },
   { name: 'graph_suggest_links', description: 'Documents a text should link to, ranked by relevance (BM25 over the vault; proposals excluded).', inputSchema: { type: 'object' as const, properties: { text: { type: 'string' }, topK: { type: 'number', description: 'default 5' } }, required: ['text'] } },
@@ -246,10 +250,19 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       const overview = meOverview({ rows, view, viewer, author: deps.author ?? '', webOrigin: deps.webOrigin, inbox })
       return args.format === 'json' ? text(overview) : { content: [{ type: 'text', text: renderMeOverview(overview) }] }
     }
+    case 'radar_check': {
+      if (!deps.llm) return fail('the server has no model key (ANTHROPIC_API_KEY) — the radar runs on the server')
+      const path = normalizeVaultPath(String(args.path ?? ''))
+      if (!path) return fail('path is required')
+      const r = await radarCheck({ ...deps, llm: deps.llm }, { path })
+      if (r.status === 'checked') for (const p of r.sent) { const row = await deps.meta.get(p); if (row) deps.onWrite?.(row) }
+      return text(r)
+    }
     case 'inbox_send': {
       const kind = args.kind === 'task' ? 'task' : 'question'
       const about = Array.isArray(args.about) ? (args.about as unknown[]).map(String) : []
-      const r = await sendInbox({ ...deps, viewer: deps.viewer ?? { sub: 'service', service: true }, author: deps.author ?? 'agent' }, { to: String(args.to ?? ''), kind, title: String(args.title ?? ''), body: String(args.body ?? ''), about })
+      const chain = Array.isArray(args.chain) ? (args.chain as unknown[]).map(String) : []
+      const r = await sendInbox({ ...deps, viewer: deps.viewer ?? { sub: 'service', service: true }, author: deps.author ?? 'agent' }, { to: String(args.to ?? ''), kind, title: String(args.title ?? ''), body: String(args.body ?? ''), about, chain })
       if ('error' in r) return fail(r.error)
       const row = await deps.meta.get(r.path)
       if (row) deps.onWrite?.(row)
@@ -272,6 +285,7 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       if ('error' in r) return fail(r.error)
       const row = await deps.meta.get(r.path)
       if (row) deps.onWrite?.(row)
+      if (r.next) { const hop = await deps.meta.get(r.next); if (hop) deps.onWrite?.(hop) }
       return text(r)
     }
     case 'vault_changes': {

@@ -20,6 +20,7 @@ import { handleMcpRequest } from './mcp.js'
 import { invalidateVaultView, loadVaultView } from './vaultIndex.js'
 import { meOverview } from './me.js'
 import { readInbox, inboxFor, sendInbox, replyInbox, INBOX_STATUSES, type InboxStatus } from './inbox.js'
+import { radarCheck } from './radar.js'
 import { buildProposal } from '../../mcp/src/proposals.js'
 import OAuthProvider from '@cloudflare/workers-oauth-provider'
 import { handleAuth, SCOPE, type AuthEnv, type Identity } from './auth.js'
@@ -150,6 +151,12 @@ export default {
         try {
           const outcome = await reactToSave({ ...deps, llm }, m.body as ReactionJob)
           console.log('[reactions]', (m.body as ReactionJob).path, JSON.stringify(outcome))
+          // Contradiction radar rides the same job: the saved document against its neighbourhood
+          if (outcome.status !== 'deferred') {
+            const semantic = env.AI && env.VECTORS ? (q: string, k: number) => semanticSearch(embedder(env.AI!), vectorQuery(env.VECTORS!), q, k) : undefined
+            const radar = await radarCheck({ ...deps, llm, semanticSearch: semantic }, m.body as ReactionJob).catch(e => ({ status: 'skipped' as const, reason: `error: ${e}` }))
+            console.log('[radar]', (m.body as ReactionJob).path, JSON.stringify(radar.status === 'checked' ? { ...radar, conflicts: radar.conflicts.length } : radar))
+          }
           if (outcome.status === 'deferred') {
             // Inside the cooldown: come back when it ends (Queues cap a retry delay at 12 hours)
             m.retry({ delaySeconds: Math.min(Math.ceil(outcome.retryAfterMs / 1000) + 5, 12 * 3600) })
@@ -248,10 +255,11 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
       return json(200, inboxFor(await readInbox(deps, await deps.meta.listSince(0, 100_000)), viewer, author, filter))
     }
     if (url.pathname === '/v1/inbox' && req.method === 'POST') {
-      const body = await req.json().catch(() => ({})) as { to?: unknown; kind?: unknown; title?: unknown; body?: unknown; about?: unknown }
+      const body = await req.json().catch(() => ({})) as { to?: unknown; kind?: unknown; title?: unknown; body?: unknown; about?: unknown; chain?: unknown }
       const r = await sendInbox({ ...deps, viewer, author: author || 'unknown' }, {
         to: String(body.to ?? ''), kind: body.kind === 'task' ? 'task' : 'question', title: String(body.title ?? ''), body: String(body.body ?? ''),
         about: Array.isArray(body.about) ? (body.about as unknown[]).map(String) : [],
+        chain: Array.isArray(body.chain) ? (body.chain as unknown[]).map(String) : [],
       })
       if ('error' in r) return json(400, r)
       const row = await deps.meta.get(r.path)
@@ -276,6 +284,7 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
         author: author || 'mcp',
         viewer,
         webOrigin: env.ALLOWED_ORIGINS,
+        llm: anthropicLlm(env) ?? undefined,
         onWrite: row => enqueueReaction(env, ctx, deps, row),
       })
     }

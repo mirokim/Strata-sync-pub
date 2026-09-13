@@ -64,7 +64,7 @@ export interface MeRemark { member: string; path: string; title: string; at: str
 export interface MeProposal { path: string; title: string; author: string; at: string; cites: string[] }
 export type InboxKind = 'question' | 'task'
 export type InboxStatus = 'open' | 'answered' | 'done' | 'declined'
-export interface InboxItem { path: string; kind: InboxKind; status: InboxStatus; title: string; to: string; toSub: string; from: string; fromSub: string; created: string; about: string[]; body: string; replies: { author: string; at: string; text: string }[] }
+export interface InboxItem { path: string; kind: InboxKind; status: InboxStatus; title: string; to: string; toSub: string; from: string; fromSub: string; created: string; about: string[]; body: string; replies: { author: string; at: string; text: string }[]; chain: string[]; previous: string }
 export interface InboxView { forMe: InboxItem[]; sent: InboxItem[] }
 export interface MeOverview {
   identity: { sub: string; author: string; service: boolean }
@@ -234,17 +234,17 @@ export class RemoteClient {
     if (!res.ok) throw new RemoteError(res.status, `inbox failed (${res.status})`)
     return res.json()
   }
-  async inboxSend(input: { to: string; kind: InboxKind; title: string; body: string; about?: string[] }): Promise<{ path: string }> {
+  async inboxSend(input: { to: string; kind: InboxKind; title: string; body: string; about?: string[]; chain?: string[] }): Promise<{ path: string }> {
     const res = await this.request('/v1/inbox', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) })
     const body = await res.json().catch(() => ({})) as { path?: string; error?: string }
     if (!res.ok) throw new RemoteError(res.status, body.error ?? `inbox send failed (${res.status})`)
     return { path: body.path! }
   }
-  async inboxReply(path: string, reply: string, status: Exclude<InboxStatus, 'open'>): Promise<{ path: string; status: InboxStatus }> {
+  async inboxReply(path: string, reply: string, status: Exclude<InboxStatus, 'open'>): Promise<{ path: string; status: InboxStatus; handedTo?: string; next?: string }> {
     const res = await this.request('/v1/inbox/reply', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path, reply, status }) })
-    const body = await res.json().catch(() => ({})) as { path?: string; status?: InboxStatus; error?: string }
+    const body = await res.json().catch(() => ({})) as { path?: string; status?: InboxStatus; handedTo?: string; next?: string; error?: string }
     if (!res.ok) throw new RemoteError(res.status, body.error ?? `inbox reply failed (${res.status})`)
-    return { path: body.path!, status: body.status! }
+    return { path: body.path!, status: body.status!, handedTo: body.handedTo, next: body.next }
   }
 
   async history(path: string): Promise<HistoryResponse> {

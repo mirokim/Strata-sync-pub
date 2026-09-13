@@ -13,6 +13,10 @@
  *   when known) · status: open|answered|done|declined · created · about: [paths]
  *
  * Replies are appended as `## Reply — <author>, <date>` sections; the status moves with them.
+ *
+ * Relay: a task may carry `chain: [next, next…]`. When the addressee marks it done, the server
+ * creates the same task for the next name in the chain, with this result linked and quoted, so a
+ * piece of work walks from one person's machine to the next — each hop explicitly assigned.
  * Addressing is by display name (that is what people know), so the recipient matches when the
  * name equals their author name, or `to_sub` equals their sub.
  */
@@ -38,6 +42,10 @@ export interface InboxItem {
   about: string[]
   body: string
   replies: { author: string; at: string; text: string }[]
+  /** Task relay: who gets it after the addressee is done, in order */
+  chain: string[]
+  /** The item this one continues (relay hop), when any */
+  previous: string
 }
 
 const enc = new TextEncoder()
@@ -74,6 +82,8 @@ export interface InboxInput {
   from: string
   fromSub: string
   now?: number
+  chain?: string[]
+  previous?: string
 }
 
 export function renderInboxDoc(input: InboxInput): { path: string; content: string } {
@@ -81,6 +91,7 @@ export function renderInboxDoc(input: InboxInput): { path: string; content: stri
   const title = input.title.trim() || (input.kind === 'task' ? 'Untitled task' : 'Untitled question')
   const date = new Date(now).toISOString().slice(0, 10)
   const about = [...new Set((input.about ?? []).map(a => a.trim()).filter(Boolean))]
+  const chain = input.kind === 'task' ? (input.chain ?? []).map(c => c.trim()).filter(Boolean) : []
   const fm = [
     '---',
     `title: ${JSON.stringify(title)}`,
@@ -93,6 +104,8 @@ export function renderInboxDoc(input: InboxInput): { path: string; content: stri
     'status: open',
     `created: ${new Date(now).toISOString()}`,
     `about: [${about.map(a => JSON.stringify(a)).join(', ')}]`,
+    `chain: [${chain.map(c => JSON.stringify(c)).join(', ')}]`,
+    `previous: ${JSON.stringify(input.previous ?? '')}`,
     `tags: ["inbox", ${JSON.stringify(input.kind)}]`,
     'graph_weight: low',
     '---',
@@ -140,6 +153,7 @@ export function parseInboxDoc(path: string, text: string): InboxItem | null {
     to: readScalar(fm.to ?? ''), toSub: readScalar(fm.to_sub ?? ''),
     from: readScalar(fm.from ?? ''), fromSub: readScalar(fm.from_sub ?? ''),
     created: readScalar(fm.created ?? ''), about: readList(fm.about ?? ''), body, replies,
+    chain: readList(fm.chain ?? ''), previous: readScalar(fm.previous ?? ''),
   }
 }
 
@@ -165,6 +179,7 @@ export function inboxFor(items: InboxItem[], viewer: Viewer, author: string, sta
 
 export async function sendInbox(deps: InboxDeps, input: Omit<InboxInput, 'from' | 'fromSub'>): Promise<{ path: string } | { error: string }> {
   if (!input.to.trim()) return { error: 'to (a teammate\'s name) is required' }
+  if (input.kind === 'task' && (input.chain ?? []).some(c => c.trim().toLowerCase() === input.to.trim().toLowerCase())) return { error: 'chain must not repeat the addressee' }
   if (!input.title.trim() || !input.body.trim()) return { error: 'title and body are required' }
   const doc = renderInboxDoc({ ...input, from: deps.author, fromSub: deps.viewer.service ? '' : deps.viewer.sub, now: deps.now?.() })
   let path = doc.path
@@ -178,7 +193,7 @@ export async function sendInbox(deps: InboxDeps, input: Omit<InboxInput, 'from' 
  * Append a reply and move the status. The addressee answers/finishes/declines; the sender may
  * decline (withdraw) their own item. Anyone else is refused.
  */
-export async function replyInbox(deps: InboxDeps, path: string, reply: string, status: Exclude<InboxStatus, 'open'>): Promise<{ path: string; status: InboxStatus } | { error: string }> {
+export async function replyInbox(deps: InboxDeps, path: string, reply: string, status: Exclude<InboxStatus, 'open'>): Promise<{ path: string; status: InboxStatus; handedTo?: string; next?: string } | { error: string }> {
   if (!isInboxPath(path)) return { error: 'not an inbox document' }
   if (!INBOX_STATUSES.includes(status) || (status as string) === 'open') return { error: 'status must be answered, done or declined' }
   const row = await deps.meta.get(path)
@@ -197,6 +212,20 @@ export async function replyInbox(deps: InboxDeps, path: string, reply: string, s
   const updated = text.replace(/^status: .*$/m, `status: ${status}`).trimEnd() + `\n\n## Reply — ${deps.author}, ${stamp}\n\n${reply.trim()}\n`
   const r = await putFile(deps, { path, body: enc.encode(updated), mtime: now, author: deps.author, authorSub: deps.viewer.sub, ifMatch: row.etag })
   if (r.status >= 400) return { error: (r as { body: { error: string } }).body.error }
+
+  // Relay: a finished task with names left in its chain moves on to the next person, carrying the result
+  if (item.kind === 'task' && status === 'done' && item.chain.length) {
+    const [handedTo, ...rest] = item.chain
+    // The hop is sent on behalf of the original requester, so the whole relay shows in their "sent" list
+    const requester = { ...deps, author: item.from || deps.author, viewer: item.fromSub ? { sub: item.fromSub } : deps.viewer }
+    const hop = await sendInbox(requester, {
+      to: handedTo, kind: 'task', title: item.title,
+      body: `${item.body}\n\n## Previous step — ${deps.author}, ${stamp}\n\n${reply.trim()}`,
+      about: [...item.about, path], chain: rest, previous: path,
+    })
+    if ('error' in hop) return { path, status, handedTo, next: undefined }
+    return { path, status, handedTo, next: hop.path }
+  }
   return { path, status }
 }
 
@@ -206,7 +235,7 @@ export function renderInbox(view: InboxView): string {
   const open = view.forMe.filter(i => i.status === 'open')
   if (open.length) {
     lines.push(`## Waiting for you (${open.length})`)
-    for (const i of open) lines.push(`- [${i.kind}] **${i.title}** — from ${i.from}, ${i.created.slice(0, 10)} · ${i.path}${i.about.length ? ` · about: ${i.about.join(', ')}` : ''}`)
+    for (const i of open) lines.push(`- [${i.kind}] **${i.title}** — from ${i.from}, ${i.created.slice(0, 10)} · ${i.path}${i.about.length ? ` · about: ${i.about.join(', ')}` : ''}${i.chain.length ? ` · then → ${i.chain.join(' → ')}` : ''}${i.previous ? ` · continues ${i.previous}` : ''}`)
     lines.push('')
   }
   const pending = view.sent.filter(i => i.status === 'open')

@@ -118,3 +118,38 @@ describe('MCP tools and routes', () => {
     expect(await done.json()).toEqual({ path, status: 'done' })
   })
 })
+
+describe('relay chain', () => {
+  it('a finished task walks to the next name, carrying the result, on behalf of the requester', async () => {
+    const first = await sendInbox(asKim(), { to: 'Lee', kind: 'task', title: 'Dock height', body: 'Lower the dock 2 cm', chain: ['Park', 'Choi'] }) as { path: string }
+    expect(parseInboxDoc(first.path, dec((await blobs.get(first.path))!))!.chain).toEqual(['Park', 'Choi'])
+
+    const done = await replyInbox(asLee(), first.path, 'Lowered; see [[Dock v2]]', 'done')
+    expect(done).toMatchObject({ path: first.path, status: 'done', handedTo: 'Park', next: '_inbox/Park/2023-11-14 dock-height.md' })
+    const hop = parseInboxDoc((done as { next: string }).next, dec((await blobs.get((done as { next: string }).next))!))!
+    expect(hop).toMatchObject({ kind: 'task', status: 'open', to: 'Park', from: 'Kim', fromSub: KIM.sub, chain: ['Choi'], previous: first.path })
+    expect(hop.about).toEqual([first.path])
+    expect(hop.body).toContain('Lower the dock 2 cm')
+    expect(hop.body).toContain('## Previous step — Lee')
+    expect(hop.body).toContain('Lowered; see [[Dock v2]]')
+
+    // The requester sees both hops as sent; Park sees the hop waiting
+    const items = await readInbox(deps, await meta.listSince(0, 1000))
+    expect(inboxFor(items, KIM, 'Kim').sent.map(i => i.path).sort()).toEqual([first.path, hop.path].sort())
+    expect(inboxFor(items, { sub: 'google|park' }, 'Park').forMe.map(i => i.path)).toEqual([hop.path])
+    expect(renderInbox(inboxFor(items, { sub: 'google|park' }, 'Park'))).toContain('then → Choi')
+
+    // Last hop: Choi finishes, nothing more is created
+    const park = await replyInbox({ ...deps, viewer: { sub: 'google|park' }, author: 'Park', now: () => 1_700_000_300_000 }, hop.path, 'ok', 'done')
+    const last = (park as { next: string }).next
+    expect(parseInboxDoc(last, dec((await blobs.get(last))!))!.chain).toEqual([])
+    const end = await replyInbox({ ...deps, viewer: { sub: 'google|choi' }, author: 'Choi', now: () => 1_700_000_400_000 }, last, 'shipped', 'done')
+    expect(end).toEqual({ path: last, status: 'done' })
+  })
+
+  it('questions ignore chains, and a chain may not repeat the addressee', async () => {
+    const q = await sendInbox(asKim(), { to: 'Lee', kind: 'question', title: 'Q', body: '?', chain: ['Park'] }) as { path: string }
+    expect(parseInboxDoc(q.path, dec((await blobs.get(q.path))!))!.chain).toEqual([])
+    expect(await sendInbox(asKim(), { to: 'Lee', kind: 'task', title: 'T', body: 'x', chain: ['lee'] })).toEqual({ error: 'chain must not repeat the addressee' })
+  })
+})

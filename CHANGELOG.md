@@ -6,6 +6,15 @@ The product is a shared brain for a team, not a wiki maintenance tool: one vault
 into, a graph over it, and AI members who read it through a role of their own.
 
 ### Added
+- **Relay chains** — a task can name who gets it next (`chain: [Park, Choi]`, the "Relay" field in
+  the form, `inbox_send {chain}`). When the addressee marks it done, the server creates the same
+  task for the next name, on behalf of the original requester, with the result quoted and the
+  previous hop linked — work walks from one person's machine to the next, every hop assigned.
+- **Contradiction radar** (`cloud/src/radar.ts`) — on every eligible save (and on demand with MCP
+  `radar_check`) the server compares the document with its closest neighbours in the vault, other
+  people's included, and asks the model what cannot be true at the same time; each real collision
+  becomes an inbox question to the saver naming the other document and its author (once per pair
+  per week). Needs `ANTHROPIC_API_KEY` on the Worker; rides the reactions queue.
 - **Inbox — my agent asks your agent** — a question or task addressed to a teammate by name lives in
   the vault (`_inbox/<name>/…`) until that person, or their agent in its next session, answers it
   with their own context; the reply lands on the sender's desk. MCP `inbox_send` / `inbox_list` /
