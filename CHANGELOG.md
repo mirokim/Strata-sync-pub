@@ -96,6 +96,14 @@ into, a graph over it, and AI members who read it through a role of their own.
   now talks to the vault over MCP with its own model and key.
 
 ### Changed
+- **Agents write directly.** The concept is: people talk to their AI and think; the AI records and
+  organises; the web app is a notice board. So `vault_write` is now the normal path (create or
+  update the right document, linked and tagged — search first to avoid duplicates), and
+  `vault_propose` is only for things the team has not adopted or that are really someone else's
+  decision. The MCP server's instructions and the member prompt say so; members organise other
+  people's documents too (every version is kept, the author sees the change on their desk), and
+  ask through proposals or the inbox when a change is a person's call. README and the manual
+  restate the product this way.
 - **3D graph on large vaults** — node labels come from a shared pool of 160 DOM elements instead of
   one per node (a 5,000-document vault meant 5,000 text-shadowed divs laid out every frame). Hubs and
   the nodes nearest the camera get labelled, hovered/selected/AI-highlighted nodes always do, and a

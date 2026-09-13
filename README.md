@@ -7,21 +7,19 @@
 
 ## 개요
 
-STRATA SYNC는 Obsidian 스타일 마크다운 볼트를 읽어 **위키링크 기반 지식 그래프**를 구축하는 데스크탑 애플리케이션입니다. 멀티 AI 디렉터 페르소나가 그래프를 탐색하여 프로젝트에 대한 깊은 인사이트를 전달합니다.
+**Strata Sync는 팀의 공유 뇌입니다.** 사람은 Claude Code, Codex, Cursor에서 AI와 대화하며 일하고, 그 대화에서 나온 결정·자료·생각을 **AI가 볼트에 올리고 정리합니다.** 사람이 볼트에 쓰러 가지 않습니다. 사람이 하는 일은 대화하고, 창의력을 내고, 흩어진 조각들 사이에서 새로운 생각을 하는 것입니다.
+
+- **일하면 쌓인다.** 에이전트가 일하는 동안 결정·질문·답·결과가 팀의 기억으로 남습니다. 따로 정리하러 가지 않습니다.
+- **에이전트가 같은 기억을 씁니다.** 너의 에이전트와 나의 에이전트가 같은 것을 알고, 서로에게 묻습니다(편지함·릴레이).
+- **허브가 봅니다.** 누가 뭘 바꿨는지, 어디가 충돌하는지(모순 레이더), 어디가 끊겼는지(그래프 린트) — 한 사람의 세션에서는 절대 보이지 않는 것.
+- **웹 앱은 게시판입니다.** 쌓인 것을 둘러보고, 그래프로 관계를 보고, 남들이 생각한 것을 읽는 자리. 편집기는 있지만 주인공이 아닙니다.
 
 ```
-Vault 폴더 (.md 파일)
-  ↓ 로드 + 파싱
-지식 그래프 (WikiLink 연결)
-  ↓ directVaultSearch + BM25 + TF-IDF + Vector Embedding + BFS + PPR
-컨텍스트 수집
-  ↓ Multi-Agent RAG (Chief + Worker LLM)
-딥 인사이트 (스트리밍)
+CC · Codex · Cursor ──(MCP)──▶ 팀 볼트 (Cloudflare) ──▶ 웹 앱 (게시·탐색)
+   사람은 대화만            AI가 올리고 정리         사람은 보고 생각
 ```
 
-**로컬 모드** — 백엔드 서버 없이 동작합니다. BM25, TF-IDF, 그래프 탐색은 디바이스에서 실행되고, 벡터 임베딩은 로컬 BGE-M3 서버(오프라인)나 Gemini API 중 가용한 쪽을 씁니다.
-
-**팀 모드 (진행 중)** — 볼트를 Cloudflare R2로 동기화하고, 임베딩·볼트 린트·리뷰를 서버 배치로 돌려 팀 전체가 같은 그래프를 보게 하는 작업이 진행 중입니다. 계획은 `docs/plan-team-vault-2026-09.html`을 참고하세요.
+한 문장으로: **"너의 클로드가 나의 클로드한테 물어본다."**
 
 ---
 
@@ -569,21 +567,19 @@ MIT License
 
 ## Overview
 
-STRATA SYNC is a desktop application that reads an Obsidian-style markdown vault and builds a **wikilink-based knowledge graph**. Multiple AI director personas traverse the graph and deliver deep, contextual insights about your project.
+**Strata Sync is a team's shared brain.** People work by talking to an AI in Claude Code, Codex or Cursor; **the AI puts what comes out of that — decisions, material, ideas — into the vault and keeps it organised.** Nobody goes to the vault to write. What people do is talk, be creative, and find new thoughts among the scattered pieces.
+
+- **Work leaves memory.** While agents work, decisions, questions, answers and results accumulate as the team's memory. There is no separate tidying-up trip.
+- **Agents share that memory.** Your agent and mine know the same things and ask each other (inbox, relay).
+- **The hub sees everything.** Who changed what, what collides (contradiction radar), where the graph breaks (lint) — things no single session can see.
+- **The web app is a notice board.** A place to browse what accumulated, see relationships in the graph, read what others thought. It has an editor; the editor is not the point.
 
 ```
-Vault folder (.md files)
-  ↓ Load + Parse
-Knowledge Graph (WikiLink connections)
-  ↓ directVaultSearch + BM25 + TF-IDF + Vector Embedding + BFS + PPR
-Context collection
-  ↓ Multi-Agent RAG (Chief + Worker LLMs)
-Deep insights (streaming)
+CC · Codex · Cursor ──(MCP)──▶ team vault (Cloudflare) ──▶ web app (browse · explore)
+   people talk               AI records & organises      people look & think
 ```
 
-**Local mode** — runs without a backend server. BM25, TF-IDF and graph traversal execute on-device; vector embeddings use whichever is available: a local BGE-M3 server (offline) or the Gemini API.
-
-**Team mode (in progress)** — syncing the vault to Cloudflare R2 and running embeddings, vault lint and reviews as a server batch so the whole team sees the same graph. See `docs/plan-team-vault-2026-09.html` for the plan.
+In one sentence: **"your Claude asks my Claude."**
 
 ---
 
