@@ -22,6 +22,7 @@ import { recall, fusedSearch } from './recall.js'
 import { listVersions, readVersion, previousVersion, diffLines } from './history.js'
 import { isImagePath, imageDocPath, mimeOf, undescribedImages, DESCRIBE_GUIDE } from './images.js'
 import { canSee, isPersonalPath, toPersonalPath, setVisibility, leaksPersonal, type Viewer } from './personal.js'
+import { meOverview, renderMeOverview } from './me.js'
 
 export interface McpDeps extends SyncDeps {
   /** Semantic search when Vectorize is configured; otherwise BM25 only. */
@@ -31,6 +32,8 @@ export interface McpDeps extends SyncDeps {
   viewer?: Viewer
   /** Called after a document is created/replaced (vault_write, vault_promote) — the router queues member reactions here. */
   onWrite?: (row: FileRow) => void
+  /** ALLOWED_ORIGINS — the first public https origin is the web app, used for links back into the GUI. */
+  webOrigin?: string
 }
 
 const enc = new TextEncoder()
@@ -41,6 +44,7 @@ const TOOLS = [
   { name: 'vault_read', description: 'Read a document by vault path (e.g. "active/Combat System.md"). For an image path (png/jpg/webp/gif) returns the image itself plus its image document (the description written for it) — refine that document with vault_write when the description is wrong or thin.', inputSchema: { type: 'object' as const, properties: { path: { type: 'string' } }, required: ['path'] } },
   { name: 'vault_search', description: 'Search the vault. Uses the semantic index when available and BM25 keyword search always; returns paths with scores and a snippet. For "what do we know about X" prefer vault_recall.', inputSchema: { type: 'object' as const, properties: { query: { type: 'string' }, topK: { type: 'number', description: 'default 8' } }, required: ['query'] } },
   { name: 'vault_recall', description: 'What the team knows about a topic, as one bundle: the matching documents (excerpts), the documents linked around them, what the AI members remember about it, and what members said when those documents were saved. Use this before answering any question about the team\'s work; cite the paths it lists.', inputSchema: { type: 'object' as const, properties: { query: { type: 'string' }, budget: { type: 'number', description: 'Characters of document text to include (default 16000, max 60000)' }, seeds: { type: 'number', description: 'Matching documents (default 5)' }, neighbours: { type: 'number', description: 'Linked documents around them (default 8)' }, format: { type: 'string', enum: ['markdown', 'json'], description: 'default markdown' } }, required: ['query'] } },
+  { name: 'vault_me', description: 'Your own desk: documents they saved last, their personal documents, AI-member remarks on their documents, open proposals that cite them, and what teammates changed recently — plus a link that opens the same view in the web app. Use when the user asks "what happened to my documents", "anything for me?", or wants their status page.', inputSchema: { type: 'object' as const, properties: { format: { type: 'string', enum: ['markdown', 'json'], description: 'default markdown' } } } },
   { name: 'vault_history', description: 'How a document changed: its archived versions (who saved, when) and a line diff — by default between the previous version and the current one, or from a given version etag to now. Use it to answer "when did we change our mind about X" or to see what a save actually altered.', inputSchema: { type: 'object' as const, properties: { path: { type: 'string' }, etag: { type: 'string', description: 'Compare this archived version with the current one (default: the previous version)' }, limit: { type: 'number', description: 'Versions to list (default 10)' }, diff: { type: 'boolean', description: 'Include the diff (default true)' } }, required: ['path'] } },
   { name: 'graph_lint', description: 'Structural lint of the whole team vault: phantom-hot (missing documents linked from many places), bridge-spof (single points of failure), orphan, stale-hub, near-duplicate, cluster-drift. Run before creating or editing documents.', inputSchema: { type: 'object' as const, properties: { rules: { type: 'array', items: { type: 'string', enum: [...ALL_RULES] } }, minSeverity: { type: 'string', enum: ['error', 'warn', 'info'] }, limitPerRule: { type: 'number' }, format: { type: 'string', enum: ['json', 'markdown'] } } } },
   { name: 'graph_suggest_links', description: 'Documents a text should link to, ranked by relevance (BM25 over the vault; proposals excluded).', inputSchema: { type: 'object' as const, properties: { text: { type: 'string' }, topK: { type: 'number', description: 'default 5' } }, required: ['text'] } },
@@ -230,6 +234,11 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       const moved = r.body as { from: string; path: string; row: FileRow; personal: boolean }
       if (!moved.personal) deps.onWrite?.(moved.row)
       return text({ from: moved.from, path: moved.path, personal: moved.personal })
+    }
+    case 'vault_me': {
+      const [rows, view] = await Promise.all([deps.meta.listSince(0, 100_000), loadVaultView(deps)])
+      const overview = meOverview({ rows, view, viewer: deps.viewer ?? { sub: 'service', service: true }, author: deps.author ?? '', webOrigin: deps.webOrigin })
+      return args.format === 'json' ? text(overview) : { content: [{ type: 'text', text: renderMeOverview(overview) }] }
     }
     case 'vault_changes': {
       const raw = String(args.since ?? '').trim()

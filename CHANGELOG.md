@@ -6,6 +6,12 @@ The product is a shared brain for a team, not a wiki maintenance tool: one vault
 into, a graph over it, and AI members who read it through a role of their own.
 
 ### Added
+- **My desk** — the vault from one person's side: documents they saved last, their personal
+  documents, AI-member remarks on their documents, open proposals that cite them, and what
+  teammates changed recently. `GET /v1/me/overview` (viewer-scoped; "mine" = OAuth sub, or the
+  X-Author name for team-token callers), the web panel (top-bar person icon, web mode) and the MCP
+  tool `vault_me` (markdown or json) that also hands the user `<web origin>/?view=me`, which opens
+  the panel after connecting (`cloud/src/me.ts`, `src/components/me/MyDeskPanel.tsx`).
 - **Korean UI (i18n)** — every user-visible string goes through `t()` / `useT()` (`src/i18n`): the English
   text is the key, `src/i18n/ko/<area>.ts` holds the Korean, a missing entry falls back to English.
   Settings → General → Language: System (browser language) / 한국어 / English; `<html lang>` follows.

@@ -17,7 +17,8 @@ import { reactToSave, shouldEnqueueReaction, type ReactionJob, type LlmCall } fr
 import Anthropic from '@anthropic-ai/sdk'
 import { preflight, withCors } from './cors.js'
 import { handleMcpRequest } from './mcp.js'
-import { invalidateVaultView } from './vaultIndex.js'
+import { invalidateVaultView, loadVaultView } from './vaultIndex.js'
+import { meOverview } from './me.js'
 import { buildProposal } from '../../mcp/src/proposals.js'
 import OAuthProvider from '@cloudflare/workers-oauth-provider'
 import { handleAuth, SCOPE, type AuthEnv, type Identity } from './auth.js'
@@ -233,6 +234,11 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
     if (url.pathname === '/v1/me' && req.method === 'GET') {
       return json(200, { sub: identity.sub, email: identity.email, name: identity.name, picture: identity.picture ?? null, service: Boolean(identity.service), author })
     }
+    // My desk: this person's documents, remarks on them, proposals citing them, what others changed
+    if (url.pathname === '/v1/me/overview' && req.method === 'GET') {
+      const [rows, view] = await Promise.all([deps.meta.listSince(0, 100_000), loadVaultView(deps)])
+      return json(200, meOverview({ rows, view, viewer, author, webOrigin: env.ALLOWED_ORIGINS }))
+    }
 
     // ── Remote MCP (Claude Code / Cursor over Streamable HTTP) ────────────────
     if (url.pathname === '/mcp') {
@@ -243,6 +249,7 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
         ...deps, semanticSearch: semantic,
         author: author || 'mcp',
         viewer,
+        webOrigin: env.ALLOWED_ORIGINS,
         onWrite: row => enqueueReaction(env, ctx, deps, row),
       })
     }

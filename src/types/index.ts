@@ -255,7 +255,7 @@ export interface DebateCallbacks {
 
 export type ThemeId = 'dark' | 'oled' | 'white'
 export type GraphMode = '3d' | '2d'
-export type CenterTab = 'graph' | 'document' | 'editor' | 'settings' | 'slack-logs'
+export type CenterTab = 'graph' | 'document' | 'editor' | 'settings' | 'slack-logs' | 'me'
 export type AppState = 'launch' | 'main'
 export type NodeColorMode = 'document' | 'auto' | 'speaker' | 'folder' | 'tag' | 'topic' | 'heat'
 

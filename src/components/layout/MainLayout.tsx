@@ -10,6 +10,7 @@ import MarkdownEditor from '@/components/editor/MarkdownEditor'
 import ImageViewer from '@/components/editor/ImageViewer'
 import ReportViewer from '@/components/editor/ReportViewer'
 import SlackLogViewer from '@/components/slackLog/SlackLogViewer'
+import MyDeskPanel from '@/components/me/MyDeskPanel'
 import PhysicsControls from '@/components/graph/PhysicsControls'
 import StatusBar from './StatusBar'
 import ToastContainer from '@/components/shared/ToastContainer'
@@ -152,9 +153,9 @@ export default function MainLayout() {
             )}
 
             {/* Editor / Settings / Slack logs overlay */}
-            {(centerTab === 'editor' || centerTab === 'settings' || centerTab === 'slack-logs') && (
+            {(centerTab === 'editor' || centerTab === 'settings' || centerTab === 'slack-logs' || centerTab === 'me') && (
               <motion.div
-                key={centerTab === 'settings' ? 'settings' : centerTab === 'slack-logs' ? 'slack-logs' : (editingDocId ?? 'converter')}
+                key={centerTab === 'settings' ? 'settings' : centerTab === 'slack-logs' ? 'slack-logs' : centerTab === 'me' ? 'me' : (editingDocId ?? 'converter')}
                 initial={false}
                 animate={{ opacity: 1 }}
                 transition={overlayTransition}
@@ -169,6 +170,8 @@ export default function MainLayout() {
               >
                 {centerTab === 'settings'
                   ? <SettingsPanel />
+                  : centerTab === 'me'
+                  ? <MyDeskPanel />
                   : centerTab === 'slack-logs'
                     ? <SlackLogViewer />
                     : editingDocId?.startsWith('gallery:')

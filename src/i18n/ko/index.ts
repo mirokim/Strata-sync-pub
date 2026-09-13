@@ -13,8 +13,9 @@ import converter from './converter'
 import docViewer from './docViewer'
 import fileTree from './fileTree'
 import shared from './shared'
+import me from './me'
 
 export const ko: Record<string, string> = {
   ...common, ...settingsPanel, ...settingsTabsA, ...settingsTabsB, ...settingsTabsC,
-  ...editor, ...graph, ...layout, ...web, ...chat, ...converter, ...docViewer, ...fileTree, ...shared,
+  ...editor, ...graph, ...layout, ...web, ...chat, ...converter, ...docViewer, ...fileTree, ...shared, ...me,
 }

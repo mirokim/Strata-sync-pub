@@ -1,4 +1,4 @@
-import { Monitor, Settings, Terminal, PanelLeft, Type, Bot, ScrollText } from 'lucide-react'
+import { Monitor, Settings, Terminal, PanelLeft, Type, Bot, ScrollText, User } from 'lucide-react'
 import { useUIStore } from '@/stores/uiStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useBotStore } from '@/stores/botStore'
@@ -133,6 +133,20 @@ export default function TopBar() {
               boxShadow: botRunning ? '0 0 4px var(--color-accent)' : 'none',
             }} />
             <Bot size={12} />
+          </button>
+        )}
+
+        {/* My desk — web mode only (needs the team server's identity) */}
+        {!isElectron && (
+          <button
+            onClick={() => setCenterTab(centerTab === 'me' ? 'graph' : 'me')}
+            className={cn('flex items-center justify-center w-7 h-7 rounded transition-colors', 'hover:bg-[var(--color-bg-hover)]')}
+            style={{ color: centerTab === 'me' ? 'var(--color-accent)' : 'var(--color-text-muted)' }}
+            title={t('My desk')}
+            aria-label={t('My desk')}
+            data-testid="my-desk-button"
+          >
+            <User size={13} />
           </button>
         )}
 

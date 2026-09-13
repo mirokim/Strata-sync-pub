@@ -58,6 +58,21 @@ export interface Member {
 }
 export interface MembersConfig { version: 1; members: Member[] }
 export interface HistoryVersion { etag: string; at: number; author: string; size: number }
+/** Mirrors cloud/src/me.ts MeOverview. */
+export interface MeItem { path: string; title: string; author: string; at: string; personal?: true }
+export interface MeRemark { member: string; path: string; title: string; at: string }
+export interface MeProposal { path: string; title: string; author: string; at: string; cites: string[] }
+export interface MeOverview {
+  identity: { sub: string; author: string; service: boolean }
+  guiUrl: string | null
+  counts: { authored: number; personal: number; remarks: number; proposalsCitingMine: number; proposalsOpen: number }
+  authored: MeItem[]
+  personal: MeItem[]
+  remarks: MeRemark[]
+  proposalsCitingMine: MeProposal[]
+  recentByOthers: MeItem[]
+}
+
 export interface HistoryResponse { path: string; current: HistoryVersion | null; versions: HistoryVersion[] }
 export interface HistoryDiff { path: string; from: { etag: string; at: number; author: string }; text: string; stats: { added: number; removed: number; unchanged: number } }
 export interface MembersResponse { config: MembersConfig; templates: Record<string, Omit<Member, 'id'>>; reactionsEnabled: boolean }
@@ -198,6 +213,13 @@ export class RemoteClient {
       const body = await res.json().catch(() => ({})) as { error?: string }
       throw new RemoteError(res.status, body.error || `visibility change failed (${res.status})`)
     }
+    return res.json()
+  }
+
+  /** My desk: this identity's documents, remarks on them, proposals citing them, what others changed. */
+  async meOverview(): Promise<MeOverview> {
+    const res = await this.request('/v1/me/overview')
+    if (!res.ok) throw new RemoteError(res.status, `me/overview failed (${res.status})`)
     return res.json()
   }
 

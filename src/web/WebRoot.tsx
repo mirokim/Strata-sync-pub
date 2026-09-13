@@ -66,6 +66,14 @@ function ConnectedApp({ config }: { config: WebConfig }) {
     })
     bindVaultStore(config)
   }, [config])
+  // `?view=me` — the link vault_me hands to MCP users — opens My desk once connected, then leaves the URL clean
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    if (url.searchParams.get('view') !== 'me') return
+    useUIStore.setState({ centerTab: 'me' })
+    url.searchParams.delete('view')
+    window.history.replaceState(null, '', url.pathname + (url.search || '') + url.hash)
+  }, [config])
   return <App />
 }
 
