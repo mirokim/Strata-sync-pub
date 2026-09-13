@@ -53,21 +53,23 @@ export function useVaultWatcher(): void {
           const content = await window.vaultAPI.readFile(absolutePath)
           if (content != null) {
             const relativePath = changedFile.replace(/\\/g, '/')
-            const file = { relativePath, absolutePath, content, mtime: Date.now() }
-            const parsedDoc = parseMarkdownFile(file)
             const { loadedDocuments, setLoadedDocuments, setWatchDiff } = useVaultStore.getState()
+            const existing = loadedDocuments?.find(d => d.absolutePath === absolutePath)
+            // A personal document written from outside the app (MCP) is new here, so the store cannot
+            // say whether it is personal: the vault knows. Without that answer keep what the full load knew.
+            const personal = window.vaultAPI.isPersonal?.(absolutePath) ?? existing?.personal ?? false
+            const file = { relativePath, absolutePath, content, mtime: Date.now(), ...(personal ? { personal: true } : {}) }
+            const parsedDoc = parseMarkdownFile(file)
             // parseMarkdownFile does not go through pushWithUniqueId, so it reverts a
             // collision-resolved id (`_2`) to the raw id. Keep the existing id when a document at the same path exists.
-            const existing = loadedDocuments?.find(d => d.absolutePath === absolutePath)
             // Electron's fs.watch also fires for the editor's own save; the store already holds
             // that text, so there is nothing to update (and no "changed" banner to show).
-            if (existing && existing.rawContent === content) return
-            // The incremental path builds the file without server metadata: keep what the full load knew
-            const updatedDoc = existing ? { ...parsedDoc, id: existing.id, ...(existing.personal ? { personal: true } : {}) } : parsedDoc
+            if (existing && existing.rawContent === content && !!existing.personal === personal) return
+            const updatedDoc = existing ? { ...parsedDoc, id: existing.id } : parsedDoc
 
             // Diff calculation — compare with previous rawContent
             const prevDoc = loadedDocuments?.find(d => d.id === updatedDoc.id)
-            if (prevDoc?.rawContent != null) {
+            if (prevDoc?.rawContent != null && prevDoc.rawContent !== content) {
               const prevLines = prevDoc.rawContent.split('\n')
               const newLines = content.split('\n')
               const prevSet = new Set(prevLines)
@@ -96,9 +98,12 @@ export function useVaultWatcher(): void {
               if (isNew) newDocs.push(updatedDoc)
               setLoadedDocuments(newDocs)
 
-              // Incremental graph update
+              // Incremental graph update. setGraph clears graphLayoutReady, and only a mounted graph
+              // view sets it back — in the editor nothing would, and every later change (including
+              // the full reload a publish asks for) would be dropped by the guard above.
               const { nodes: newNodes, links: newLinks } = buildGraph(newDocs)
               useGraphStore.getState().setGraph(newNodes, newLinks)
+              useGraphStore.getState().setGraphLayoutReady(true)
 
               // BM25 incremental update (worker)
               const fingerprint = String(Date.now())

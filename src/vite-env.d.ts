@@ -57,6 +57,8 @@ declare global {
       renameFile(absolutePath: string, newFilename: string): Promise<{ success: boolean; newPath: string }>
       deleteFile(absolutePath: string): Promise<{ success: boolean }>
       readFile(filePath: string): Promise<string | null>
+      /** Whether only the signed-in user sees this document (team server personal space) */
+      isPersonal?(filePath: string): boolean
       /** Read an image file as base64 data URL; returns null if not found or outside vault */
       readImage(filePath: string): Promise<string | null>
       /** Fallback: search the vault for an image by filename (basename), returns data URL or null */

@@ -434,10 +434,15 @@ describe('personal documents', () => {
     await v.api.saveFile(A('active/Draft.md'), '# Draft\n\nstill mine')
     expect(new TextDecoder().decode(server.blobs.get('_personal/1001/active/Draft.md')!)).toContain('still mine')
     expect(server.rows.has('active/Draft.md')).toBe(false)
+    // The watcher's incremental path asks the vault whether a changed file is personal
+    expect(v.api.isPersonal!(A('active/Draft.md'))).toBe(true)
+    expect(v.api.isPersonal!(A('active/Combat System.md'))).toBe(false)
+    expect(v.api.isPersonal!(A('_personal/1001/active/Stamina.md'))).toBe(true)
     // A team-token session sees no personal space at all
     const token = makeVault()
     await token.api.loadFiles(token.vaultPath)
     expect(token.personalEnabled).toBe(false)
+    expect(token.api.isPersonal!(A('active/Draft.md'))).toBe(false)
   })
 
   it('setPersonal publishes and withdraws while the app path stays the same', async () => {
@@ -451,7 +456,8 @@ describe('personal documents', () => {
     expect((await v.api.loadFiles(v.vaultPath)).files.find(f => f.relativePath === 'active/Draft.md')?.personal).toBeUndefined()
     expect(await v.setPersonal(A('active/Draft.md'), true)).toEqual({ path: 'active/Draft.md', personal: true })
     expect((await v.api.loadFiles(v.vaultPath)).files.find(f => f.relativePath === 'active/Draft.md')?.personal).toBe(true)
-    expect(seen).toEqual([undefined, undefined])   // full reloads
+    expect(seen).toEqual(['active/Draft.md', 'active/Draft.md'])   // the one document is patched in place, no full reload
+    expect(v.api.isPersonal!(A('active/Draft.md'))).toBe(true)
     await expect(makeVault().setPersonal(A('active/Combat System.md'), true)).rejects.toThrow(/Sign in/)
   })
 

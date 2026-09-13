@@ -148,8 +148,9 @@ export class RemoteVault {
     this.cache.removeRow(physical)
     this.cache.setRow({ path: moved.path, etag: moved.row.etag, size: moved.row.size, mtime: moved.row.mtime, author: moved.row.author, seq: moved.row.seq, content: old?.content ?? null })
     this.staleAfterConflict.delete(physical)
-    this.emitChanged()
-    return { path: this.personal.virtualOf(moved.path).path, personal: moved.personal }
+    const app = this.personal.virtualOf(moved.path).path
+    this.emitChanged(app) // one document changed its flag: the watcher patches it in place, no full reload
+    return { path: app, personal: moved.personal }
   }
 
   // ── Sync core ──────────────────────────────────────────────────────────────
@@ -434,6 +435,11 @@ export class RemoteVault {
         if (idx?.content != null) return idx.content
         const remote = await this.client.getFile(rel).catch(() => null)
         return remote ? dec.decode(remote.bytes) : null
+      },
+
+      isPersonal: (filePath) => {
+        const virtual = this.rel(filePath)
+        return !!virtual && !this.isPrivate(virtual) && this.personal.virtualOf(this.personal.physicalOf(virtual)).personal
       },
 
       readImage: async (filePath) => {
