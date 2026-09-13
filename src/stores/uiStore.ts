@@ -116,7 +116,8 @@ export const useUIStore = create<UIState>()(
       partialize: (state) => ({
         theme: state.theme,
         nodeColorMode: state.nodeColorMode,
-        // graphMode is NOT persisted — app always starts in 3D (user intent)
+        // The graph view (3D / 2D) is a setting now: it comes back the way it was left
+        graphMode: state.graphMode,
         panelOpacity: state.panelOpacity,
         leftPanelWidth: state.leftPanelWidth,
         rightPanelWidth: state.rightPanelWidth,

@@ -18,7 +18,7 @@ const PARAGRAPH_QUALITIES: { id: ParagraphRenderQuality; label: string; desc: st
 ]
 
 export default function GeneralTab() {
-  const { theme, setTheme } = useUIStore()
+  const { theme, setTheme, graphMode, setGraphMode } = useUIStore()
   const { editorDefaultLocked, setEditorDefaultLocked, paragraphRenderQuality, setParagraphRenderQuality, showNodeLabels, toggleNodeLabels, language, setLanguage } = useSettingsStore()
   const t = useT()
 
@@ -108,6 +108,32 @@ export default function GeneralTab() {
       {/* Graph */}
       <section>
         <h3 className="text-xs font-semibold mb-3" style={{ color: 'var(--color-text-secondary)' }}>{t('Graph')}</h3>
+        <div className="grid grid-cols-2 gap-2 mb-2" role="radiogroup" aria-label={t('Graph view')} data-testid="graph-view">
+          {([
+            { id: '3d', label: '3D', desc: t('Depth, lit spheres, orbit with the mouse') },
+            { id: '2d', label: '2D', desc: t('Flat map, lighter on the machine') },
+          ] as const).map(({ id, label, desc }) => {
+            const active = graphMode === id
+            return (
+              <button
+                key={id}
+                role="radio"
+                aria-checked={active}
+                onClick={() => setGraphMode(id)}
+                data-testid={`graph-view-${id}`}
+                className="flex flex-col items-center gap-1.5 py-3 rounded-lg transition-colors"
+                style={{
+                  border: `1.5px solid ${active ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                  background: active ? 'rgba(59,130,246,0.08)' : 'transparent',
+                  color: active ? 'var(--color-accent)' : 'var(--color-text-muted)',
+                }}
+              >
+                <span className="text-xs font-semibold">{label}</span>
+                <span className="text-[10px] opacity-70">{desc}</span>
+              </button>
+            )
+          })}
+        </div>
         <div
           className="flex items-center justify-between px-3 py-2.5 rounded-lg"
           style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}
