@@ -16,6 +16,13 @@ beforeEach(() => {
 const put = (path: string, text: string, extra: Partial<Parameters<typeof putFile>[1]> = {}) =>
   putFile(deps, { path, body: enc(text), mtime: 1_700_000_000_000, author: 'miro', ...extra })
 
+describe('path rules', () => {
+  it('rejects names carrying the replacement character (a client mis-decoded its own bytes)', () => {
+    expect(normalizeVaultPath('_inbox/Lee/2026-09-13 \ufffd\ufffd-\ufffd.md')).toBeNull()
+    expect(normalizeVaultPath('온다/이슈/ISS-0001 배터리.md')).toBe('온다/이슈/ISS-0001 배터리.md')
+  })
+})
+
 describe('normalizeVaultPath', () => {
   it('accepts vault-style names with spaces, brackets and unicode', () => {
     expect(normalizeVaultPath('active/[2026.01.28] 피드백 회의.md')).toBe('active/[2026.01.28] 피드백 회의.md')

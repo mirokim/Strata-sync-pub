@@ -73,7 +73,8 @@ export function normalizeVaultPath(raw: string | null | undefined): string | nul
   const p = raw.replace(/\\/g, '/').replace(/^\/+/, '')
   if (p.length === 0 || p.length > 1024) return null
   // Control characters never belong in a file name; spaces and unicode are normal in a vault.
-  if (/[\u0000-\u001f\u007f]/.test(p)) return null
+  // U+FFFD means a client decoded its own bytes wrongly — the name is already garbage.
+  if (/[\u0000-\u001f\u007f\ufffd]/.test(p)) return null
   const segments = p.split('/')
   for (const s of segments) {
     if (s === '' || s.startsWith('.')) return null
