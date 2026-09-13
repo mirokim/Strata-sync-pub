@@ -1,4 +1,4 @@
-import { Monitor, Settings, Terminal, PanelLeft, Type, Bot, ScrollText, User } from 'lucide-react'
+import { Settings, Terminal, PanelLeft, Type, Bot, ScrollText, User } from 'lucide-react'
 import { useUIStore } from '@/stores/uiStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useBotStore } from '@/stores/botStore'
@@ -80,12 +80,13 @@ export default function TopBar() {
         {!isFast && (
           <button
             onClick={() => setGraphMode(graphMode === '3d' ? '2d' : '3d')}
-            className={cn('flex items-center justify-center w-7 h-7 rounded transition-colors', 'hover:bg-[var(--color-bg-hover)]')}
-            style={{ color: 'var(--color-text-muted)', fontSize: 10, fontWeight: 600, letterSpacing: '0.04em' }}
+            className={cn('flex items-center justify-center h-7 px-1.5 rounded transition-colors', 'hover:bg-[var(--color-bg-hover)]')}
+            style={{ color: 'var(--color-text-primary)', fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', border: '1px solid var(--color-border)', minWidth: 28, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
             title={t('{mode} graph — click to switch to {target}', { mode: graphMode.toUpperCase(), target: graphMode === '3d' ? '2D' : '3D' })}
             aria-label={t('Switch to {target} graph', { target: graphMode === '3d' ? '2D' : '3D' })}
+            data-testid="graph-mode-toggle"
           >
-            {graphMode === '3d' ? <Monitor size={13} /> : <Monitor size={13} style={{ opacity: 0.5 }} />}
+            {graphMode.toUpperCase()}
           </button>
         )}
 
