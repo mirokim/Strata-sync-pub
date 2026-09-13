@@ -79,15 +79,18 @@ export default function McpTab() {
   const serverUrl = config?.url ?? ''
   const signedIn = config?.auth === 'oauth'
   const mcpUrl = serverUrl ? `${serverUrl}/mcp` : ''
+  // With the shared token the server only knows who is calling from X-Author — that name is what
+  // teammates address in the inbox and what My desk counts as "mine", so the snippet carries it
+  const authorName = config?.author?.trim() || '<your name>'
 
   const claudeCode = signedIn || !serverUrl
     ? `claude mcp add --transport http strata ${mcpUrl || 'https://<worker>/mcp'}`
-    : `claude mcp add --transport http strata ${mcpUrl} --header "Authorization: Bearer <team token>"`
+    : `claude mcp add --transport http strata ${mcpUrl} --header "Authorization: Bearer <team token>" --header "X-Author: ${authorName}"`
   const jsonConfig = JSON.stringify({
     mcpServers: {
       strata: signedIn || !serverUrl
         ? { type: 'http', url: mcpUrl || 'https://<worker>/mcp' }
-        : { type: 'http', url: mcpUrl, headers: { Authorization: 'Bearer <team token>' } },
+        : { type: 'http', url: mcpUrl, headers: { Authorization: 'Bearer <team token>', 'X-Author': authorName } },
     },
   }, null, 2)
 

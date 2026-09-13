@@ -87,7 +87,7 @@ export default function ServerTab() {
   const url = state?.config.url ?? saved?.url ?? ''
   const signedIn = saved?.auth === 'oauth'
   // Signed-in servers issue MCP clients their own tokens through the same Google sign-in; the shared token is only for servers without it
-  const mcpCommand = signedIn ? `claude mcp add --transport http strata ${url}/mcp` : `claude mcp add --transport http strata ${url}/mcp --header "Authorization: Bearer <team token>"`
+  const mcpCommand = signedIn ? `claude mcp add --transport http strata ${url}/mcp` : `claude mcp add --transport http strata ${url}/mcp --header "Authorization: Bearer <team token>" --header "X-Author: ${saved?.author?.trim() || '<your name>'}"`
 
   const saveAuthor = async () => {
     setBusy('save')
