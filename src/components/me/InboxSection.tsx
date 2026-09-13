@@ -33,10 +33,10 @@ export default function InboxSection({ inbox, onChanged, open, relative }: Props
 
   const client = () => currentRemoteVault()?.client
 
-  const reply = async (item: InboxItem, status: Exclude<InboxStatus, 'open'>) => {
+  const reply = async (item: InboxItem, status: Exclude<InboxStatus, 'open'>, raw = replyText) => {
     const c = client()
     if (!c) return
-    const text = replyText.trim()
+    const text = raw.trim()
     if (!text && status !== 'declined') { showToast(t('Write a reply first'), 'error'); return }
     setBusy(item.path)
     try {
@@ -68,7 +68,9 @@ export default function InboxSection({ inbox, onChanged, open, relative }: Props
   const input = { width: '100%', background: 'var(--color-bg-primary)', border: '1px solid var(--color-border)', borderRadius: 4, color: 'var(--color-text-primary)', padding: '5px 7px', fontSize: 12 } as const
   const btn = (accent = false) => ({ display: 'flex', alignItems: 'center', gap: 4, background: accent ? 'var(--color-accent)' : 'transparent', border: `1px solid ${accent ? 'var(--color-accent)' : 'var(--color-border)'}`, borderRadius: 4, color: accent ? '#fff' : 'var(--color-text-secondary)', cursor: 'pointer', padding: '3px 8px', fontSize: 11 } as const)
 
-  const Item = ({ item, mine }: { item: InboxItem; mine: boolean }) => (
+  // A render function, not a nested component: a component defined inside render is a new type on
+  // every render, which would remount the reply textarea (and drop its focus) on each keystroke
+  const renderItem = (item: InboxItem, mine: boolean) => (
     <div className="rounded px-2 py-1.5" style={{ fontSize: 12 }} data-testid={`inbox-item-${item.path}`}>
       <div className="flex items-center gap-2">
         <span style={{ color: 'var(--color-text-muted)', flexShrink: 0 }}>{item.kind === 'task' ? <ClipboardList size={12} /> : <MessageCircleQuestion size={12} />}</span>
@@ -97,7 +99,7 @@ export default function InboxSection({ inbox, onChanged, open, relative }: Props
         )
       )}
       {mine && item.status === 'open' && (
-        <button style={{ ...btn(), margin: '6px 0 0 20px' }} disabled={busy === item.path} onClick={() => { setReplyText(''); void reply(item, 'declined') }}>{t('Withdraw')}</button>
+        <button style={{ ...btn(), margin: '6px 0 0 20px' }} disabled={busy === item.path} onClick={() => void reply(item, 'declined', '')}>{t('Withdraw')}</button>
       )}
     </div>
   )
@@ -130,11 +132,11 @@ export default function InboxSection({ inbox, onChanged, open, relative }: Props
           </div>
         )}
         {waiting.length === 0 && !compose && <div style={{ color: 'var(--color-text-muted)', fontSize: 12, padding: '2px 8px' }}>{t('Nothing is waiting for you')}</div>}
-        <div className="flex flex-col gap-1">{waiting.map(i => <Item key={i.path} item={i} mine={false} />)}</div>
+        <div className="flex flex-col gap-1">{waiting.map(i => <div key={i.path}>{renderItem(i, false)}</div>)}</div>
         {doneForMe.length > 0 && (
           <details style={{ marginTop: 6 }}>
             <summary style={{ color: 'var(--color-text-muted)', fontSize: 11, cursor: 'pointer' }}>{t('Answered by you ({count})', { count: doneForMe.length })}</summary>
-            <div className="flex flex-col gap-1">{doneForMe.map(i => <Item key={i.path} item={i} mine={false} />)}</div>
+            <div className="flex flex-col gap-1">{doneForMe.map(i => <div key={i.path}>{renderItem(i, false)}</div>)}</div>
           </details>
         )}
       </section>
@@ -146,7 +148,7 @@ export default function InboxSection({ inbox, onChanged, open, relative }: Props
           <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>{inbox.sent.length}</span>
         </div>
         {inbox.sent.length === 0 && <div style={{ color: 'var(--color-text-muted)', fontSize: 12, padding: '2px 8px' }}>{t('You have not asked anyone yet')}</div>}
-        <div className="flex flex-col gap-1">{inbox.sent.map(i => <Item key={i.path} item={i} mine />)}</div>
+        <div className="flex flex-col gap-1">{inbox.sent.map(i => <div key={i.path}>{renderItem(i, true)}</div>)}</div>
       </section>
     </>
   )

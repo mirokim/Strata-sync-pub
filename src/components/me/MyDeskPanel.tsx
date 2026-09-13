@@ -55,8 +55,10 @@ export default function MyDeskPanel() {
     openInEditor(doc.id)
   }, [loadedDocuments, openInEditor])
 
-  const Row = ({ item, icon, sub }: { item: MeItem; icon?: React.ReactNode; sub?: string }) => (
+  // Render functions rather than components defined inside render (those remount on every render)
+  const row = (item: MeItem, icon?: React.ReactNode, sub?: string) => (
     <button
+      key={item.path}
       onClick={() => open(item.path)}
       className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded transition-colors hover:bg-[var(--color-bg-hover)]"
       style={{ color: 'var(--color-text-primary)', fontSize: 12 }}
@@ -68,8 +70,8 @@ export default function MyDeskPanel() {
     </button>
   )
 
-  const Section = ({ title, count, icon, children, empty }: { title: string; count: number; icon: React.ReactNode; children: React.ReactNode; empty: string }) => (
-    <section className="rounded-lg p-3" style={{ border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)' }} data-testid={`me-section-${title}`}>
+  const section = (title: string, count: number, icon: React.ReactNode, empty: string, children: React.ReactNode) => (
+    <section key={title} className="rounded-lg p-3" style={{ border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)' }} data-testid={`me-section-${title}`}>
       <div className="flex items-center gap-1.5 mb-2" style={{ color: 'var(--color-text-secondary)', fontSize: 12, fontWeight: 600 }}>
         <span style={{ color: 'var(--color-text-muted)' }}>{icon}</span>
         <span>{title}</span>
@@ -99,7 +101,7 @@ export default function MyDeskPanel() {
         {data && (
           <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
             <InboxSection inbox={data.inbox} onChanged={() => void load()} open={open} relative={iso => relative(iso, t)} />
-            <Section title={t('Remarks on my documents')} count={data.remarks.length} icon={<MessageSquare size={13} />} empty={t('No member has remarked on your documents yet')}>
+            {section(t('Remarks on my documents'), data.remarks.length, <MessageSquare size={13} />, t('No member has remarked on your documents yet'), <>
               {data.remarks.map(r => (
                 <button key={`${r.member}/${r.path}`} onClick={() => open(r.path, true)} title={r.path}
                   className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded transition-colors hover:bg-[var(--color-bg-hover)]" style={{ color: 'var(--color-text-primary)', fontSize: 12 }}>
@@ -108,25 +110,25 @@ export default function MyDeskPanel() {
                   <span style={{ color: 'var(--color-text-muted)', fontSize: 11, flexShrink: 0 }}>{relative(r.at, t)}</span>
                 </button>
               ))}
-            </Section>
+            </>)}
 
-            <Section title={t('Proposals citing my documents')} count={data.proposalsCitingMine.length} icon={<Lightbulb size={13} />} empty={t('No open proposal cites your documents')}>
+            {section(t('Proposals citing my documents'), data.proposalsCitingMine.length, <Lightbulb size={13} />, t('No open proposal cites your documents'), <>
               {data.proposalsCitingMine.map(p => (
-                <Row key={p.path} item={{ path: p.path, title: p.title, author: p.author, at: p.at }} icon={<Lightbulb size={12} />} sub={`${p.author} → ${p.cites.join(', ')}`} />
+                row({ path: p.path, title: p.title, author: p.author, at: p.at }, <Lightbulb size={12} />, `${p.author} → ${p.cites.join(', ')}`)
               ))}
-            </Section>
+            </>)}
 
-            <Section title={t('Changed by others recently')} count={data.recentByOthers.length} icon={<Users size={13} />} empty={t('Nothing changed by others yet')}>
-              {data.recentByOthers.map(i => <Row key={i.path} item={i} sub={`${i.author} · ${relative(i.at, t)}`} />)}
-            </Section>
+            {section(t('Changed by others recently'), data.recentByOthers.length, <Users size={13} />, t('Nothing changed by others yet'), <>
+              {data.recentByOthers.map(i => row(i, undefined, `${i.author} · ${relative(i.at, t)}`))}
+            </>)}
 
-            <Section title={t('My recent documents')} count={data.counts.authored} icon={<FileText size={13} />} empty={t('You have not saved a team document yet')}>
-              {data.authored.map(i => <Row key={i.path} item={i} />)}
-            </Section>
+            {section(t('My recent documents'), data.counts.authored, <FileText size={13} />, t('You have not saved a team document yet'), <>
+              {data.authored.map(i => row(i))}
+            </>)}
 
-            <Section title={t('My personal documents')} count={data.counts.personal} icon={<EyeOff size={13} />} empty={data.identity.service ? t('Sign in with Google to keep personal documents') : t('No personal documents — mark one "Only me" in the editor')}>
-              {data.personal.map(i => <Row key={i.path} item={i} />)}
-            </Section>
+            {section(t('My personal documents'), data.counts.personal, <EyeOff size={13} />, data.identity.service ? t('Sign in with Google to keep personal documents') : t('No personal documents — mark one "Only me" in the editor'), <>
+              {data.personal.map(i => row(i))}
+            </>)}
           </div>
         )}
       </div>

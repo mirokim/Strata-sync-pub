@@ -90,7 +90,9 @@ class CheckboxWidget extends WidgetType {
     return el
   }
   eq(o: CheckboxWidget) { return o.checked === this.checked && o.from === this.from && o.locked === this.locked }
-  ignoreEvent() { return false }
+  // The editor must not act on the click: it would move the selection onto the line, reveal the
+  // source and drop this widget before the click lands
+  ignoreEvent() { return true }
 }
 
 class CalloutMarkWidget extends WidgetType {
@@ -136,7 +138,7 @@ class TableWidget extends WidgetType {
     return wrap
   }
   eq(o: TableWidget) { return o.text === this.text && o.from === this.from }
-  ignoreEvent() { return false }
+  ignoreEvent() { return true }   // the mousedown handler above places the cursor itself
 }
 
 function splitTableRow(line: string): string[] {
@@ -205,11 +207,14 @@ class FrontmatterWidget extends WidgetType {
     row.appendChild(key)
     const val = document.createElement('div')
     val.className = 'cm-lp-prop-value'
-    const commit = (text: string) => {
+    // Deferred: a blur can fire while CodeMirror is already updating (the widget being replaced),
+    // and dispatching inside an update throws. After the task the editor is idle again.
+    const commit = (text: string) => setTimeout(() => {
+      if (prop.line > view.state.doc.lines) return
       const line = view.state.doc.line(prop.line)
-      if (line.text === text) return
+      if (line.text === text || !/^[A-Za-z0-9_][\w.\- ]*?\s*:/.test(line.text)) return   // the document moved under us
       view.dispatch({ changes: { from: line.from, to: line.to, insert: text } })
-    }
+    }, 0)
     if (prop.kind === 'block') {
       const note = document.createElement('span')
       note.className = 'cm-lp-prop-note'
@@ -249,7 +254,9 @@ class FrontmatterWidget extends WidgetType {
   }
 
   eq(o: FrontmatterWidget) { return o.signature === this.signature && o.locked === this.locked }
-  ignoreEvent() { return false }
+  // Inputs and buttons inside the properties table handle their own events; if the editor saw the
+  // mousedown it would move the cursor into the YAML, which swaps the widget for the source
+  ignoreEvent() { return true }
 }
 
 // ── Block-level state field ──────────────────────────────────────────────────
@@ -465,13 +472,16 @@ function livePreviewInline(options: LivePreviewOptions) {
 // ── Clicks on rendered links ─────────────────────────────────────────────────
 
 function linkClicks(options: LivePreviewOptions) {
+  // Decided on mousedown: by the time `click` fires the editor has already moved the cursor onto
+  // the line, which reveals the source — so the "is this line active?" test must run first.
   return EditorView.domEventHandlers({
-    click: (event, view) => {
+    mousedown: (event, view) => {
+      if (event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return false
       const target = (event.target as HTMLElement | null)?.closest?.('.cm-lp-link') as HTMLElement | null
       if (!target) return false
       const url = target.dataset.url
       if (!url || !/^(https?:|mailto:)/i.test(url)) return false
-      // A click on the source line is an edit, not navigation — unless the document is locked
+      // On the source line a click is an edit, not navigation — unless the document is locked
       const locked = options.isLockedRef?.current ?? false
       const pos = view.posAtDOM(target)
       if (!locked && selectionTouches(view.state, view.state.doc.lineAt(pos).from, view.state.doc.lineAt(pos).to)) return false
