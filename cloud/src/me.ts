@@ -64,7 +64,8 @@ const titleOf = (view: VaultView, path: string) => view.docs.get(path)?.title ??
 const item = (view: VaultView, r: FileRow): MeItem => ({ path: r.path, title: titleOf(view, r.path), author: r.author, at: new Date(r.updatedAt).toISOString(), ...(isPersonalPath(r.path) ? { personal: true as const } : {}) })
 const newest = (a: FileRow, b: FileRow) => b.updatedAt - a.updatedAt || b.seq - a.seq
 const isDoc = (r: FileRow) => !r.deleted && /\.md$/i.test(r.path) && !r.path.split('/').some(s => s.startsWith('.'))
-const isSystemish = (path: string) => path.startsWith('_system/') || path.startsWith(`${MEMBERS_FOLDER}/`) || isProposalPath(path)
+// Bookkeeping folders (`_system`, `_members`, `_reports`, `_agent` …) are not documents people wrote
+const isSystemish = (path: string) => path.startsWith('_') || path.startsWith(`${MEMBERS_FOLDER}/`) || isProposalPath(path)
 
 export function meOverview(deps: MeDeps): MeOverview {
   const { view, viewer, author } = deps
