@@ -3,6 +3,8 @@
 <details>
 <summary><b>🇰🇷 한국어</b></summary>
 
+> 📘 **사용 설명서**: [docs/manual.md](docs/manual.md) · HTML 판 [docs/manual.html](docs/manual.html) — 왜 만들었는지, 무엇이 있는지, 매일 어떻게 쓰는지.
+
 ## 개요
 
 STRATA SYNC는 Obsidian 스타일 마크다운 볼트를 읽어 **위키링크 기반 지식 그래프**를 구축하는 데스크탑 애플리케이션입니다. 멀티 AI 디렉터 페르소나가 그래프를 탐색하여 프로젝트에 대한 깊은 인사이트를 전달합니다.

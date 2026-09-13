@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strata Sync 사용 설명서</title>
+<meta name="color-scheme" content="light dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #f2f4f7; --surface: #ffffff; --ink: #171d26; --muted: #5f6b7a; --border: #d8dee8;
+    --accent: #2c63e0; --accent-soft: #e4ecfb; --agent: #178f7e; --agent-soft: #dff3ef; --code-bg: #eaeef5;
+    --warn: #b7791f; --warn-soft: #fbf1df;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0e1217; --surface: #161b23; --ink: #e4e8ee; --muted: #98a3b3; --border: #283040;
+      --accent: #6b9bff; --accent-soft: #1b2a4a; --agent: #3fc1ac; --agent-soft: #14332e; --code-bg: #1c222c;
+      --warn: #e0a84a; --warn-soft: #33281a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0e1217; --surface: #161b23; --ink: #e4e8ee; --muted: #98a3b3; --border: #283040;
+    --accent: #6b9bff; --accent-soft: #1b2a4a; --agent: #3fc1ac; --agent-soft: #14332e; --code-bg: #1c222c;
+    --warn: #e0a84a; --warn-soft: #33281a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font-family: 'IBM Plex Sans KR', 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif; font-size: 16px; line-height: 1.75; -webkit-font-smoothing: antialiased; }
+  code, pre, kbd, .mono { font-family: 'IBM Plex Mono', 'D2Coding', Consolas, monospace; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover, a:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .page { display: grid; grid-template-columns: 1fr; gap: 0 48px; max-width: 1180px; margin: 0 auto; padding: 0 24px 96px; }
+  @media (min-width: 1000px) { .page { grid-template-columns: 220px minmax(0, 1fr); } }
+
+  header.masthead { grid-column: 1 / -1; padding: 56px 0 28px; border-bottom: 1px solid var(--border); margin-bottom: 40px; }
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+  .masthead h1 { font-size: clamp(30px, 4.5vw, 44px); line-height: 1.15; margin: 8px 0 12px; font-weight: 700; letter-spacing: -0.01em; text-wrap: balance; }
+  .masthead p.lede { font-size: 18px; color: var(--muted); margin: 0; max-width: 60ch; }
+  .masthead .lede strong { color: var(--ink); font-weight: 600; }
+
+  nav.toc { display: none; }
+  @media (min-width: 1000px) {
+    nav.toc { display: block; position: sticky; top: 24px; align-self: start; font-size: 13.5px; line-height: 1.5; }
+    nav.toc ol { list-style: none; margin: 0; padding: 0; border-left: 1px solid var(--border); }
+    nav.toc li a { display: block; padding: 5px 14px; color: var(--muted); border-left: 2px solid transparent; margin-left: -1px; }
+    nav.toc li a:hover { color: var(--ink); text-decoration: none; border-left-color: var(--border); }
+    nav.toc li a.current { color: var(--accent); border-left-color: var(--accent); }
+  }
+
+  main { min-width: 0; max-width: 70ch; }
+  section { padding: 8px 0 40px; }
+  section + section { border-top: 1px solid var(--border); padding-top: 36px; }
+  h2 { font-size: 26px; line-height: 1.25; margin: 0 0 18px; font-weight: 600; letter-spacing: -0.01em; text-wrap: balance; }
+  h2 .no { color: var(--muted); font-weight: 500; margin-right: 10px; font-variant-numeric: tabular-nums; }
+  h3 { font-size: 17px; margin: 30px 0 10px; font-weight: 600; }
+  p { margin: 0 0 14px; }
+  ul, ol { margin: 0 0 14px; padding-left: 22px; }
+  li { margin: 4px 0; }
+  li::marker { color: var(--muted); }
+  strong { font-weight: 600; }
+  blockquote { margin: 0 0 14px; padding: 10px 16px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 6px 6px 0; color: var(--ink); }
+  blockquote p { margin: 0; }
+  code { background: var(--code-bg); border-radius: 4px; padding: 1px 6px; font-size: 0.88em; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font-size: 13px; line-height: 1.6; margin: 0 0 16px; }
+  pre code { background: transparent; padding: 0; font-size: inherit; }
+
+  .thesis { display: grid; gap: 14px; margin: 18px 0 8px; }
+  .thesis .item { display: grid; grid-template-columns: 26px 1fr; gap: 12px; align-items: start; }
+  .thesis .dot { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; margin-top: 3px; background: var(--accent-soft); color: var(--accent); }
+  .thesis .dot.agent { background: var(--agent-soft); color: var(--agent); }
+  .thesis .item p { margin: 0; }
+  .punch { font-size: 20px; font-weight: 600; margin: 22px 0 6px; letter-spacing: -0.01em; }
+
+  figure.diagram { margin: 18px 0 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 14px 10px 6px; overflow-x: auto; }
+  figure.diagram svg { display: block; width: 100%; height: auto; max-width: 640px; margin: 0 auto; }
+  figure.diagram figcaption { font-size: 12.5px; color: var(--muted); text-align: center; padding: 6px 0 4px; }
+
+  .steps { counter-reset: step; list-style: none; padding: 0; margin: 0 0 16px; }
+  .steps > li { counter-increment: step; position: relative; padding-left: 40px; margin: 0 0 14px; }
+  .steps > li::before { content: counter(step); position: absolute; left: 0; top: 2px; width: 26px; height: 26px; border-radius: 50%; background: var(--surface); border: 1px solid var(--border); color: var(--muted); font-size: 12.5px; font-weight: 600; display: grid; place-items: center; font-variant-numeric: tabular-nums; }
+
+  .day { display: grid; gap: 12px; margin: 6px 0 16px; }
+  .day .slot { display: grid; grid-template-columns: 96px 1fr; gap: 14px; padding: 12px 0; border-top: 1px dashed var(--border); }
+  .day .slot:first-child { border-top: none; }
+  .day .when { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); padding-top: 4px; }
+  .day .slot p { margin: 0 0 6px; }
+  .day .slot ul { margin: 6px 0 0; }
+  @media (max-width: 560px) { .day .slot { grid-template-columns: 1fr; gap: 4px; } }
+
+  .feature { margin: 0 0 26px; }
+  .feature h3 { margin-top: 0; }
+  .feature ul { margin-bottom: 0; }
+
+  .tools { display: grid; grid-template-columns: 1fr; gap: 0; margin: 4px 0 16px; border-top: 1px solid var(--border); }
+  .tools .group { display: grid; grid-template-columns: 110px 1fr; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .tools .label { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); padding-top: 5px; }
+  .tools dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; align-items: baseline; }
+  .tools dt { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--agent); white-space: nowrap; }
+  .tools dd { margin: 0; font-size: 14.5px; color: var(--ink); }
+  @media (max-width: 560px) { .tools .group { grid-template-columns: 1fr; gap: 6px; } .tools dl { grid-template-columns: 1fr; gap: 0; } .tools dd { margin-bottom: 8px; color: var(--muted); } }
+
+  .faq dt { font-weight: 600; margin: 18px 0 4px; }
+  .faq dd { margin: 0; color: var(--ink); }
+  .note { border: 1px solid var(--border); border-left: 3px solid var(--warn); background: var(--warn-soft); border-radius: 0 6px 6px 0; padding: 10px 14px; margin: 0 0 14px; font-size: 14.5px; }
+
+  footer { grid-column: 1 / -1; border-top: 1px solid var(--border); margin-top: 24px; padding-top: 18px; color: var(--muted); font-size: 13px; }
+  @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+
+</head>
+<body>
+<div class="page">
+  <header class="masthead">
+    <div class="eyebrow">Strata Sync · 사용 설명서</div>
+    <h1>팀의 공유 뇌 — 사람과 에이전트가 같은 볼트를 씁니다</h1>
+    <p class="lede">사람은 앱에서 읽고 고치고, AI 에이전트는 MCP로 읽고 제안하고 서로에게 묻습니다. <strong>같은 문서, 같은 링크, 같은 기억.</strong> 이 설명서는 왜 만들었는지, 무엇이 있는지, 매일 어떻게 쓰는지를 순서대로 담았습니다.</p>
+  </header>
+
+  <nav class="toc" aria-label="목차">
+    <ol>
+      <li><a href="#why">왜 만들었나</a></li>
+      <li><a href="#overview">한눈에 보기</a></li>
+      <li><a href="#start">시작하기</a></li>
+      <li><a href="#daily">매일 쓰는 법</a></li>
+      <li><a href="#features">기능</a></li>
+      <li><a href="#tools">MCP 툴</a></li>
+      <li><a href="#admin">관리</a></li>
+      <li><a href="#faq">자주 묻는 질문</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <section id="why">
+      <h2><span class="no">1</span>왜 만들었나</h2>
+      <p>팀의 지식은 늘 흩어져 있습니다. 결정은 회의에서 나고, 근거는 누군가의 머릿속에, 맥락은 슬랙 스레드 어딘가에 있습니다. 위키를 만들어도 아무도 안 봅니다 — 일하는 자리와 떨어져 있으니까요.</p>
+      <p>그런데 이제 팀에는 사람만 있는 게 아닙니다. 각자 Claude Code, Cursor 같은 에이전트를 옆에 두고 일합니다. 그 에이전트들은 서로 아무것도 모릅니다. 김의 에이전트가 오전에 내린 결정을, 이의 에이전트는 오후에도 모릅니다.</p>
+      <p>Strata Sync는 이 두 문제를 하나로 풉니다.</p>
+      <div class="thesis">
+        <div class="item"><div class="dot">1</div><p><strong>볼트 하나.</strong> 마크다운 문서와 위키링크로 된 팀의 기억. 사람은 웹 앱(또는 Obsidian)에서 보고 고칩니다.</p></div>
+        <div class="item"><div class="dot agent">2</div><p><strong>에이전트도 같은 볼트.</strong> MCP로 연결된 모든 에이전트가 같은 문서를 읽고, 제안하고, 서로에게 묻습니다.</p></div>
+        <div class="item"><div class="dot">3</div><p><strong>서버가 전부 봅니다.</strong> 누가 뭘 언제 바꿨는지, 어떤 문서가 어떤 문서와 충돌하는지, 링크 그래프가 어디서 끊기는지 — 한 사람의 세션에서는 절대 보이지 않는 것을 허브가 잡습니다.</p></div>
+      </div>
+      <p class="punch">한 문장으로: "너의 클로드가 나의 클로드한테 물어본다."</p>
+      <p>이게 되려면 이 구조가 필요합니다. 혼자 쓰는 Claude Code로는 안 되는 것 — 다른 사람의 에이전트, 다른 사람의 맥락, 그리고 시간을 가로지르는 것 — 이 제품의 이유입니다.</p>
+    </section>
+
+    <section id="overview">
+      <h2><span class="no">2</span>한눈에 보기</h2>
+      <figure class="diagram">
+        <svg viewBox="0 0 640 300" role="img" aria-label="사람과 에이전트가 하나의 팀 볼트를 읽고 쓰는 구조">
+          <defs>
+            <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker>
+          </defs>
+          <g font-family="IBM Plex Sans KR, sans-serif" font-size="13" fill="var(--ink)">
+            <rect x="40" y="24" width="220" height="64" rx="8" fill="var(--accent-soft)" stroke="var(--accent)"/>
+            <text x="150" y="50" text-anchor="middle" font-weight="600">사람</text>
+            <text x="150" y="72" text-anchor="middle" font-size="12" fill="var(--muted)">웹 앱 · Obsidian</text>
+            <rect x="380" y="24" width="220" height="64" rx="8" fill="var(--agent-soft)" stroke="var(--agent)"/>
+            <text x="490" y="50" text-anchor="middle" font-weight="600">에이전트</text>
+            <text x="490" y="72" text-anchor="middle" font-size="12" fill="var(--muted)">Claude Code · Cursor · Codex</text>
+            <line x1="150" y1="88" x2="270" y2="150" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arr)" marker-start="url(#arr)"/>
+            <line x1="490" y1="88" x2="370" y2="150" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arr)" marker-start="url(#arr)"/>
+            <text x="175" y="126" font-size="11.5" fill="var(--muted)">읽기 · 쓰기</text>
+            <text x="392" y="126" font-size="11.5" fill="var(--muted)">MCP</text>
+            <rect x="120" y="152" width="400" height="118" rx="10" fill="var(--surface)" stroke="var(--border)"/>
+            <text x="320" y="180" text-anchor="middle" font-weight="600" font-size="14">팀 볼트</text>
+            <text x="320" y="200" text-anchor="middle" font-size="12" fill="var(--muted)">Cloudflare Worker · R2 · D1</text>
+            <g font-size="12" fill="var(--ink)">
+              <text x="160" y="232">문서 · 위키링크 · 히스토리</text>
+              <text x="160" y="254">그래프 · 검색 · 회상</text>
+              <text x="360" y="232">AI 멤버 · 개인 문서</text>
+              <text x="360" y="254">편지함 · 릴레이 · 레이더</text>
+            </g>
+          </g>
+        </svg>
+        <figcaption>양쪽이 같은 볼트를 씁니다. 서버는 저장·검색·그래프·히스토리를 맡고, 사람 사이의 일(편지함·레이더)을 중계합니다.</figcaption>
+      </figure>
+      <ul>
+        <li><strong>문서</strong>는 그냥 마크다운 파일입니다. <code>결정 기록/기구설계/DR-0021 메인 브러시 두께 42mm로 변경.md</code>처럼 폴더와 파일 이름이 곧 구조입니다.</li>
+        <li><strong>링크</strong>는 <code>[[문서 이름]]</code>. 이 링크가 모여 그래프가 됩니다.</li>
+        <li><strong>서버</strong>(Cloudflare Worker)가 저장·검색·그래프·히스토리를 맡고, 웹 앱(Vercel)과 MCP가 그 위에 얹혀 있습니다.</li>
+      </ul>
+    </section>
+
+    <section id="start">
+      <h2><span class="no">3</span>시작하기</h2>
+      <h3>웹 앱 접속</h3>
+      <ol class="steps">
+        <li>팀의 웹 주소를 엽니다 (예: <code>https://strata-sync-nine.vercel.app</code>).</li>
+        <li>접속 방식은 둘 중 하나입니다.
+          <ul>
+            <li><strong>Google 로그인</strong> — 서버에 Google 로그인이 켜져 있으면 버튼이 보입니다. 이 방식이어야 "나만 보기" 개인 문서를 쓸 수 있습니다.</li>
+            <li><strong>팀 토큰</strong> — 서버 주소, 팀이 공유하는 토큰, 그리고 <strong>내 이름</strong>을 넣습니다. 이름은 내가 저장한 문서의 작성자로 남고, 팀원이 편지함에서 나를 부를 때 쓰는 이름입니다.</li>
+          </ul>
+        </li>
+        <li>접속하면 볼트가 브라우저에 내려오고(큰 볼트는 수십 초), 그래프가 뜹니다.</li>
+      </ol>
+
+      <h3>에이전트 연결 (Claude Code 기준)</h3>
+      <p>설정 → <strong>MCP</strong> 탭에 내 이름이 들어간 명령이 준비돼 있습니다. 팀 토큰 방식이면 이런 모양입니다.</p>
+      <pre><code>claude mcp add --transport http strata https://&lt;worker&gt;/mcp \
+  --header "Authorization: Bearer &lt;팀 토큰&gt;" --header "X-Author: 홍길동"</code></pre>
+      <div class="note"><code>X-Author</code>가 중요합니다. 서버는 이 이름으로 "누가 썼는지", "누구에게 온 편지인지"를 판단합니다. Google 로그인 서버라면 헤더 없이 <code>claude mcp add --transport http strata https://&lt;worker&gt;/mcp</code>만 치면 로그인 창이 뜹니다.</div>
+      <p>연결되면 에이전트에게 이렇게 말해 보세요.</p>
+      <blockquote><p>"vault_me 해봐" → 내 책상(내 문서, 나에게 온 질문, 남들이 바꾼 것)이 나옵니다.</p></blockquote>
+
+      <h3>첫 10분</h3>
+      <ol class="steps">
+        <li>그래프에서 아무 노드나 클릭 → 문서가 에디터에 열립니다. 위쪽 <strong>속성</strong> 표가 프런트매터입니다. 값을 바로 고칠 수 있습니다.</li>
+        <li>본문에 <code>[[</code>를 치면 문서 이름 자동완성이 뜹니다. 링크 하나 걸고 저장(자동 저장, 3초).</li>
+        <li>상단 바의 <strong>사람 아이콘</strong> → 내 책상. 방금 저장한 문서가 "내가 최근 저장한 문서"에 있습니다.</li>
+        <li>에이전트에게: "볼트에서 '소음 목표'에 대해 팀이 아는 걸 모아줘" → <code>vault_recall</code>이 관련 문서·이웃·멤버 메모를 한 묶음으로 가져옵니다.</li>
+      </ol>
+    </section>
+
+    <section id="daily">
+      <h2><span class="no">4</span>매일 쓰는 법</h2>
+      <div class="day">
+        <div class="slot"><div class="when">아침</div><div><p>에이전트를 켜면 먼저 <code>vault_me</code>를 봅니다(서버가 그렇게 안내합니다). 팀원의 에이전트가 남긴 질문이 있으면 내 맥락 — 내 레포, 내 개인 문서 — 으로 답합니다. 앱에서는 내 책상의 "나에게 온 것"에 답변 상자가 있습니다.</p></div></div>
+        <div class="slot"><div class="when">일하는 중</div><div><p>결정이 나면 문서로 씁니다. 에이전트가 대신 쓰게 하면 <code>_agent/</code>에 <strong>제안</strong>으로 들어가고, 사람이 승격해야 볼트에 들어갑니다. 에이전트는 남의 문서를 직접 고치지 않습니다.</p></div></div>
+        <div class="slot"><div class="when">저장할 때</div><div><p>두 가지가 자동으로 돕습니다.</p>
+          <ul>
+            <li><strong>AI 멤버 반응</strong> — 그 문서를 담당 범위로 둔 멤버(사서, 디자이너…)가 "이게 뭘 바꾸나 / 어디와 부딪히나 / 질문 하나"를 남깁니다. 에디터 오른쪽 Brain 패널에 보입니다.</li>
+            <li><strong>모순 레이더</strong> — 서버가 가장 가까운 문서들(다른 사람이 쓴 것 포함)과 비교해서 "동시에 참일 수 없는 것"을 찾으면 내 편지함에 질문을 넣습니다. "이 문서는 60 dB라는데 박의 문서는 65 dB — 어느 쪽?"</li>
+          </ul></div></div>
+        <div class="slot"><div class="when">물을 때</div><div><p>슬랙 대신 편지함. "이 파라미터 바꾸면 앱 쪽 영향 있어?"를 이의 이름으로 보내면, 이 또는 이의 에이전트가 다음에 켜질 때 <em>그 사람 맥락</em>으로 답합니다. 작업도 같은 방식으로 넘깁니다.</p></div></div>
+        <div class="slot"><div class="when">릴레이</div><div><p>작업에 "다음 사람들"을 적어 두면(박 → 최), 이가 완료하는 순간 서버가 같은 작업을 박 앞으로 만들고 결과를 인용해 붙입니다. 일이 밤새 한 사람 컴퓨터에서 다음 사람 컴퓨터로 걸어갑니다. 모든 단계가 지정된 사람에게 갑니다 — 아무나 집어가는 구조가 아닙니다.</p></div></div>
+      </div>
+    </section>
+
+    <section id="features">
+      <h2><span class="no">5</span>기능</h2>
+      <div class="feature">
+        <h3>문서와 에디터</h3>
+        <ul>
+          <li><strong>라이브 프리뷰</strong> — 커서가 있는 줄만 마크다운 원문이 보이고 나머지는 렌더링됩니다. 제목·굵게·링크·체크박스·인용·콜아웃(<code>&gt; [!warning]</code>)·표·코드블록·<code>#태그</code>.</li>
+          <li><strong>속성 표</strong> — 프런트매터가 키/값 표로. 텍스트·숫자·날짜·체크박스·리스트를 바로 고치면 해당 YAML 줄만 바뀝니다. "소스 편집"으로 원문도 볼 수 있습니다.</li>
+          <li><strong>잠금 = 읽기 모드</strong> — 자물쇠를 잠그면 전부 렌더링만 됩니다. 툴바 눈 아이콘으로 프리뷰/소스 전환.</li>
+          <li><strong>이미지</strong> — 붙여넣거나 끌어다 놓으면 <code>attachments/</code>에 저장되고 이미지 문서가 생깁니다. 설명은 에이전트가 보고 채웁니다(<code>images_undescribed</code>).</li>
+          <li><strong>Brain 패널</strong> — 이 문서에 멤버가 남긴 말, 버전 히스토리와 diff, 여기로 오는 링크·나가는 링크, 인용한 제안, 같은 동네 문서.</li>
+        </ul>
+      </div>
+      <div class="feature">
+        <h3>그래프</h3>
+        <ul>
+          <li>3D/2D 전환(설정 → 일반). 색은 역할·태그·폴더·활동(최근 편집이 따뜻하게)으로 바꿀 수 있습니다.</li>
+          <li>큰 볼트(수천 문서)도 됩니다. 라벨은 허브와 카메라 근처에만 붙고, 느린 기기에서는 자동으로 화질을 낮춥니다.</li>
+          <li><strong>린트</strong>(<code>graph_lint</code>) — 참조는 되는데 문서가 없는 <strong>팬텀 링크</strong>, 아무도 안 가리키는 <strong>고아</strong>, 잘리면 그래프가 갈라지는 <strong>다리 문서</strong>, 클러스터 이동. 매일 새벽 <code>_reports/</code>에 리포트가 쌓입니다.</li>
+        </ul>
+      </div>
+      <div class="feature">
+        <h3>검색과 회상</h3>
+        <ul>
+          <li>검색은 BM25 + 시맨틱(임베딩)을 섞습니다. 한국어는 음절 2-gram으로 잘라서 조사에 덜 흔들립니다.</li>
+          <li><code>vault_recall</code>은 검색 결과에 링크 이웃, AI 멤버의 기억, 멤버가 남긴 말을 더해 "이 주제에 대해 팀이 아는 것"을 한 묶음으로 줍니다. 에이전트가 무언가 시작하기 전에 부르기 좋은 툴입니다.</li>
+        </ul>
+      </div>
+      <div class="feature">
+        <h3>히스토리</h3>
+        <ul><li>저장할 때마다 이전 버전이 보관됩니다(문서당 20개). Brain 패널이나 <code>vault_history</code>로 "누가 언제 무엇을 바꿨나"를 diff로 봅니다.</li></ul>
+      </div>
+      <div class="feature">
+        <h3>개인 문서 ("나만 보기")</h3>
+        <ul><li>Google 로그인 사용자는 문서를 "나만 보기"로 둘 수 있습니다. 같은 볼트 안에 있고, 링크·그래프·검색·회상이 <strong>나에게는</strong> 그대로 작동하지만, 다른 사람과 다른 사람의 에이전트에게는 존재하지 않습니다. 개인 문서의 문장을 제안이나 멤버 기억에 그대로 옮기면 서버가 막습니다.</li></ul>
+      </div>
+      <div class="feature">
+        <h3>AI 멤버</h3>
+        <ul>
+          <li>설정 → <strong>AI 멤버</strong>. 역할(사서, 디자이너, 리서처, PM…), 담당 범위(폴더·태그), 루틴(매일/매주), 그리고 자기 기억 노트 <code>_members/&lt;이름&gt; (memory).md</code>.</li>
+          <li>멤버의 "생각"은 각자의 에이전트에서 돌아갑니다: <code>/mcp__strata__member name=사서</code> 프롬프트를 부르면 역할·기억·오늘 할 루틴이 주어지고, 결과는 제안과 기억 노트로만 남깁니다.</li>
+          <li>서버에 모델 키가 있으면 저장 반응과 레이더가 서버에서 자동으로 돕니다.</li>
+        </ul>
+      </div>
+      <div class="feature">
+        <h3>내 책상과 편지함</h3>
+        <ul>
+          <li>상단 바 사람 아이콘, 또는 <code>?view=me</code> 링크(<code>vault_me</code>가 알려줍니다).</li>
+          <li>나에게 온 질문/작업, 내가 물은 것과 답, 내 문서에 온 멤버 반응, 내 문서를 인용한 제안, 남들이 최근 바꾼 것, 내 문서, 내 개인 문서.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="tools">
+      <h2><span class="no">6</span>MCP 툴</h2>
+      <p>에이전트가 쓰는 도구입니다. 이름은 그대로, 설명은 한 줄로.</p>
+      <div class="tools">
+        <div class="group"><div class="label">읽기</div><dl>
+          <dt>vault_me</dt><dd>내 책상 — 내 문서, 나에게 온 것, 남들이 바꾼 것, 앱 링크</dd>
+          <dt>vault_recall</dt><dd>주제에 대해 팀이 아는 것 한 묶음 (문서 + 이웃 + 멤버 기억)</dd>
+          <dt>vault_search</dt><dd>BM25 + 시맨틱 검색</dd>
+          <dt>vault_read</dt><dd>문서 읽기 (이미지면 이미지 + 이미지 문서)</dd>
+          <dt>vault_list</dt><dd>문서 목록</dd>
+          <dt>vault_changes</dt><dd>어느 시점부터 무엇이 바뀌었나</dd>
+          <dt>vault_history</dt><dd>버전 목록과 diff</dd>
+          <dt>vault_proposals</dt><dd>열린 제안</dd>
+          <dt>images_undescribed</dt><dd>설명 없는 이미지 — 에이전트가 보고 채움</dd>
+        </dl></div>
+        <div class="group"><div class="label">쓰기</div><dl>
+          <dt>vault_propose</dt><dd>제안으로 기록 — 에이전트의 기본 쓰기 방식</dd>
+          <dt>vault_promote</dt><dd>사람이 승인한 제안을 볼트로</dd>
+          <dt>vault_write</dt><dd>직접 쓰기 — 부탁받았을 때만</dd>
+          <dt>vault_visibility</dt><dd>개인 문서 공개 / 회수</dd>
+        </dl></div>
+        <div class="group"><div class="label">그래프</div><dl>
+          <dt>graph_lint</dt><dd>팬텀 링크·고아·다리 문서·클러스터 이동</dd>
+          <dt>graph_suggest_links</dt><dd>이 글이 링크해야 할 문서</dd>
+        </dl></div>
+        <div class="group"><div class="label">사람 사이</div><dl>
+          <dt>inbox_send</dt><dd>팀원에게 질문/작업 — <code>chain</code>으로 릴레이</dd>
+          <dt>inbox_list</dt><dd>나에게 온 것, 내가 보낸 것</dd>
+          <dt>inbox_reply</dt><dd>답하기 / 결과 보고 / 거절</dd>
+          <dt>radar_check</dt><dd>이 문서가 팀의 어떤 문서와 충돌하나</dd>
+        </dl></div>
+        <div class="group"><div class="label">AI 멤버</div><dl>
+          <dt>members_list</dt><dd>멤버와 오늘 할 루틴</dd>
+          <dt>member_remember</dt><dd>기억 노트에 적기</dd>
+          <dt>member_report</dt><dd>루틴 실행 기록</dd>
+          <dt>member (프롬프트)</dt><dd>역할·기억·루틴을 에이전트에 넘기기</dd>
+        </dl></div>
+      </div>
+    </section>
+
+    <section id="admin">
+      <h2><span class="no">7</span>관리</h2>
+      <ul>
+        <li><strong>언어·테마·그래프·에디터</strong> — 설정 → 일반. UI는 한국어/English, 기본은 브라우저 언어.</li>
+        <li><strong>서버 배포</strong> — <code>cd cloud &amp;&amp; npx wrangler deploy</code>. 웹 앱은 GitHub에 푸시하면 Vercel이 자동 배포합니다.</li>
+        <li><strong>모델 키</strong> — 저장 반응과 레이더는 서버에 <code>ANTHROPIC_API_KEY</code>가 있어야 돕니다: <code>cd cloud &amp;&amp; npx wrangler secret put ANTHROPIC_API_KEY</code>. 없으면 멤버는 각자 에이전트에서만 돌고, 레이더는 쉽니다.</li>
+        <li><strong>팀 토큰</strong> — <code>wrangler secret put TEAM_TOKEN</code>. 바꾸면 모두 다시 접속해야 합니다.</li>
+        <li><strong>시드 데이터</strong> — 빈 볼트로 시작하기 심심하면 <code>node scripts/seed-product.mjs --server &lt;worker&gt; --token &lt;토큰&gt;</code>. 가상의 로봇청소기 회사 문서 수천 개가 들어갑니다(<code>--wipe</code>로 지우기).</li>
+        <li><strong>Obsidian</strong> — 볼트 폴더를 R2와 동기화하는 플러그인(Remotely Save 등)으로 붙이면 Obsidian에서 편집한 것도 서버가 색인합니다.</li>
+      </ul>
+    </section>
+
+    <section id="faq">
+      <h2><span class="no">8</span>자주 묻는 질문</h2>
+      <dl class="faq">
+        <dt>이름을 잘못 넣으면?</dt>
+        <dd>팀 토큰 방식에서는 이름이 곧 나입니다. 설정 → 서버에서 바꿀 수 있고, MCP 쪽 <code>X-Author</code>도 같이 맞추세요. Google 로그인이면 계정으로 잡혀서 상관없습니다.</dd>
+        <dt>개인 문서는 정말 안 보이나?</dt>
+        <dd>서버가 경로 단위로 막습니다. 목록·검색·회상·히스토리·MCP 어느 길로도 남에게는 없는 문서입니다. 단, 팀 토큰 사용자는 개인 문서를 만들 수 없습니다(누구인지 확정할 수 없으니까요).</dd>
+        <dt>에이전트가 내 문서를 마음대로 고치나?</dt>
+        <dd>아니요. 기본 쓰기 통로는 제안(<code>_agent/</code>)이고, 사람이 승격합니다. 멤버는 자기 기억 노트만 직접 씁니다.</dd>
+        <dt>오프라인은?</dt>
+        <dd>웹 앱은 브라우저에 볼트 사본(IndexedDB)을 두고 15초마다 서버와 맞춥니다. 저장이 충돌하면 서버 버전이 남고 내 버전은 <code>(conflict 이름 시각).md</code>로 따로 저장됩니다.</dd>
+        <dt>큰 볼트는 느리지 않나?</dt>
+        <dd>5,000개 문서까지 확인했습니다. 첫 로딩은 수십 초, 이후는 변경분만 받습니다. 그래프는 노트북에서도 돌아가도록 자동으로 화질을 조절합니다.</dd>
+      </dl>
+    </section>
+  </main>
+
+  <footer>Strata Sync · 이 문서의 마크다운 판은 저장소의 <code>docs/manual.md</code>에 있습니다.</footer>
+</div>
+
+<script>
+  // 목차의 현재 위치 표시 — 장식이 아니라 긴 글에서 어디쯤인지 알려주는 용도
+  (function () {
+    var links = Array.prototype.slice.call(document.querySelectorAll('nav.toc a'))
+    if (!links.length || !('IntersectionObserver' in window)) return
+    var byId = {}
+    links.forEach(function (a) { byId[a.getAttribute('href').slice(1)] = a })
+    var current = null
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return
+        if (current) current.classList.remove('current')
+        current = byId[e.target.id]
+        if (current) current.classList.add('current')
+      })
+    }, { rootMargin: '-10% 0px -70% 0px', threshold: 0 })
+    document.querySelectorAll('main section[id]').forEach(function (s) { io.observe(s) })
+  })()
+</script>
+</body>
+</html>

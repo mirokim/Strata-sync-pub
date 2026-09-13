@@ -28,6 +28,11 @@ Thumbs.db
 
 # Internal docs
 docs/
+# the user manual is the one thing in docs/ that ships
+!docs/
+docs/*
+!docs/manual.md
+!docs/manual.html
 
 # TypeScript build info
 tsconfig.tsbuildinfo
