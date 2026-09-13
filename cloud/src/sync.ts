@@ -70,7 +70,8 @@ export const MANIFEST_PAGE = 500
  */
 export function normalizeVaultPath(raw: string | null | undefined): string | null {
   if (!raw) return null
-  const p = raw.replace(/\\/g, '/').replace(/^\/+/, '')
+  // macOS spells Korean file names in NFD; everything here (links, search, equality) assumes NFC
+  const p = raw.normalize('NFC').replace(/\\/g, '/').replace(/^\/+/, '')
   if (p.length === 0 || p.length > 1024) return null
   // Control characters never belong in a file name; spaces and unicode are normal in a vault.
   // U+FFFD means a client decoded its own bytes wrongly — the name is already garbage.

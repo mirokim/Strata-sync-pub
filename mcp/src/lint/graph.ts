@@ -44,7 +44,7 @@ export interface LintGraph {
  * case-insensitively, ignoring alias, heading and block-reference suffixes.
  */
 export function normalizeWikiLink(raw: string): string {
-  let s = raw.trim().replace(/\\$/, '')  // `[[Doc\|alias]]` inside tables escapes the pipe
+  let s = raw.normalize('NFC').trim().replace(/\\$/, '')  // `[[Doc\|alias]]` inside tables escapes the pipe
   const pipe = s.indexOf('|'); if (pipe >= 0) s = s.slice(0, pipe)
   const hash = s.indexOf('#'); if (hash >= 0) s = s.slice(0, hash)
   const caret = s.indexOf('^'); if (caret >= 0) s = s.slice(0, caret)
@@ -54,7 +54,7 @@ export function normalizeWikiLink(raw: string): string {
 
 /** Display form of a wikilink target: alias/heading/block/folder stripped, original casing kept. */
 export function wikiLinkLabel(raw: string): string {
-  let s = raw.trim().replace(/\\$/, '')
+  let s = raw.normalize('NFC').trim().replace(/\\$/, '')
   const pipe = s.indexOf('|'); if (pipe >= 0) s = s.slice(0, pipe)
   const hash = s.indexOf('#'); if (hash >= 0) s = s.slice(0, hash)
   const caret = s.indexOf('^'); if (caret >= 0) s = s.slice(0, caret)
@@ -94,7 +94,7 @@ export function buildLintGraph(docs: LintDocument[]): LintGraph {
     nodes.push(node)
     nodeById.set(doc.id, node)
     // First document wins on duplicate basenames, like Obsidian's "shortest path" default.
-    const key = title.toLowerCase()
+    const key = title.normalize('NFC').toLowerCase()
     if (!titleToId.has(key)) titleToId.set(key, doc.id)
   }
 

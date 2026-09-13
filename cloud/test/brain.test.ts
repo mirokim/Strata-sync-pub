@@ -508,30 +508,39 @@ describe('image document edge cases', () => {
 })
 
 describe('vault view edge cases', () => {
-  it('a corrupt or foreign snapshot is ignored and replaced', async () => {
+  it('a corrupt or foreign snapshot is ignored and replaced; a stale entry is re-read, the rest comes from the index', async () => {
     const { VAULT_SNAPSHOT_KEY, decodeSnapshot } = await import('../src/vaultIndex.js')
-    for (let i = 0; i < 3; i++) await putFile(deps, { path: `d/${i}.md`, body: enc(`# ${i}\n\nbody ${i}`), mtime: 1, author: 'a' })
+    for (let i = 0; i < 3; i++) await putFile(deps, { path: `d/${i}.md`, body: enc(`# ${i}\n\nbody ${i} snapshot`), mtime: 1, author: 'a' })
     blobs.objects.set(VAULT_SNAPSHOT_KEY, enc('{not json'))
     invalidateVaultView()
     const v1 = await loadVaultView(deps, true)
     expect(v1.docs.size).toBe(3)
     const rewritten = await decodeSnapshot(blobs.objects.get(VAULT_SNAPSHOT_KEY)!)
     expect(rewritten.map(d => d.path).sort()).toEqual(['d/0.md', 'd/1.md', 'd/2.md'])
-    // A snapshot of a future format is not trusted either: everything is read from R2 again
-    blobs.objects.set(VAULT_SNAPSHOT_KEY, enc(JSON.stringify({ version: 99, head: 3 }) + '\n' + JSON.stringify({ path: 'd/0.md', etag: (await meta.get('d/0.md'))!.etag, content: 'STALE' }) + '\n'))
+    // A cold isolate with the snapshot reads nothing from R2 and searches straight from the stored index
     invalidateVaultView()
     const reads: string[] = []
     const spied = { ...deps, blobs: Object.assign(Object.create(blobs), { get: async (p: string) => { reads.push(p); return blobs.get(p) } }) as MemoryBlobs }
     const v2 = await loadVaultView(spied, true)
-    expect(reads.filter(p => p.startsWith('d/'))).toHaveLength(3)
-    expect(await v2.bodyOf('d/0.md')).toContain('body 0')
-    // A snapshot entry with a stale hash is not used for that document
-    blobs.objects.set(VAULT_SNAPSHOT_KEY, enc(JSON.stringify({ version: 2, head: 3 }) + '\n' + JSON.stringify({ path: 'd/0.md', etag: 'stale', content: 'STALE' }) + '\n' + JSON.stringify({ path: 'd/1.md', etag: (await meta.get('d/1.md'))!.etag, content: '# 1\n\nfrom snapshot' }) + '\n'))
+    expect(reads).toEqual([VAULT_SNAPSHOT_KEY])
+    expect(v2.bm25().search('snapshot').map(h => h.path).sort()).toEqual(['d/0.md', 'd/1.md', 'd/2.md'])
+    expect(v2.docs.get('d/1.md')?.title).toBe('1')
+    // One document changed since: only that one is read, and the index reflects the new text
+    await putFile(deps, { path: 'd/0.md', body: enc('# 0\n\nchanged text'), mtime: 2, author: 'b' })
     invalidateVaultView(); reads.length = 0
     const v3 = await loadVaultView(spied, true)
-    expect(reads.filter(p => p.startsWith('d/')).sort()).toEqual(['d/0.md', 'd/2.md'])
-    expect(v3.bm25().search('snapshot').map(h => h.path)).toEqual(['d/1.md'])   // indexed from the snapshot text
-    expect(await v3.bodyOf('d/0.md')).toContain('body 0')
+    expect(reads.filter(p => p.startsWith('d/'))).toEqual(['d/0.md'])
+    expect(v3.bm25().search('changed').map(h => h.path)).toEqual(['d/0.md'])
+    expect(v3.bm25().search('snapshot').map(h => h.path).sort()).toEqual(['d/1.md', 'd/2.md'])   // the old text of d/0 is gone
+    expect(await v3.bodyOf('d/0.md')).toContain('changed text')
+    // A snapshot written from that warm-ish view (no text in memory) round-trips the same index
+    const { writeVaultSnapshot } = await import('../src/vaultIndex.js')
+    await writeVaultSnapshot(deps, v3)
+    invalidateVaultView(); reads.length = 0
+    const v4 = await loadVaultView(spied, true)
+    expect(reads).toEqual([VAULT_SNAPSHOT_KEY])
+    expect(v4.bm25().search('changed').map(h => h.path)).toEqual(['d/0.md'])
+    expect(v4.bm25().search('snapshot').map(h => h.path).sort()).toEqual(['d/1.md', 'd/2.md'])
   })
 
   it('caps R2 reads per load at 800 and catches up on the next forced load', async () => {
@@ -571,5 +580,23 @@ describe('vault view edge cases', () => {
     expect(scores(applyDelta(Bm25.from(i1), v1, v3), 'gamma')).toEqual(scores(fresh, 'gamma'))   // skipping a generation is fine too
     expect(i3.search('')).toEqual([])
     expect(i3.search('beta', 10, new Set(['a.md'])).map(h => h.path)).toEqual(['b.md'])
+  })
+})
+
+describe('Korean text from macOS (NFD)', () => {
+  it('tokenises, links and stores decomposed Hangul as if it were composed', async () => {
+    const { tokenize } = await import('../src/vaultIndex.js')
+    const { normalizeVaultPath } = await import('../src/sync.js')
+    const { normalizeWikiLink } = await import('../../mcp/src/lint/graph.js')
+    const nfc = '배터리 수명'
+    const nfd = nfc.normalize('NFD')
+    expect(nfd).not.toBe(nfc)
+    expect(tokenize(nfd)).toEqual(tokenize(nfc))
+    expect(normalizeVaultPath(`온다/이슈/${nfd}.md`)).toBe(`온다/이슈/${nfc}.md`)
+    expect(normalizeWikiLink(nfd)).toBe(normalizeWikiLink(nfc))
+    // An NFD document body is found by an NFC query through the index
+    const { parseVaultDoc } = await import('../../mcp/src/lint/vaultDoc.js')
+    const idx = new Bm25(new Map([['a.md', parseVaultDoc('a.md', `# ${nfd}\n\n${nfd} 저하 이슈`.normalize('NFD'), 1)]]))
+    expect(idx.search('배터리').map(h => h.path)).toEqual(['a.md'])
   })
 })

@@ -73,7 +73,7 @@ export function buildGraphLinks(
   // **last document** in scan order monopolize every link and orphan the rest in the graph.
   const filenameToDocs = new Map<string, AnyDocument[]>()
   for (const doc of documents) {
-    const filename = doc.filename.replace(/\.md$/i, '').toLowerCase()
+    const filename = doc.filename.normalize('NFC').replace(/\.md$/i, '').toLowerCase()
     const bucket = filenameToDocs.get(filename)
     if (bucket) bucket.push(doc)
     else filenameToDocs.set(filename, [doc])

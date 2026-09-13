@@ -99,15 +99,17 @@ async function writeJson(deps: SyncDeps, key: string, value: unknown): Promise<v
 }
 
 /** Every live row, paging through the manifest API's underlying store. */
+const LIST_PAGE = 5000
 export async function listLiveRows(meta: SyncDeps['meta']): Promise<FileRow[]> {
   const out: FileRow[] = []
   let since = 0
   for (;;) {
-    const page = await meta.listSince(since, 1000)
+    // One D1 round trip is ~250 ms; a team vault fits in a few pages of this size
+    const page = await meta.listSince(since, LIST_PAGE)
     if (page.length === 0) break
     for (const r of page) if (!r.deleted) out.push(r)
     since = page[page.length - 1].seq
-    if (page.length < 1000) break
+    if (page.length < LIST_PAGE) break
   }
   return out
 }

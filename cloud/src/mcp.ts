@@ -41,7 +41,7 @@ const enc = new TextEncoder()
 const dec = new TextDecoder()
 
 const TOOLS = [
-  { name: 'vault_list', description: 'List documents in the team vault (path, title, tags, modified). Optional folder prefix filter.', inputSchema: { type: 'object' as const, properties: { folder: { type: 'string', description: 'Only paths under this folder' }, limit: { type: 'number', description: 'Max entries (default 200)' } } } },
+  { name: 'vault_list', description: 'List documents in the team vault (path, title, tags, modified). Optional folder prefix filter. `total` is the whole visible vault; `count` is what this page returned.', inputSchema: { type: 'object' as const, properties: { folder: { type: 'string', description: 'Only paths under this folder' }, limit: { type: 'number', description: 'Max entries (default 200, max 10000)' } } } },
   { name: 'vault_read', description: 'Read a document by vault path (e.g. "active/Combat System.md"). For an image path (png/jpg/webp/gif) returns the image itself plus its image document (the description written for it) — refine that document with vault_write when the description is wrong or thin.', inputSchema: { type: 'object' as const, properties: { path: { type: 'string' } }, required: ['path'] } },
   { name: 'vault_search', description: 'Search the vault. Uses the semantic index when available and BM25 keyword search always; returns paths with scores and a snippet. For "what do we know about X" prefer vault_recall.', inputSchema: { type: 'object' as const, properties: { query: { type: 'string' }, topK: { type: 'number', description: 'default 8' } }, required: ['query'] } },
   { name: 'vault_recall', description: 'What the team knows about a topic, as one bundle: the matching documents (excerpts), the documents linked around them, what the AI members remember about it, and what members said when those documents were saved. Use this before answering any question about the team\'s work; cite the paths it lists.', inputSchema: { type: 'object' as const, properties: { query: { type: 'string' }, budget: { type: 'number', description: 'Characters of document text to include (default 16000, max 60000)' }, seeds: { type: 'number', description: 'Matching documents (default 5)' }, neighbours: { type: 'number', description: 'Linked documents around them (default 8)' }, format: { type: 'string', enum: ['markdown', 'json'], description: 'default markdown' } }, required: ['query'] } },
@@ -90,7 +90,7 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
     case 'vault_list': {
       const view = await loadVaultView(deps)
       const folder = typeof args.folder === 'string' ? args.folder.replace(/^\/+|\/+$/g, '') : ''
-      const limit = Math.min(Math.max(Number(args.limit) || 200, 1), 2000)
+      const limit = Math.min(Math.max(Number(args.limit) || 200, 1), 10_000)
       const visible = [...view.docs.entries()].filter(([p]) => canSee(p, deps.viewer))
       const items = visible
         .filter(([p]) => !folder || p === folder || p.startsWith(folder + '/'))

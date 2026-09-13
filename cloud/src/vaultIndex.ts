@@ -7,9 +7,12 @@
  * Memory is the constraint, not CPU: a Worker isolate has 128 MB and a team vault has thousands
  * of Korean documents. So document text is never retained — it streams through the parser and
  * the tokeniser once and is dropped; anything that needs a body later (`bodyOf`, `parsed`)
- * fetches it from R2. A gzip NDJSON snapshot of the whole vault (`_system/vault-snapshot`) lets a
- * cold isolate get every document with one request and stream-parse it line by line; only
- * documents whose hash moved since are read from R2 individually.
+ * fetches it from R2.
+ *
+ * The snapshot (`_system/vault-snapshot`) is the view itself, not the text: the lite documents,
+ * the vocabulary and the posting lists, gzip-compressed binary. A cold isolate streams it in
+ * (no parsing, no tokenising) and only reads the documents whose hash moved since from R2; any
+ * isolate, warm or cold, can write a fresh one from memory.
  */
 import { parseVaultDoc, type ParsedVaultDoc } from '../../mcp/src/lint/vaultDoc.js'
 import { buildLintGraph, type LintGraph } from '../../mcp/src/lint/graph.js'
@@ -43,13 +46,12 @@ let _inflight: Promise<VaultView> | null = null
 /** When this isolate last wrote the snapshot and at which head, to keep rewrites rare. */
 let _snapshotWritten: { at: number; head: number } = { at: 0, head: -1 }
 
-/** gzip NDJSON: a header line `{version, head}` then one `{path, etag, content}` per document. */
 export const VAULT_SNAPSHOT_KEY = '_system/vault-snapshot'
-const SNAPSHOT_VERSION = 2
-/** A cold load that fetched at least this many documents rewrites the snapshot (subject to the interval). */
-const SNAPSHOT_REWRITE_AFTER = 40
+const SNAPSHOT_VERSION = 3
+/** A load that fetched at least this many documents rewrites the snapshot (subject to the interval). */
+const SNAPSHOT_REWRITE_AFTER = 20
 /** …but not more often than this while the vault churns; a big backlog rewrites regardless. */
-const SNAPSHOT_MIN_INTERVAL_MS = 3 * 60 * 1000
+const SNAPSHOT_MIN_INTERVAL_MS = 2 * 60 * 1000
 const SNAPSHOT_REWRITE_FORCE = 150
 /** Hard cap on per-load R2 reads (the invocation's subrequest budget); the rest wait for the next load. */
 const MAX_READS_PER_LOAD = 800
@@ -89,53 +91,47 @@ async function buildVaultView(deps: SyncDeps, force: boolean): Promise<VaultView
   const previous = _cache
   _cache = null                                   // nothing keeps the old view alive while the new one is built
 
-  const rows = await listLiveRows(deps.meta)
+  // The row list (D1) and the snapshot (R2) are independent: fetch them together
+  const [rows, raw] = await Promise.all([listLiveRows(deps.meta), previous ? null : deps.blobs.get(VAULT_SNAPSHOT_KEY)])
   const rowMap = new Map<string, FileRow>()
-  const docs = new Map<string, ParsedVaultDoc>()
-  const index = Bm25.from(previous?.bm25() ?? null)
-  const pending = new Map<string, FileRow>()      // markdown rows whose text this load still needs
-  for (const row of rows) {
-    rowMap.set(row.path, row)
-    if (!row.path.toLowerCase().endsWith('.md')) continue
-    const prev = previous?.rows.get(row.path)
-    const prevDoc = previous?.docs.get(row.path)
-    if (prev && prevDoc && prev.etag === row.etag) { docs.set(row.path, prevDoc); continue }
-    pending.set(row.path, row)
-  }
-  // Documents that vanished or changed since the previous view leave the index
-  if (previous) for (const path of previous.docs.keys()) if (!docs.has(path)) index.remove(path)
+  for (const row of rows) rowMap.set(row.path, row)
 
-  // A cold isolate streams the snapshot; every document read this way may be re-streamed into
-  // a new snapshot at the end, so the text passes through once and is never retained
-  const writer = previous ? null : new SnapshotWriter(head)
+  // Base to start from: this isolate's previous view, else the stored snapshot, else nothing
+  let base: { docs: Map<string, ParsedVaultDoc>; etags: Map<string, string>; index: Bm25 } | null = null
   let snapshotUsed = false
-  const take = (row: FileRow, text: string) => {
-    const full = parseVaultDoc(row.path, text, row.mtime)
-    docs.set(row.path, lite(full))
-    index.add(row.path, full, full.body)
-    writer?.add(row.path, row.etag, text)
-    pending.delete(row.path)
+  let snapshotBytes = 0
+  if (previous) {
+    base = { docs: previous.docs, etags: new Map([...previous.rows].map(([p, r]) => [p, r.etag])), index: previous.bm25() }
+  } else if (raw) {
+    snapshotBytes = raw.byteLength
+    try { base = await readSnapshot(raw); snapshotUsed = true }
+    catch (e) { console.error('[vault-view] snapshot unreadable, reading the vault instead', e) }
   }
-  if (!previous) {
-    const raw = await deps.blobs.get(VAULT_SNAPSHOT_KEY)
-    if (raw) {
-      try {
-        for await (const line of readSnapshot(raw)) {
-          snapshotUsed = true
-          const row = pending.get(line.path)
-          if (row && row.etag === line.etag) take(row, line.content)
-        }
-      } catch (e) { console.error('[vault-view] snapshot unreadable, reading the vault instead', e) }
-    }
+
+  const docs = new Map<string, ParsedVaultDoc>()
+  const index = base ? Bm25.from(base.index) : new Bm25()
+  const pending: FileRow[] = []
+  for (const row of rows) {
+    if (!row.path.toLowerCase().endsWith('.md')) continue
+    const known = base?.docs.get(row.path)
+    if (known && base!.etags.get(row.path) === row.etag) { docs.set(row.path, known); continue }
+    pending.push(row)
   }
-  // R2 reads in wide parallel batches for whatever the previous view or the snapshot did not cover
-  const toRead = [...pending.values()]
-  const reads = toRead.slice(0, MAX_READS_PER_LOAD)
+  // Documents that vanished or changed since the base leave the index
+  if (base) for (const path of base.docs.keys()) if (!docs.has(path)) index.remove(path)
+
+  // R2 reads in wide parallel batches for whatever the base did not cover
+  const reads = pending.slice(0, MAX_READS_PER_LOAD)
   for (let i = 0; i < reads.length; i += BATCH) {
     const part = await Promise.all(reads.slice(i, i + BATCH).map(async row => [row, await deps.blobs.get(row.path)] as const))
-    for (const [row, bytes] of part) if (bytes) take(row, dec.decode(bytes))
+    for (const [row, bytes] of part) {
+      if (!bytes) continue
+      const full = parseVaultDoc(row.path, dec.decode(bytes), row.mtime)
+      docs.set(row.path, lite(full))
+      index.add(row.path, full, full.body)
+    }
   }
-  const partial = toRead.length > reads.length
+  const partial = pending.length > reads.length
 
   let graph: LintGraph | null = null
   let byId: Map<string, ParsedVaultDoc> | null = null
@@ -150,115 +146,110 @@ async function buildVaultView(deps: SyncDeps, force: boolean): Promise<VaultView
     byId: () => (byId ??= new Map([...docs.values()].map(d => [d.id, d]))),
   }
   _cache = view
-  console.log(`[vault-view] ${previous ? 'warm' : 'cold'} load ${Date.now() - t0} ms: ${docs.size} docs, ${reads.length} read from R2${snapshotUsed ? ', snapshot used' : ''}${partial ? ', partial' : ''}`)
+  console.log(`[vault-view] ${previous ? 'warm' : 'cold'} load ${Date.now() - t0} ms: ${docs.size} docs, ${reads.length} read from R2${snapshotUsed ? `, snapshot ${(snapshotBytes / 1048576).toFixed(1)} MB` : ''}${partial ? ', partial' : ''}`)
 
-  // A cold load that did real work leaves a fresher snapshot behind — but not on every call
-  // while a sync push is landing. A partial view is still written: it carries everything read so
-  // far, so each cold load moves the snapshot closer to the vault instead of re-reading the same backlog.
-  if (writer) {
-    const overdue = now - _snapshotWritten.at >= SNAPSHOT_MIN_INTERVAL_MS
-    if (!snapshotUsed || partial || reads.length >= SNAPSHOT_REWRITE_FORCE || (reads.length >= SNAPSHOT_REWRITE_AFTER && overdue)) {
-      await writer.finish(deps).then(() => { _snapshotWritten = { at: Date.now(), head } }).catch(e => console.error('[vault-view] snapshot write failed', e))
-    }
+  // A load that did real work leaves a fresher snapshot behind — from memory, so any isolate can.
+  // Not on every call while a sync push is landing; a partial view is still written (it carries
+  // everything read so far, so each load moves the snapshot closer to the vault).
+  const overdue = now - _snapshotWritten.at >= SNAPSHOT_MIN_INTERVAL_MS
+  if ((!snapshotUsed && !previous && reads.length > 0) || partial || reads.length >= SNAPSHOT_REWRITE_FORCE || (reads.length >= SNAPSHOT_REWRITE_AFTER && overdue)) {
+    await writeVaultSnapshot(deps, view).catch(e => console.error('[vault-view] snapshot write failed', e))
   }
   return view
 }
 
-/** Write the snapshot for a view whose text is no longer in memory (the nightly batch): re-reads every document. */
+// ── Snapshot: the view as gzip binary ─────────────────────────────────────────
+//
+//   [u32 header length][header JSON]  {version, head, docs: [{path, etag, doc}], vocab: string[],
+//                                      slots: [{path, len, docId, title}], postings: number[] (per term length)}
+//   [u32 × Σ postings]                 packed (slot * 256 + tf), term by term
+//
+// Everything after the header is a plain little-endian Uint32 run, so a reader can stream the
+// header, allocate one buffer and fill it — no whole-file string, no JSON of millions of numbers.
+
+interface SnapshotHeader {
+  version: number
+  head: number
+  docs: { path: string; etag: string; doc: ParsedVaultDoc }[]
+  vocab: string[]
+  slots: { path: string; len: number; docId: string; title: string }[]
+  postings: number[]
+}
+
 export async function writeVaultSnapshot(deps: SyncDeps, view: VaultView): Promise<void> {
-  const writer = new SnapshotWriter(view.head)
-  const paths = [...view.docs.keys()]
-  for (let i = 0; i < paths.length; i += BATCH) {
-    const part = await Promise.all(paths.slice(i, i + BATCH).map(async p => [p, await deps.blobs.get(p)] as const))
-    for (const [p, bytes] of part) if (bytes) writer.add(p, view.rows.get(p)?.etag ?? '', dec.decode(bytes))
+  const { header, postings } = view.bm25().serialize()
+  const full: SnapshotHeader = {
+    ...header, version: SNAPSHOT_VERSION, head: view.head,
+    docs: [...view.docs].map(([path, doc]) => ({ path, etag: view.rows.get(path)?.etag ?? '', doc })),
   }
-  await writer.finish(deps)
+  const headerBytes = enc.encode(JSON.stringify(full))
+  const lenBytes = new Uint8Array(4)
+  new DataView(lenBytes.buffer).setUint32(0, headerBytes.byteLength, true)
+  const stream = new CompressionStream('gzip')
+  const writer = stream.writable.getWriter()
+  const chunks: Uint8Array[] = []
+  const drained = (async () => { const r = stream.readable.getReader(); for (;;) { const { done, value } = await r.read(); if (done) break; chunks.push(value) } })()
+  await writer.write(lenBytes)
+  await writer.write(headerBytes)
+  await writer.write(new Uint8Array(postings.buffer, postings.byteOffset, postings.byteLength))
+  await writer.close()
+  await drained
+  const total = chunks.reduce((n, c) => n + c.byteLength, 0)
+  const bytes = new Uint8Array(total)
+  let offset = 0
+  for (const c of chunks) { bytes.set(c, offset); offset += c.byteLength }
+  await deps.blobs.put(VAULT_SNAPSHOT_KEY, bytes)
   _snapshotWritten = { at: Date.now(), head: view.head }
 }
 
-// ── Snapshot streaming ───────────────────────────────────────────────────────
+/** Sequential reads over a decompressing stream, so only the piece being read is in memory. */
+class ByteReader {
+  private reader: ReadableStreamDefaultReader<Uint8Array>
+  private buf: Uint8Array<ArrayBuffer> = new Uint8Array(0)
+  constructor(stream: ReadableStream<Uint8Array>) { this.reader = stream.getReader() }
 
-interface SnapshotLine { path: string; etag: string; content: string }
-
-const hasStreams = typeof CompressionStream !== 'undefined' && typeof DecompressionStream !== 'undefined'
-const GZIP_MAGIC = [0x1f, 0x8b]
-
-/** Accumulates NDJSON lines through gzip; only the compressed bytes stay in memory. */
-class SnapshotWriter {
-  private chunks: Uint8Array[] = []
-  private writer: WritableStreamDefaultWriter<Uint8Array> | null = null
-  private drained: Promise<void> | null = null
-  private plain: string[] = []
-
-  constructor(head: number) {
-    if (hasStreams) {
-      const stream = new CompressionStream('gzip')
-      this.writer = stream.writable.getWriter()
-      const reader = stream.readable.getReader()
-      this.drained = (async () => { for (;;) { const { done, value } = await reader.read(); if (done) break; this.chunks.push(value) } })()
+  /** Fill `target` completely; throws when the stream ends first. */
+  async readInto(target: Uint8Array): Promise<void> {
+    let filled = 0
+    while (filled < target.byteLength) {
+      if (this.buf.byteLength === 0) {
+        const { done, value } = await this.reader.read()
+        if (done) throw new Error('snapshot truncated')
+        this.buf = value as Uint8Array<ArrayBuffer>
+      }
+      const take = Math.min(this.buf.byteLength, target.byteLength - filled)
+      target.set(this.buf.subarray(0, take), filled)
+      this.buf = this.buf.subarray(take)
+      filled += take
     }
-    this.line({ version: SNAPSHOT_VERSION, head })
-  }
-
-  add(path: string, etag: string, content: string): void { this.line({ path, etag, content }) }
-
-  private line(obj: unknown): void {
-    const text = JSON.stringify(obj) + '\n'
-    if (this.writer) void this.writer.write(enc.encode(text))
-    else this.plain.push(text)
-  }
-
-  async finish(deps: SyncDeps): Promise<void> {
-    let bytes: Uint8Array
-    if (this.writer) {
-      await this.writer.close()
-      await this.drained
-      const total = this.chunks.reduce((n, c) => n + c.byteLength, 0)
-      bytes = new Uint8Array(total)
-      let offset = 0
-      for (const c of this.chunks) { bytes.set(c, offset); offset += c.byteLength }
-    } else {
-      bytes = enc.encode(this.plain.join(''))
-    }
-    await deps.blobs.put(VAULT_SNAPSHOT_KEY, bytes)
   }
 }
 
-/** Snapshot bytes (gzip or plain NDJSON) → one document per line, streamed so the whole text is never held at once. */
-export async function* readSnapshot(raw: Uint8Array): AsyncGenerator<SnapshotLine> {
-  const gz = raw[0] === GZIP_MAGIC[0] && raw[1] === GZIP_MAGIC[1]
-  let source: ReadableStream<Uint8Array> = new Blob([raw as unknown as ArrayBuffer]).stream()
-  if (gz) {
-    if (!hasStreams) throw new Error('gzip snapshot but no DecompressionStream')
-    source = source.pipeThrough(new DecompressionStream('gzip'))
-  }
-  const reader = source.pipeThrough(new TextDecoderStream()).getReader()
-  let buf = ''
-  let header = false
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buf += value
-    let nl: number
-    while ((nl = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, nl); buf = buf.slice(nl + 1)
-      if (!line) continue
-      const obj = JSON.parse(line) as { version?: number } & SnapshotLine
-      if (!header) { header = true; if (obj.version !== SNAPSHOT_VERSION) throw new Error(`snapshot version ${obj.version}`); continue }
-      yield obj
-    }
-  }
-  if (buf.trim()) {
-    const obj = JSON.parse(buf) as { version?: number } & SnapshotLine
-    if (header) yield obj
-  }
+/** Snapshot bytes → lite documents, their hashes and a ready BM25 index. Throws on any other format. */
+export async function readSnapshot(raw: Uint8Array): Promise<{ docs: Map<string, ParsedVaultDoc>; etags: Map<string, string>; index: Bm25 }> {
+  if (raw[0] !== 0x1f || raw[1] !== 0x8b) throw new Error('not a gzip snapshot')
+  const stream = new Blob([raw as unknown as ArrayBuffer]).stream().pipeThrough(new DecompressionStream('gzip'))
+  const reader = new ByteReader(stream)
+  const lenBytes = new Uint8Array(4)
+  await reader.readInto(lenBytes)
+  const headerLen = new DataView(lenBytes.buffer).getUint32(0, true)
+  const headerBytes = new Uint8Array(headerLen)
+  await reader.readInto(headerBytes)
+  const header = JSON.parse(dec.decode(headerBytes)) as SnapshotHeader
+  if (header.version !== SNAPSHOT_VERSION) throw new Error(`snapshot version ${header.version}`)
+  const total = header.postings.reduce((n, c) => n + c, 0)
+  const postings = new Uint32Array(total)
+  await reader.readInto(new Uint8Array(postings.buffer))
+  const docs = new Map<string, ParsedVaultDoc>()
+  const etags = new Map<string, string>()
+  for (const d of header.docs) { docs.set(d.path, d.doc); etags.set(d.path, d.etag) }
+  return { docs, etags, index: Bm25.fromSnapshot(header, postings) }
 }
 
-/** Snapshot bytes → the documents it holds (for tests and tooling). */
-export async function decodeSnapshot(raw: Uint8Array): Promise<SnapshotLine[]> {
-  const out: SnapshotLine[] = []
-  for await (const line of readSnapshot(raw)) out.push(line)
-  return out
+/** The documents a snapshot holds (for tests and tooling). */
+export async function decodeSnapshot(raw: Uint8Array): Promise<{ path: string; etag: string }[]> {
+  const { docs, etags } = await readSnapshot(raw)
+  return [...docs.keys()].map(path => ({ path, etag: etags.get(path) ?? '' }))
 }
 
 // ── Tokeniser + BM25 ─────────────────────────────────────────────────────────
@@ -266,11 +257,12 @@ export async function decodeSnapshot(raw: Uint8Array): Promise<SnapshotLine[]> {
 /**
  * Lowercase words for Latin/digits; for Hangul runs, the run itself (while short enough to be a
  * word someone would type) plus character bigrams, so "전투시스템" matches "전투" and "시스템"
- * without a morphological analyser.
+ * without a morphological analyser. Text is folded to NFC first: macOS hands out decomposed
+ * Hangul, which the syllable range would not match at all.
  */
 export function tokenize(text: string): string[] {
   const out: string[] = []
-  for (const m of text.toLowerCase().matchAll(/[a-z0-9_]+|[가-힣]+/g)) {
+  for (const m of text.normalize('NFC').toLowerCase().matchAll(/[a-z0-9_]+|[가-힣]+/g)) {
     const t = m[0]
     if (t.charCodeAt(0) >= 0xac00) {
       if (t.length <= 2) { out.push(t); continue }
@@ -286,24 +278,27 @@ const HANGUL_RUN_MAX = 6
 
 export interface Bm25Hit { path: string; docId: string; title: string; score: number }
 
+type Posting = Uint32Array | number[]
+
 /**
  * BM25 over the vault as posting lists: one shared vocabulary (token → id) and, per term, the
- * documents it occurs in with their frequencies, packed as `slot * 256 + tf`. A per-document
- * token map would cost ~50 KB per Korean document; posting lists cost ~8 B per (document, term).
+ * documents it occurs in with their frequencies, packed as `slot * 256 + tf`. Posting lists cost
+ * ~4 B per (document, term) — a per-document token map would cost ~50 KB per Korean document.
  *
  * Incremental: `Bm25.from(base)` takes over an earlier index; documents that changed or vanished
- * are tombstoned (their slots stay in the lists but are skipped and no longer counted) and the
- * changed ones are added under fresh slots.
+ * are tombstoned (their slots stay in the lists but are skipped, and the term frequency used for
+ * idf counts live documents only, computed while the list is scanned) and the changed ones are
+ * added under fresh slots. Postings loaded from a snapshot are immutable typed arrays; documents
+ * added since go to a per-term overflow list.
  */
 export class Bm25 {
   private vocab = new Map<string, number>()
-  private postings: number[][] = []          // term id → packed (slot, tf)
-  private df: number[] = []                  // term id → live documents containing it
-  private slotPath: string[] = []            // document slot → path ('' once tombstoned)
+  private postings: Posting[] = []
+  private overflow = new Map<number, number[]>()   // term id → postings added after the base was frozen
+  private slotPath: string[] = []                  // document slot → path ('' once tombstoned)
   private slotLen: number[] = []
   private slotMeta: ({ docId: string; title: string } | null)[] = []
-  private slotTerms: number[][] = []         // document slot → term ids (to decrement df on removal)
-  private slotOf = new Map<string, number>() // live path → slot
+  private slotOf = new Map<string, number>()       // live path → slot
   private live = 0
   private totalLen = 0
   private readonly k1 = 1.5
@@ -315,13 +310,60 @@ export class Bm25 {
   }
 
   /** A new index that owns the base's tables (the base belongs to a superseded view). */
-  static from(base: Bm25 | null): Bm25 {
+  static from(base: Bm25): Bm25 {
     const b = new Bm25()
-    if (!base) return b
-    b.vocab = base.vocab; b.postings = base.postings; b.df = base.df
-    b.slotPath = base.slotPath; b.slotLen = base.slotLen; b.slotMeta = base.slotMeta; b.slotTerms = base.slotTerms
+    b.vocab = base.vocab; b.postings = base.postings; b.overflow = base.overflow
+    b.slotPath = base.slotPath; b.slotLen = base.slotLen; b.slotMeta = base.slotMeta
     b.slotOf = base.slotOf; b.live = base.live; b.totalLen = base.totalLen
     return b
+  }
+
+  /** Rebuild from a snapshot header and its packed posting run. */
+  static fromSnapshot(header: Pick<SnapshotHeader, 'vocab' | 'slots' | 'postings'>, run: Uint32Array): Bm25 {
+    const b = new Bm25()
+    header.vocab.forEach((t, id) => b.vocab.set(t, id))
+    let offset = 0
+    for (const count of header.postings) { b.postings.push(run.subarray(offset, offset + count)); offset += count }
+    header.slots.forEach((s, slot) => {
+      b.slotPath.push(s.path); b.slotLen.push(s.len); b.slotMeta.push(s.path ? { docId: s.docId, title: s.title } : null)
+      if (s.path) { b.slotOf.set(s.path, slot); b.live++; b.totalLen += s.len }
+    })
+    return b
+  }
+
+  /** Compact tables for a snapshot: tombstoned slots dropped, overflow merged, everything renumbered. */
+  serialize(): { header: Pick<SnapshotHeader, 'vocab' | 'slots' | 'postings'>; postings: Uint32Array } {
+    const slotMap = new Map<number, number>()
+    const slots: SnapshotHeader['slots'] = []
+    this.slotPath.forEach((path, slot) => {
+      if (!path) return
+      slotMap.set(slot, slots.length)
+      slots.push({ path, len: this.slotLen[slot], docId: this.slotMeta[slot]!.docId, title: this.slotMeta[slot]!.title })
+    })
+    const vocab: string[] = []
+    const counts: number[] = []
+    const runs: number[][] = []
+    let total = 0
+    for (const [term, id] of this.vocab) {
+      const kept: number[] = []
+      for (const packed of this.eachPosting(id)) {
+        const to = slotMap.get(Math.floor(packed / 256))
+        if (to !== undefined) kept.push(to * 256 + (packed % 256))
+      }
+      if (kept.length === 0) continue                // a term only dead documents used
+      vocab.push(term); counts.push(kept.length); runs.push(kept); total += kept.length
+    }
+    const flat = new Uint32Array(total)
+    let offset = 0
+    for (const r of runs) { flat.set(r, offset); offset += r.length }
+    return { header: { vocab, slots, postings: counts }, postings: flat }
+  }
+
+  private *eachPosting(id: number): Generator<number> {
+    const base = this.postings[id]
+    if (base) for (let i = 0; i < base.length; i++) yield base[i]
+    const extra = this.overflow.get(id)
+    if (extra) yield* extra
   }
 
   get size(): number { return this.live }
@@ -332,15 +374,18 @@ export class Bm25 {
     let len = 0
     for (const t of tokenize(`${d.title} ${d.title} ${d.tags.join(' ')} ${body}`)) {
       let id = this.vocab.get(t)
-      if (id === undefined) { id = this.vocab.size; this.vocab.set(t, id); this.postings.push([]); this.df.push(0) }
+      if (id === undefined) { id = this.vocab.size; this.vocab.set(t, id); this.postings.push([]) }
       counts.set(id, (counts.get(id) ?? 0) + 1)
       len++
     }
     const slot = this.slotPath.length
     this.slotPath.push(path); this.slotLen.push(len); this.slotMeta.push({ docId: d.id, title: d.title })
-    const terms: number[] = []
-    for (const [id, tf] of counts) { this.postings[id].push(slot * 256 + Math.min(tf, 255)); this.df[id]++; terms.push(id) }
-    this.slotTerms.push(terms)
+    for (const [id, tf] of counts) {
+      const packed = slot * 256 + Math.min(tf, 255)
+      const base = this.postings[id]
+      if (Array.isArray(base)) base.push(packed)
+      else { let o = this.overflow.get(id); if (!o) { o = []; this.overflow.set(id, o) } o.push(packed) }
+    }
     this.slotOf.set(path, slot)
     this.live++; this.totalLen += len
   }
@@ -348,9 +393,8 @@ export class Bm25 {
   remove(path: string): void {
     const slot = this.slotOf.get(path)
     if (slot === undefined) return
-    for (const id of this.slotTerms[slot]) this.df[id]--
     this.slotOf.delete(path)
-    this.slotPath[slot] = ''; this.slotMeta[slot] = null; this.slotTerms[slot] = []
+    this.slotPath[slot] = ''; this.slotMeta[slot] = null
     this.live--; this.totalLen -= this.slotLen[slot]
   }
 
@@ -363,12 +407,14 @@ export class Bm25 {
     for (const t of q) {
       const id = this.vocab.get(t)
       if (id === undefined) continue
-      const df = this.df[id]
-      if (df <= 0) continue
+      // One pass to collect the live hits (that count is the term's df), one to score them
+      const hits: number[] = []
+      for (const packed of this.eachPosting(id)) if (this.slotPath[Math.floor(packed / 256)]) hits.push(packed)
+      const df = hits.length
+      if (df === 0) continue
       const idf = Math.log(1 + (n - df + 0.5) / (df + 0.5))
-      for (const packed of this.postings[id]) {
+      for (const packed of hits) {
         const slot = Math.floor(packed / 256)
-        if (!this.slotPath[slot]) continue
         const f = packed % 256, dl = this.slotLen[slot]
         scores.set(slot, (scores.get(slot) ?? 0) + idf * (f * (this.k1 + 1)) / (f + this.k1 * (1 - this.b + this.b * dl / avgLen)))
       }

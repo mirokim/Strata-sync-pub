@@ -23,7 +23,7 @@ export interface LinkIndex {
 
 /** `Folder/Doc Name|alias#Heading^block` → `doc name` (Obsidian resolves by basename). */
 export function normalizeLinkTarget(raw: string): string {
-  let s = raw.trim().replace(/\\$/, '')
+  let s = raw.normalize('NFC').trim().replace(/\\$/, '')
   const pipe = s.indexOf('|'); if (pipe >= 0) s = s.slice(0, pipe)
   const hash = s.indexOf('#'); if (hash >= 0) s = s.slice(0, hash)
   const caret = s.indexOf('^'); if (caret >= 0) s = s.slice(0, caret)
@@ -52,7 +52,7 @@ export function buildLinkIndex(docs: LoadedDocument[]): LinkIndex {
   const byId = new Map<string, LoadedDocument>()
   for (const d of docs) {
     byId.set(d.id, d)
-    const key = d.filename.replace(/\.md$/i, '').toLowerCase()
+    const key = d.filename.normalize('NFC').replace(/\.md$/i, '').toLowerCase()
     const bucket = byName.get(key)
     if (bucket) bucket.push(d); else byName.set(key, [d])
   }

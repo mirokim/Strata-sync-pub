@@ -208,7 +208,7 @@ class SyncEngine {
       for (const e of entries) {
         if (e.name.startsWith('.') || e.name === 'node_modules') continue
         const full = path.join(dir, e.name)
-        const rel = path.relative(this.vaultPath, full).replace(/\\/g, '/')
+        const rel = path.relative(this.vaultPath, full).replace(/\\/g, '/').normalize('NFC')
         if (e.isDirectory()) await walk(full)
         else if (e.isFile() && isSyncable(rel)) out.push(rel)
       }
