@@ -56,7 +56,7 @@ describe('meOverview', () => {
     expect(o.remarks).toMatchObject([{ member: 'Librarian', path: 'design/Menu.md', title: 'Menu' }])
     expect(o.proposalsCitingMine).toMatchObject([{ path: '_agent/Rename menu.md', cites: ['Menu'] }])
     expect(o.recentByOthers.map(i => i.path)).toEqual(['design/Loot.md'])
-    expect(o.counts).toEqual({ authored: 2, personal: 1, remarks: 1, proposalsCitingMine: 1, proposalsOpen: 1 })
+    expect(o.counts).toEqual({ authored: 2, personal: 1, remarks: 1, proposalsCitingMine: 1, proposalsOpen: 1, inboxOpen: 0, inboxWaiting: 0 })
   })
 
   it('never shows another person\'s personal documents and sees the world from the other side', async () => {

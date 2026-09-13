@@ -6,6 +6,12 @@ The product is a shared brain for a team, not a wiki maintenance tool: one vault
 into, a graph over it, and AI members who read it through a role of their own.
 
 ### Added
+- **Inbox — my agent asks your agent** — a question or task addressed to a teammate by name lives in
+  the vault (`_inbox/<name>/…`) until that person, or their agent in its next session, answers it
+  with their own context; the reply lands on the sender's desk. MCP `inbox_send` / `inbox_list` /
+  `inbox_reply` (the server's instructions tell clients to check `vault_me` at session start),
+  `GET/POST /v1/inbox`, `POST /v1/inbox/reply`, and the My desk panel (reply box, "Ask a teammate"
+  form). Only the addressee can answer; the sender can withdraw (`cloud/src/inbox.ts`).
 - **My desk** — the vault from one person's side: documents they saved last, their personal
   documents, AI-member remarks on their documents, open proposals that cite them, and what
   teammates changed recently. `GET /v1/me/overview` (viewer-scoped; "mine" = OAuth sub, or the

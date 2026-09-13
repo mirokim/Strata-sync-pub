@@ -12,6 +12,7 @@ import { useVaultStore } from '@/stores/vaultStore'
 import { currentRemoteVault } from '@/web/remoteVault'
 import type { MeOverview, MeItem } from '@/web/remoteClient'
 import { useT } from '@/i18n'
+import InboxSection from './InboxSection'
 
 function relative(iso: string, t: ReturnType<typeof useT>): string {
   const ms = Date.now() - Date.parse(iso)
@@ -97,6 +98,7 @@ export default function MyDeskPanel() {
         {!data && !error && <div style={{ color: 'var(--color-text-muted)', fontSize: 12 }}>{t('Loading…')}</div>}
         {data && (
           <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
+            <InboxSection inbox={data.inbox} onChanged={() => void load()} open={open} relative={iso => relative(iso, t)} />
             <Section title={t('Remarks on my documents')} count={data.remarks.length} icon={<MessageSquare size={13} />} empty={t('No member has remarked on your documents yet')}>
               {data.remarks.map(r => (
                 <button key={`${r.member}/${r.path}`} onClick={() => open(r.path, true)} title={r.path}

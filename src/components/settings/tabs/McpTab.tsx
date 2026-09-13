@@ -39,7 +39,10 @@ const TOOLS: [string, string][] = [
   ['vault_write', 'Create or replace a document directly (only when explicitly asked); personal=true keeps it to you'],
   ['vault_visibility', 'Share a personal document with the team, or take back one only you have ever saved'],
   ['vault_changes', 'What changed since a date — authors, titles, deletions'],
-  ['vault_me', 'Your desk — your documents, remarks on them, proposals citing them, a link to the page'],
+  ['vault_me', 'Your desk — your documents, remarks on them, proposals citing them, your inbox, a link to the page'],
+  ['inbox_send', 'Ask a teammate (through their agent) a question or hand them a task'],
+  ['inbox_list', 'Questions/tasks waiting for you, and the ones you sent'],
+  ['inbox_reply', 'Answer a question or report a task result'],
   ['members_list · member_remember · member_report', 'The AI members (Settings → AI Members), their memory notes and routine runs; the `member` prompt takes one on'],
 ]
 

@@ -19,6 +19,7 @@ import { preflight, withCors } from './cors.js'
 import { handleMcpRequest } from './mcp.js'
 import { invalidateVaultView, loadVaultView } from './vaultIndex.js'
 import { meOverview } from './me.js'
+import { readInbox, inboxFor, sendInbox, replyInbox, INBOX_STATUSES, type InboxStatus } from './inbox.js'
 import { buildProposal } from '../../mcp/src/proposals.js'
 import OAuthProvider from '@cloudflare/workers-oauth-provider'
 import { handleAuth, SCOPE, type AuthEnv, type Identity } from './auth.js'
@@ -237,7 +238,32 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
     // My desk: this person's documents, remarks on them, proposals citing them, what others changed
     if (url.pathname === '/v1/me/overview' && req.method === 'GET') {
       const [rows, view] = await Promise.all([deps.meta.listSince(0, 100_000), loadVaultView(deps)])
-      return json(200, meOverview({ rows, view, viewer, author, webOrigin: env.ALLOWED_ORIGINS }))
+      const inbox = inboxFor(await readInbox(deps, rows), viewer, author)
+      return json(200, meOverview({ rows, view, viewer, author, webOrigin: env.ALLOWED_ORIGINS, inbox }))
+    }
+    // Inbox: questions and tasks between teammates (and their agents) — see cloud/src/inbox.ts
+    if (url.pathname === '/v1/inbox' && req.method === 'GET') {
+      const status = url.searchParams.get('status')
+      const filter = INBOX_STATUSES.includes(status as InboxStatus) ? (status as InboxStatus) : undefined
+      return json(200, inboxFor(await readInbox(deps, await deps.meta.listSince(0, 100_000)), viewer, author, filter))
+    }
+    if (url.pathname === '/v1/inbox' && req.method === 'POST') {
+      const body = await req.json().catch(() => ({})) as { to?: unknown; kind?: unknown; title?: unknown; body?: unknown; about?: unknown }
+      const r = await sendInbox({ ...deps, viewer, author: author || 'unknown' }, {
+        to: String(body.to ?? ''), kind: body.kind === 'task' ? 'task' : 'question', title: String(body.title ?? ''), body: String(body.body ?? ''),
+        about: Array.isArray(body.about) ? (body.about as unknown[]).map(String) : [],
+      })
+      if ('error' in r) return json(400, r)
+      const row = await deps.meta.get(r.path)
+      if (row) enqueueReaction(env, ctx, deps, row)
+      return json(201, r)
+    }
+    if (url.pathname === '/v1/inbox/reply' && req.method === 'POST') {
+      const body = await req.json().catch(() => ({})) as { path?: unknown; reply?: unknown; status?: unknown }
+      const status = (['answered', 'done', 'declined'].includes(String(body.status)) ? String(body.status) : 'answered') as 'answered' | 'done' | 'declined'
+      const r = await replyInbox({ ...deps, viewer, author: author || 'unknown' }, String(body.path ?? ''), String(body.reply ?? ''), status)
+      if ('error' in r) return json(r.error === 'not found' ? 404 : 403, r)
+      return json(200, r)
     }
 
     // ── Remote MCP (Claude Code / Cursor over Streamable HTTP) ────────────────

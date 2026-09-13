@@ -14,6 +14,7 @@ import type { VaultView } from './vaultIndex.js'
 import { canSee, isPersonalPath, type Viewer } from './personal.js'
 import { MEMBERS_FOLDER } from './members.js'
 import { isProposalPath } from '../../mcp/src/proposals.js'
+import { renderInbox, type InboxView } from './inbox.js'
 
 export interface MeItem { path: string; title: string; author: string; at: string; personal?: true }
 export interface MeRemark { member: string; path: string; title: string; at: string }
@@ -23,7 +24,9 @@ export interface MeOverview {
   identity: { sub: string; author: string; service: boolean }
   /** Web page for this view, when the deployment knows its web origin */
   guiUrl: string | null
-  counts: { authored: number; personal: number; remarks: number; proposalsCitingMine: number; proposalsOpen: number }
+  counts: { authored: number; personal: number; remarks: number; proposalsCitingMine: number; proposalsOpen: number; inboxOpen: number; inboxWaiting: number }
+  /** Questions/tasks addressed to me and the ones I sent (see inbox.ts) */
+  inbox: InboxView
   /** Team documents whose latest save is mine, newest first */
   authored: MeItem[]
   /** My personal ("only me") documents, newest first */
@@ -43,6 +46,7 @@ export interface MeDeps {
   author: string
   webOrigin?: string | null
   now?: number
+  inbox?: InboxView
 }
 
 const LIMIT = { authored: 15, personal: 10, remarks: 15, proposals: 10, recent: 15 }
@@ -106,11 +110,13 @@ export function meOverview(deps: MeDeps): MeOverview {
   }
 
   const recentByOthers = rows.filter(r => !mine.has(r.path) && !isPersonalPath(r.path) && !isSystemish(r.path))
+  const inbox = deps.inbox ?? { forMe: [], sent: [] }
 
   return {
     identity: { sub: viewer.sub, author, service: Boolean(viewer.service) },
     guiUrl: guiUrlFor(deps.webOrigin ?? undefined),
-    counts: { authored: authored.length, personal: personal.length, remarks: remarks.length, proposalsCitingMine: proposalsCitingMine.length, proposalsOpen: proposalsOpen.length },
+    counts: { authored: authored.length, personal: personal.length, remarks: remarks.length, proposalsCitingMine: proposalsCitingMine.length, proposalsOpen: proposalsOpen.length, inboxOpen: inbox.forMe.filter(i => i.status === 'open').length, inboxWaiting: inbox.sent.filter(i => i.status === 'open').length },
+    inbox,
     authored: authored.slice(0, LIMIT.authored).map(r => item(view, r)),
     personal: personal.slice(0, LIMIT.personal).map(r => item(view, r)),
     remarks: remarks.slice(0, LIMIT.remarks),
@@ -124,8 +130,10 @@ export function renderMeOverview(o: MeOverview): string {
   const who = o.identity.author || o.identity.sub
   const lines = [`# My desk — ${who}`, '']
   if (o.guiUrl) lines.push(`Open in the app: ${o.guiUrl}`, '')
-  lines.push(`- Documents I saved last: ${o.counts.authored}`, `- Personal documents: ${o.counts.personal}`, `- Member remarks on my documents: ${o.counts.remarks}`, `- Open proposals: ${o.counts.proposalsOpen} (${o.counts.proposalsCitingMine} cite my documents)`, '')
+  lines.push(`- Waiting for me (questions/tasks from teammates' agents): ${o.counts.inboxOpen}`, `- I am waiting on: ${o.counts.inboxWaiting}`, `- Documents I saved last: ${o.counts.authored}`, `- Personal documents: ${o.counts.personal}`, `- Member remarks on my documents: ${o.counts.remarks}`, `- Open proposals: ${o.counts.proposalsOpen} (${o.counts.proposalsCitingMine} cite my documents)`, '')
   const section = (title: string, rows: string[]) => { if (rows.length) lines.push(`## ${title}`, ...rows, '') }
+  const inbox = renderInbox(o.inbox)
+  if (inbox) lines.push(inbox)
   section('Remarks on my documents', o.remarks.map(r => `- ${r.member} on **${r.title}** (${r.at.slice(0, 10)})`))
   section('Proposals citing my documents', o.proposalsCitingMine.map(p => `- ${p.title} by ${p.author} → ${p.cites.join(', ')}`))
   section('Recently changed by others', o.recentByOthers.map(i => `- ${i.title} — ${i.author}, ${i.at.slice(0, 10)}`))

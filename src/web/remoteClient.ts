@@ -62,10 +62,15 @@ export interface HistoryVersion { etag: string; at: number; author: string; size
 export interface MeItem { path: string; title: string; author: string; at: string; personal?: true }
 export interface MeRemark { member: string; path: string; title: string; at: string }
 export interface MeProposal { path: string; title: string; author: string; at: string; cites: string[] }
+export type InboxKind = 'question' | 'task'
+export type InboxStatus = 'open' | 'answered' | 'done' | 'declined'
+export interface InboxItem { path: string; kind: InboxKind; status: InboxStatus; title: string; to: string; toSub: string; from: string; fromSub: string; created: string; about: string[]; body: string; replies: { author: string; at: string; text: string }[] }
+export interface InboxView { forMe: InboxItem[]; sent: InboxItem[] }
 export interface MeOverview {
   identity: { sub: string; author: string; service: boolean }
   guiUrl: string | null
-  counts: { authored: number; personal: number; remarks: number; proposalsCitingMine: number; proposalsOpen: number }
+  counts: { authored: number; personal: number; remarks: number; proposalsCitingMine: number; proposalsOpen: number; inboxOpen: number; inboxWaiting: number }
+  inbox: InboxView
   authored: MeItem[]
   personal: MeItem[]
   remarks: MeRemark[]
@@ -221,6 +226,25 @@ export class RemoteClient {
     const res = await this.request('/v1/me/overview')
     if (!res.ok) throw new RemoteError(res.status, `me/overview failed (${res.status})`)
     return res.json()
+  }
+
+  /** Questions and tasks between teammates — see cloud/src/inbox.ts */
+  async inbox(status?: InboxStatus): Promise<InboxView> {
+    const res = await this.request(`/v1/inbox${status ? `?status=${status}` : ''}`)
+    if (!res.ok) throw new RemoteError(res.status, `inbox failed (${res.status})`)
+    return res.json()
+  }
+  async inboxSend(input: { to: string; kind: InboxKind; title: string; body: string; about?: string[] }): Promise<{ path: string }> {
+    const res = await this.request('/v1/inbox', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) })
+    const body = await res.json().catch(() => ({})) as { path?: string; error?: string }
+    if (!res.ok) throw new RemoteError(res.status, body.error ?? `inbox send failed (${res.status})`)
+    return { path: body.path! }
+  }
+  async inboxReply(path: string, reply: string, status: Exclude<InboxStatus, 'open'>): Promise<{ path: string; status: InboxStatus }> {
+    const res = await this.request('/v1/inbox/reply', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path, reply, status }) })
+    const body = await res.json().catch(() => ({})) as { path?: string; status?: InboxStatus; error?: string }
+    if (!res.ok) throw new RemoteError(res.status, body.error ?? `inbox reply failed (${res.status})`)
+    return { path: body.path!, status: body.status! }
   }
 
   async history(path: string): Promise<HistoryResponse> {
