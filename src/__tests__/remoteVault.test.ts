@@ -165,6 +165,56 @@ describe('config', () => {
 })
 
 describe('loadFiles / scanMetadata', () => {
+  it('opens a reopened vault only after the mirror caught up with the server', async () => {
+    const backend = new MemoryCacheBackend()
+    const first = makeVault(backend)
+    await first.api.loadFiles(first.vaultPath)
+    await first.cache.flush()
+    server.put('active/New.md', '# New')
+    server.del('active/Stamina.md')
+    const reopened = makeVault(backend)
+    server.requests.length = 0
+    const opened = await reopened.api.loadFiles(reopened.vaultPath)
+    expect(server.requests).toEqual(['GET /v1/docs?after=3&limit=500'])
+    expect(opened.files.map(f => f.relativePath).sort()).toEqual(['active/Combat System.md', 'active/New.md'])
+    expect(reopened.status.lastSyncAt).toBe(clock)
+  })
+
+  it('falls back to the saved mirror when the server is unreachable', async () => {
+    const backend = new MemoryCacheBackend()
+    const first = makeVault(backend)
+    await first.api.loadFiles(first.vaultPath)
+    await first.cache.flush()
+    const reopened = makeVault(backend)
+    server.failNext = 503
+    const opened = await reopened.api.loadFiles(reopened.vaultPath)
+    expect(opened.files.map(f => f.relativePath).sort()).toEqual(['active/Combat System.md', 'active/Stamina.md'])
+    expect(reopened.status.lastError).toBeTruthy()
+    expect(reopened.status.inFlight).toBe(false)
+  })
+
+  it('reports progress page by page while a large vault downloads, and only then hands the documents over', async () => {
+    for (let i = 0; i < 600; i++) server.put(`bulk/${i}.md`, '# Test')
+    const seen: { received?: number; expected?: number; inFlight: boolean }[] = []
+    vault.sync.onStatus(s => seen.push({ received: s.status.received, expected: s.status.expected, inFlight: s.status.inFlight }))
+    const opened = await vault.api.loadFiles(vault.vaultPath)
+    expect(opened.files).toHaveLength(602)
+    expect(server.requests.filter(r => r.includes('/v1/docs'))).toEqual(['GET /v1/docs?after=0&limit=500', 'GET /v1/docs?after=500&limit=500'])
+    expect(seen.map(s => s.received)).toEqual([0, 500, 603, 603])
+    expect(seen.at(-1)).toMatchObject({ expected: 603, inFlight: false })
+    expect(vault.status.lastSyncAt).toBe(clock)
+  })
+
+  it('notifies the open screen when the server was reset to an empty vault', async () => {
+    await vault.api.loadFiles(vault.vaultPath)
+    const changes: unknown[] = []
+    vault.api.onChanged(e => changes.push(e))
+    server.reset()
+    await vault.poll()
+    expect(changes).toHaveLength(1)
+    expect((await vault.api.loadSnapshot!(vault.vaultPath)).files).toEqual([])
+  })
+
   it('returns markdown files with content, folders and an image registry', async () => {
     const r = await vault.api.loadFiles(vault.vaultPath)
     expect(r.files.map(f => f.relativePath).sort()).toEqual(['active/Combat System.md', 'active/Stamina.md'])

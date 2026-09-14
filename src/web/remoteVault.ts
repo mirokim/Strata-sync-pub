@@ -51,6 +51,10 @@ export interface RemoteVaultStatus {
   conflicts: { path: string; keptAs: string; at: number; remoteAuthor: string }[]
   errors: { path: string; message: string; at: number }[]
   lastError: string | null
+  /** Rows received by the pull in flight (status bar / loading screen). */
+  received?: number
+  /** Upper bound on rows this pull will receive (server head − starting cursor). */
+  expected?: number
 }
 
 const enc = new TextEncoder()
@@ -191,25 +195,32 @@ export class RemoteVault {
   private async doPull(): Promise<{ changed: string[]; removed: string[] }> {
     await this.ensureLoaded()
     await this.ensureIdentity()
-    this.setStatus({ inFlight: true })
+    this.setStatus({ inFlight: true, received: 0, expected: undefined })
     const changed: string[] = []
     const removed: string[] = []
     try {
       let after = this.cache.cursor
+      let startedAt = after
       for (;;) {
         const page = await this.client.docs(after)
         const otherServer = typeof page.generation === 'number' && this.cache.generation !== null && page.generation !== this.cache.generation
         if (page.head < this.cache.cursor || otherServer) {
           // The server was wiped or re-imported: our cursor (and every row) is meaningless
+          removed.push(...this.cache.rows.keys())
           await this.cache.reset()
           after = 0
+          startedAt = 0
           continue
         }
         if (typeof page.generation === 'number') this.cache.generation = page.generation
         const r = this.cache.apply(page.docs)
         changed.push(...r.changed); removed.push(...r.removed)
+        this.setStatus({ received: (this.status.received ?? 0) + page.docs.length, expected: Math.max(0, page.head - startedAt) })
         if (page.next === null) break
+        if (!Number.isFinite(page.next) || page.next <= after) throw new Error('Document sync cursor did not advance')
         after = page.next
+        // Include invisible rows in the cursor so a private-only page is not fetched again.
+        this.cache.cursor = Math.max(this.cache.cursor, after)
       }
       for (const p of [...changed, ...removed]) this.imageCache.delete(p)
       this.setStatus({ inFlight: false, lastSyncAt: this.now(), lastSeq: this.cache.cursor, lastError: null })
@@ -354,18 +365,23 @@ export class RemoteVault {
 
   private buildVaultApi(): VaultAPI {
     const mdRows = () => [...this.cache.rows.values()].filter(r => r.path.toLowerCase().endsWith('.md') && r.content != null)
+    const snapshot = () => ({
+      files: mdRows().map(r => { const v = this.personal.virtualOf(r.path); return { relativePath: v.path, absolutePath: this.abs(v.path), content: r.content!, mtime: r.mtime, ...(v.personal ? { personal: true } : {}) } }),
+      folders: [...new Set(this.cache.folders().map(f => this.personal.virtualOf(f).path))].filter(f => !this.personal.isRootFolder(f)),
+      imageRegistry: this.imageRegistry(),
+    })
     return {
       selectFolder: async () => this.vaultPath,
 
+      // Startup / reload: the mirror advanced to the server head. Progress is reported through
+      // syncAPI.onStatus (received / expected); when the server is unreachable the mirror is returned as is.
       loadFiles: async () => {
         await this.pull()
         this.staleAfterConflict.clear() // the app is about to receive every current version
-        return {
-          files: mdRows().map(r => { const v = this.personal.virtualOf(r.path); return { relativePath: v.path, absolutePath: this.abs(v.path), content: r.content!, mtime: r.mtime, ...(v.personal ? { personal: true } : {}) } }),
-          folders: [...new Set(this.cache.folders().map(f => this.personal.virtualOf(f).path))].filter(f => !this.personal.isRootFolder(f)),
-          imageRegistry: this.imageRegistry(),
-        }
+        return snapshot()
       },
+      // Watcher refresh after a poll already advanced the mirror: never touches the network.
+      loadSnapshot: async () => snapshot(),
 
       scanMetadata: async () => {
         await this.pull()
@@ -375,6 +391,7 @@ export class RemoteVault {
       watchStart: async () => {
         this.api.watchStop()
         this.pollTimer = this.opts.setTimer(() => void this.poll(), this.opts.pollIntervalMs)
+        void this.poll()
         return true
       },
 

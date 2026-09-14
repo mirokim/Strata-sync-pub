@@ -9,6 +9,7 @@
 import { useCallback } from 'react'
 import { PERSONA_CONFIG_PATH } from '@/lib/constants'
 import { logger } from '@/lib/logger'
+import { t } from '@/i18n'
 import { isEmbeddingReady } from '@/lib/vectorEmbedIndex'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useGraphStore } from '@/stores/graphStore'
@@ -27,6 +28,14 @@ import { buildDocsFingerprint, loadDocsCache, saveDocsCache } from '@/lib/docsCa
 import { vectorEmbedIndex } from '@/lib/vectorEmbedIndex'
 import { buildStatsSnapshot, saveStatsSnapshot } from '@/lib/vaultStatsLog'
 import type { VaultFile, LoadedDocument } from '@/types'
+
+// A watcher refresh (background) may start while the previous load is still indexing;
+// only the newest load may apply its deferred results.
+let loadRevision = 0
+
+// Progress bar share for the web sync phase; parsing continues from PULL_END.
+const PULL_START = 2
+const PULL_END = 40
 
 /**
  * Co-occurrence based dynamic synonym registration — runs in a worker.
@@ -58,14 +67,17 @@ export function useVaultLoader() {
   const { loadVaultPersonas, resetVaultPersonas } = useSettingsStore()
 
   const loadVault = useCallback(
-    async (dirPath: string) => {
+    async (dirPath: string, background = false) => {
+      const revision = ++loadRevision
       if (!window.vaultAPI) {
         setError('Not running in Electron. Vaults cannot be loaded in the browser.')
         return
       }
-      setIsLoading(true)
-      setVaultReady(false)
-      setLoadingProgress(0, 'Initializing vault...')
+      if (!background) {
+        setIsLoading(true)
+        setVaultReady(false)
+        setLoadingProgress(0, 'Initializing vault...')
+      }
       setError(null)
       try {
         // ── Step 1: scanMetadata (mtime only, no file contents) → check cache fingerprint ──
@@ -73,7 +85,32 @@ export function useVaultLoader() {
         let folders: string[] = []
         let imageRegistry: Record<string, { relativePath: string; absolutePath: string }> | null = null
 
-        if (window.vaultAPI.scanMetadata) {
+        let files: VaultFile[] | null = null
+        let parseBase = 5
+        if (window.vaultAPI.loadSnapshot) {
+          // Web: the overlay stays until the mirror has caught up with the server (or the server
+          // is unreachable and the mirror stands in). Background refreshes read the mirror only.
+          let loaded
+          if (background) {
+            loaded = await window.vaultAPI.loadSnapshot(dirPath)
+          } else {
+            setLoadingProgress(PULL_START, t('Syncing documents…'))
+            const unsubscribe = window.syncAPI?.onStatus(({ status }) => {
+              if (status.received === undefined) return
+              const share = status.expected ? Math.min(1, status.received / status.expected) : 0
+              setLoadingProgress(PULL_START + Math.round((PULL_END - PULL_START) * share), t('Syncing documents… {count} received', { count: status.received }))
+            })
+            try { loaded = await window.vaultAPI.loadFiles(dirPath) } finally { unsubscribe?.() }
+            parseBase = PULL_END
+          }
+          files = loaded.files
+          folders = loaded.folders
+          imageRegistry = loaded.imageRegistry ?? null
+          setVaultFolders(folders)
+          setImagePathRegistry(imageRegistry)
+          const hit = await loadDocsCache(dirPath, buildDocsFingerprint(files.map(f => ({ relativePath: f.relativePath, mtime: f.mtime ?? 0 }))))
+          if (hit) docs = hit.docs
+        } else if (window.vaultAPI.scanMetadata) {
           try {
             setLoadingProgress(2, 'Scanning metadata...')
             const meta = await window.vaultAPI.scanMetadata(dirPath)
@@ -97,8 +134,7 @@ export function useVaultLoader() {
         }
 
         // ── Step 2: on cache miss, loadFiles (with file contents) ──────────
-        let files: VaultFile[] | null = null
-        if (!docs) {
+        if (!docs && !files) {
           const loaded = await window.vaultAPI.loadFiles(dirPath)
           files = loaded.files
           folders = loaded.folders ?? []
@@ -121,7 +157,7 @@ export function useVaultLoader() {
         if (!docs) {
           const total = files!.length
           docs = await parseVaultFilesAsync(files!, (parsed) => {
-            const pct = 5 + Math.round((parsed / total) * 80)
+            const pct = parseBase + Math.round((parsed / total) * (85 - parseBase))
             setLoadingProgress(pct, `Parsing documents... (${parsed}/${total})`)
           })
           logger.debug(`[vault] Parsed ${docs.length}/${files!.length} documents successfully`)
@@ -181,6 +217,7 @@ export function useVaultLoader() {
           (window.requestIdleCallback ?? ((cb: () => void) => setTimeout(cb, 16)))((() => r()) as IdleRequestCallback)
         })
         setTimeout(async () => {
+          if (revision !== loadRevision) return
           // BM25 index: cache hit  → restore (fast) + compute implicit links in the worker
           //             cache miss → build in the worker + compute implicit links (non-blocking main thread)
           const { links: currentLinks } = useGraphStore.getState()
@@ -188,7 +225,7 @@ export function useVaultLoader() {
           try {
             const cached = await loadTfIdfCache(dirPath, fingerprint)
             // If the vault changed while the async work ran, do not apply the stale result to tfidfIndex
-            if (useVaultStore.getState().activeVaultId !== startVaultId) return
+            if (revision !== loadRevision || useVaultStore.getState().activeVaultId !== startVaultId) return
             if (cached) {
               tfidfIndex.restore(cached)
               if (cached.implicitLinks) {
@@ -198,6 +235,7 @@ export function useVaultLoader() {
                 // Legacy cache — compute once and backfill the cache
                 findLinksFromCache(cached, adj)
                   .then(links => {
+                    if (revision !== loadRevision) return
                     tfidfIndex.setImplicitLinks(links, adj)
                     return saveTfIdfCache(dirPath, { ...cached, implicitLinks: links })
                   })
@@ -206,21 +244,21 @@ export function useVaultLoader() {
             } else {
               try {
                 const { serialized, implicitLinks } = await buildAndFindLinks(docs, adj, fingerprint)
-                if (useVaultStore.getState().activeVaultId !== startVaultId) return
+                if (revision !== loadRevision || useVaultStore.getState().activeVaultId !== startVaultId) return
                 tfidfIndex.restore(serialized)
                 tfidfIndex.setImplicitLinks(implicitLinks, adj)
                 saveTfIdfCache(dirPath, serialized)
                   .catch((e: unknown) => logger.warn('[BM25] Cache save failed:', e instanceof Error ? e.message : String(e)))
               } catch (e: unknown) {
                 logger.warn('[BM25] Worker build failed, falling back to main thread:', e instanceof Error ? e.message : String(e))
-                if (useVaultStore.getState().activeVaultId === startVaultId) {
+                if (revision === loadRevision && useVaultStore.getState().activeVaultId === startVaultId) {
                   try { tfidfIndex.build(docs) } catch { /* silent if the rebuild also fails */ }
                 }
               }
             }
           } catch (e: unknown) {
             logger.warn('[BM25] Index init failed, attempting rebuild:', e instanceof Error ? e.message : String(e))
-            if (useVaultStore.getState().activeVaultId === startVaultId) {
+            if (revision === loadRevision && useVaultStore.getState().activeVaultId === startVaultId) {
               try { tfidfIndex.build(docs) } catch { /* silent if the rebuild also fails */ }
             }
           }
@@ -230,13 +268,13 @@ export function useVaultLoader() {
           // Incremental vector embedding build (when a local embedding server or Gemini key is available)
           const geminiKey = useSettingsStore.getState().apiKeys['gemini']?.trim()
           const canEmbed = await isEmbeddingReady(geminiKey)
-          if (canEmbed && docs.length > 0 && useVaultStore.getState().activeVaultId === startVaultId) {
+          if (revision === loadRevision && canEmbed && docs.length > 0 && useVaultStore.getState().activeVaultId === startVaultId) {
             vectorEmbedIndex.buildIncremental(docs, geminiKey ?? '', dirPath)
               .catch((e: unknown) => logger.warn('[vector] Embedding build failed:', e instanceof Error ? e.message : String(e)))
           }
 
           // Co-occurrence based dynamic synonym extraction (worker, background)
-          if (docs.length > 0 && useVaultStore.getState().activeVaultId === startVaultId) {
+          if (revision === loadRevision && docs.length > 0 && useVaultStore.getState().activeVaultId === startVaultId) {
             registerDynamicSynonyms(docs).catch((e: unknown) =>
               logger.warn('[vault] Co-occurrence synonym extraction failed:', e instanceof Error ? e.message : String(e)))
           }
@@ -274,8 +312,10 @@ export function useVaultLoader() {
         const msg = err instanceof Error ? err.message : 'File load failed'
         logger.error('[vault] Load failed:', msg)
         setError(msg)
-        setLoadedDocuments(null)
-        resetToMock()
+        if (!background) {
+          setLoadedDocuments(null)
+          resetToMock()
+        }
       } finally {
         setLoadingProgress(100, '')
         setVaultReady(true)

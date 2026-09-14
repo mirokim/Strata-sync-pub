@@ -129,14 +129,14 @@ export class RemoteClient {
 
   /** Who the server thinks we are (Google identity or the service token). */
   async me(): Promise<{ sub: string; email: string; name: string; picture: string | null; service: boolean; author: string }> {
-    const res = await this.request('/v1/me')
+    const res = await this.request('/v1/me', { signal: AbortSignal.timeout(15_000) })
     if (!res.ok) throw new RemoteError(res.status, `me failed (${res.status})`)
     return res.json()
   }
 
   /** Documents changed after `after`, oldest first. */
   async docs(after: number, limit = 500): Promise<DocsPage> {
-    const res = await this.request(`/v1/docs?after=${after}&limit=${limit}`)
+    const res = await this.request(`/v1/docs?after=${after}&limit=${limit}`, { signal: AbortSignal.timeout(60_000) })
     if (!res.ok) throw new RemoteError(res.status, `docs failed (${res.status})`)
     return res.json()
   }

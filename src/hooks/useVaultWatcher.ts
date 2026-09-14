@@ -38,12 +38,30 @@ export function useVaultWatcher(): void {
 
   useEffect(() => {
     if (!window.vaultAPI || !vaultPath) return
+    let refreshing = false
+    let refreshAgain = false
     return window.vaultAPI.onChanged(async ({ vaultPath: changedVaultPath, changedFile }) => {
       const currentVaultPath = useVaultStore.getState().vaultPath
       if (!currentVaultPath) return
+      if (changedVaultPath !== currentVaultPath) return
       if (useVaultStore.getState().isLoading) return
       if (suppressed) return
       if (!useGraphStore.getState().graphLayoutReady) return
+
+      // A web sync already updated the mirror. Refresh from that snapshot without another
+      // network pull or loading overlay, coalescing changes arriving during parsing.
+      if (window.vaultAPI?.loadSnapshot) {
+        refreshAgain = true
+        if (refreshing) return
+        refreshing = true
+        try {
+          while (refreshAgain && useVaultStore.getState().vaultPath === currentVaultPath) {
+            refreshAgain = false
+            await loadVault(currentVaultPath, true)
+          }
+        } finally { refreshing = false }
+        return
+      }
 
       // Only attempt incremental update when a specific changed file is identified
       if (changedFile && tfidfIndex.isBuilt && window.vaultAPI?.readFile) {
@@ -125,7 +143,7 @@ export function useVaultWatcher(): void {
         }
       }
 
-      loadVault(currentVaultPath)
+      void loadVault(currentVaultPath)
     })
   }, [vaultPath, loadVault, setWatchDiff])
 }

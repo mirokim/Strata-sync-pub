@@ -147,6 +147,14 @@ delivery target.
   (`STRATA_SERVER_URL`, `STRATA_TEAM_TOKEN`).
 
 ### Fixed
+- **Web: the app opened before the vault had finished loading.** The loading screen now stays up
+  until the local mirror has caught up with the server, and its bar counts the rows as they arrive
+  (`Syncing documents… N received`); parsing continues from there. When the server is unreachable
+  the saved mirror is opened as is. Changes the poller picks up afterwards refresh the tree from the
+  mirror without a loading overlay, and changes arriving mid-refresh are coalesced into one more pass.
+- Web sync: a server reset now tells the open screen every old document is gone; a page made only
+  of other people's personal rows no longer gets fetched again on every poll; `/v1/me` and
+  `/v1/docs` requests time out instead of hanging the startup.
 - External vault changes (fs.watch, desktop sync pulls) were only applied while Settings →
   General was open — the listener lived in that tab. It now lives in `useVaultWatcher`, mounted
   once in App.

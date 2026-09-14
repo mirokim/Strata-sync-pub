@@ -44,7 +44,7 @@ export default function StatusBar() {
           {remote.status.lastError ? <CloudOff size={11} color="var(--color-error)" /> : <Cloud size={11} color="var(--color-accent)" />}
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={remote.config.url}>{host}</span>
           <span style={{ opacity: 0.4 }}>·</span>
-          <span>{remote.status.inFlight ? t('syncing…') : remote.status.lastError ? remote.status.lastError : t('synced {time}', { time: relative(remote.status.lastSyncAt) })}</span>
+          <span>{remote.status.inFlight ? (remote.status.received === undefined ? t('syncing…') : t('syncing… {count} changes received', { count: remote.status.received })) : remote.status.lastError ? remote.status.lastError : t('synced {time}', { time: relative(remote.status.lastSyncAt) })}</span>
           {remote.config.author && (<><span style={{ opacity: 0.4 }}>·</span><span>{remote.config.author}</span></>)}
         </>
       ) : vaultPath ? (

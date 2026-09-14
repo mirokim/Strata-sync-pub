@@ -21,6 +21,9 @@ declare global {
       conflicts: { path: string; keptAs: string; at: number; remoteAuthor: string }[]
       errors: { path: string; message: string; at: number }[]
       lastError: string | null
+      /** Web: rows received by the pull in flight / upper bound for this pull */
+      received?: number
+      expected?: number
     }
     vaultPath: string | null
   }
@@ -49,6 +52,8 @@ declare global {
         imageRegistry?: Record<string, { relativePath: string; absolutePath: string }>
       }>
       scanMetadata?(dirPath: string): Promise<{ relativePath: string; absolutePath: string; mtime: number }[]>
+      /** Web: current mirror after a poll already applied the changes; never starts a network request. */
+      loadSnapshot?(dirPath: string): ReturnType<NonNullable<Window['vaultAPI']>['loadFiles']>
       watchStart(dirPath: string): Promise<boolean>
       watchStop(): Promise<boolean>
       onChanged(callback: (data: { vaultPath: string; changedFile?: string }) => void): () => void

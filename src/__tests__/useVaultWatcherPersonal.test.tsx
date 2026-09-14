@@ -10,7 +10,8 @@ import { useGraphStore } from '@/stores/graphStore'
 import { tfidfIndex } from '@/lib/graphAnalysis'
 import { parseVaultFiles } from '@/lib/markdownParser'
 
-vi.mock('@/hooks/useVaultLoader', () => ({ useVaultLoader: () => ({ loadVault: vi.fn() }) }))
+const loadVault = vi.hoisted(() => vi.fn())
+vi.mock('@/hooks/useVaultLoader', () => ({ useVaultLoader: () => ({ loadVault }) }))
 vi.mock('@/lib/bm25WorkerClient', () => ({
   updateDocInWorker: async (serialized: unknown) => ({ serialized, implicitLinks: [] }),
 }))
@@ -27,6 +28,7 @@ describe('useVaultWatcher and personal documents', () => {
   const personal = new Set<string>()
 
   beforeEach(() => {
+    loadVault.mockReset()
     onChanged = null
     files.clear(); files.set(team.absolutePath, team.content)
     personal.clear()
@@ -45,6 +47,27 @@ describe('useVaultWatcher and personal documents', () => {
   const fire = async (rel: string) => {
     await act(async () => { onChanged!({ vaultPath: VAULT, changedFile: rel }); await new Promise(r => setTimeout(r, 20)) })
   }
+
+  it('refreshes a web snapshot without a foreground loading overlay', async () => {
+    window.vaultAPI!.loadSnapshot = vi.fn()
+    renderHook(() => useVaultWatcher())
+    await fire('notes/New.md')
+    expect(loadVault).toHaveBeenCalledWith(VAULT, true)
+    expect(useVaultStore.getState().isLoading).toBe(false)
+  })
+
+  it('coalesces web changes arriving while a snapshot is being parsed', async () => {
+    window.vaultAPI!.loadSnapshot = vi.fn()
+    let finish!: () => void
+    loadVault.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve }))
+    renderHook(() => useVaultWatcher())
+    await fire('notes/First.md')
+    await fire('notes/Second.md')
+    await fire('notes/Third.md')
+    expect(loadVault).toHaveBeenCalledTimes(1)
+    await act(async () => { finish(); await Promise.resolve() })
+    expect(loadVault).toHaveBeenCalledTimes(2)
+  })
 
   it('a new document the vault reports as personal carries the mark; a team one does not — and the watcher stays awake in the editor', async () => {
     renderHook(() => useVaultWatcher())
