@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useUIStore } from '@/stores/uiStore'
 import { SPEAKER_CONFIG } from '@/lib/speakerConfig'
+import BrandLogo from '@/components/layout/BrandLogo'
 
 interface Props {
   onComplete: () => void
@@ -101,6 +102,7 @@ export default function LaunchPage({ onComplete }: Props) {
             position: 'fixed',
             inset: 0,
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
             background: 'var(--color-bg-primary)',
@@ -109,6 +111,7 @@ export default function LaunchPage({ onComplete }: Props) {
           data-testid="launch-page"
         >
           <Svg2DSequence stage={stage} />
+          <BrandLogo width={260} />
         </motion.div>
       )}
     </AnimatePresence>

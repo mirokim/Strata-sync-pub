@@ -25,6 +25,10 @@ const settingsPanel: Record<string, string> = {
   'Tags': '태그',
   'Shortcuts': '단축키',
   'About': '정보',
+  'User manual': '사용 설명서',
+  'Connect MCP': 'MCP 연결하기',
+  'Open in new window': '새 창에서 보기',
+  'Strata Sync user manual': 'Strata Sync 프로젝트 설명서',
   // SettingsPanel — footer / header
   'Close': '닫기',
   'Reset to Defaults': '기본값으로 재설정',

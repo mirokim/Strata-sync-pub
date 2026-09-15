@@ -4,11 +4,12 @@
  * stays available as the fallback for self-hosted servers without Google, or for the dev loop.
  */
 import { useEffect, useState } from 'react'
-import { Cloud, Loader2, AlertTriangle, ArrowRight, KeyRound } from 'lucide-react'
+import { Loader2, AlertTriangle, ArrowRight, KeyRound } from 'lucide-react'
 import { defaultServerUrl, normalizeServerUrl, saveWebConfig, type WebConfig } from './config'
 import { testConnection } from './remoteVault'
 import { startSignIn } from './auth'
 import { useT } from '@/i18n'
+import BrandLogo from '@/components/layout/BrandLogo'
 
 interface Props {
   initial?: Partial<WebConfig>
@@ -78,9 +79,8 @@ export default function ConnectScreen({ initial, initialError, onConnected }: Pr
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-bg-primary)', color: 'var(--color-text-primary)', padding: 24 }}>
       <form onSubmit={connectWithToken} style={{ width: '100%', maxWidth: 420, display: 'flex', flexDirection: 'column', gap: 18 }} data-testid="connect-screen">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Cloud size={20} color="var(--color-accent)" />
           <div>
-            <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: '-0.01em' }}>Strata Sync</div>
+            <BrandLogo width={260} style={{ marginBottom: 12 }} />
             <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{t("Your team's vault, in the browser")}</div>
           </div>
         </div>

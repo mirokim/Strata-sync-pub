@@ -9,7 +9,7 @@
 import { useState } from 'react'
 import {
   X, BarChart2, Trash2,
-  Settings, Keyboard, Info, Clock,
+  Settings, Keyboard, Info, Clock, BookOpen,
   Tag, Download, Bot, Fish, Send,
   HardDrive, Cloud, Plug, Users,
 } from 'lucide-react'
@@ -40,6 +40,7 @@ import CronJobTab from './tabs/CronJobTab'
 import ServerTab from './tabs/ServerTab'
 import McpTab from './tabs/McpTab'
 import MembersTab from './tabs/MembersTab'
+import ManualTab from './tabs/ManualTab'
 import { isWebMode } from '@/web/config'
 import { useT } from '@/i18n'
 
@@ -50,7 +51,7 @@ type SettingsTab =
   | 'general' | 'ai' | 'search' | 'vector-embed' | 'personas' | 'debate' | 'shortcuts' | 'project' | 'tags'
   | 'confluence' | 'confluence-publish' | 'slack-bot' | 'jira' | 'jira-dispatch' | 'vault-manager' | 'mirofish'
   | 'edit-agent' | 'cron-jobs' | 'usage' | 'team-sync' | 'server' | 'mcp' | 'members'
-  | 'about'
+  | 'about' | 'manual'
 
 type NavItem = { id: SettingsTab; icon: React.ElementType; label: string }
 type NavGroup = { label: string; items: NavItem[] }
@@ -98,6 +99,7 @@ const NAV: NavGroup[] = [
   {
     label: 'Other',
     items: [
+      { id: 'manual', icon: BookOpen, label: 'User manual' },
       { id: 'about', icon: Info, label: 'About' },
     ],
   },
@@ -125,7 +127,7 @@ const ALL_ITEMS = NAV.flatMap(g => g.items)
 
 // ── Tab content dispatcher ────────────────────────────────────────────────────
 
-function renderTabContent(tab: SettingsTab) {
+function renderTabContent(tab: SettingsTab, openMcp: () => void) {
   switch (tab) {
     case 'stats':      return <StatsTab />
     case 'trash':      return <TrashTab />
@@ -152,6 +154,7 @@ function renderTabContent(tab: SettingsTab) {
     case 'cron-jobs':  return <CronJobTab />
     case 'usage':      return <UsageTab />
     case 'about':      return <AboutTab />
+    case 'manual':     return <ManualTab openMcp={openMcp} />
     default:           return null
   }
 }
@@ -256,7 +259,7 @@ export default function SettingsPanel() {
 
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          {renderTabContent(activeTab)}
+          {renderTabContent(activeTab, () => setActiveTab('mcp'))}
         </div>
 
         {/* Footer */}

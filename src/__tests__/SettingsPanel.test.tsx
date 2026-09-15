@@ -62,6 +62,17 @@ describe('SettingsPanel', () => {
 
   // ── MCP tab ────────────────────────────────────────────────────────────────
 
+  it('opens the recovered manual and can switch directly to MCP setup', () => {
+    resetStore(true)
+    render(<SettingsPanel />)
+    fireEvent.click(screen.getByRole('button', { name: 'User manual' }))
+    expect(screen.getByTitle('Strata Sync user manual')).toHaveAttribute('src', `${import.meta.env.BASE_URL}manual.html`)
+    expect(screen.getByRole('link', { name: 'Open in new window' })).toHaveAttribute('href', `${import.meta.env.BASE_URL}manual.html`)
+    fireEvent.click(screen.getByRole('button', { name: 'Connect MCP' }))
+    expect(screen.queryByTitle('Strata Sync user manual')).not.toBeInTheDocument()
+    expect(screen.getByText('vault_search')).toBeInTheDocument()
+  })
+
   it('MCP tab hands out the Claude Code command and the JSON config for the connected server', () => {
     localStorage.setItem('strata-sync-web-config', JSON.stringify({ url: 'https://strata.example', token: 'tok', author: 'Kim', auth: 'token' }))
     resetStore(true)

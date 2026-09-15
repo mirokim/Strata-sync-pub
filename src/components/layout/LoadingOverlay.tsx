@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useGraphStore } from '@/stores/graphStore'
 import { useT } from '@/i18n'
+import BrandLogo from './BrandLogo'
 
 const SATELLITES = [0, 60, 120, 180, 240, 300].map((deg, i) => {
   const rad = (deg * Math.PI) / 180
@@ -141,7 +142,7 @@ export default function LoadingOverlay() {
           color: 'var(--color-text-primary)', fontSize: 15, fontWeight: 700,
           letterSpacing: '0.05em', opacity: 0.9, marginBottom: 2,
         }}>
-          Strata Sync
+          <BrandLogo width={180} />
         </div>
 
         {/* Vault list (multi-vault only) */}

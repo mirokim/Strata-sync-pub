@@ -5,6 +5,7 @@ import { useBotStore } from '@/stores/botStore'
 import { cn } from '@/lib/utils'
 import { useT } from '@/i18n'
 import VaultTabs from './VaultTabs'
+import BrandLogo from './BrandLogo'
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -33,17 +34,7 @@ export default function TopBar() {
     >
       {/* Left: favicon + app name */}
       <div className="flex items-center gap-2" style={{ padding: '0 10px', flexShrink: 0, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-        <img
-          src={`${import.meta.env.BASE_URL}strata-sync-icon.svg`}
-          alt=""
-          width={16}
-          height={16}
-          style={{ display: 'block' }}
-          draggable={false}
-        />
-        <span className="text-xs font-semibold tracking-widest" style={{ color: 'var(--color-text-muted)' }}>
-          STRATA SYNC
-        </span>
+        <BrandLogo width={142} />
         <span style={{
           fontSize: 9, fontWeight: 600, letterSpacing: '0.04em',
           color: 'var(--color-accent)', background: 'var(--color-accent-bg)',
