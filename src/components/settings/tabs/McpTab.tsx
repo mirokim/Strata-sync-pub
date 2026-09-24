@@ -113,8 +113,10 @@ export default function McpTab() {
         <div>
           <div style={sectionLabel}>{t('Connect a client')}</div>
           <div style={card}>
+            <Snippet id="server-url" title="MCP 서버 주소" text={mcpUrl} note="MCP 서버를 추가하는 화면에서 이 주소를 사용하세요." />
             <Snippet id="claude-code" title="Claude Code" text={claudeCode}
               note={signedIn ? t('The first tool call opens a Google sign-in in your browser; the token is then kept by Claude Code.') : t('Uses the shared team token. With Google sign-in enabled on the server the header is not needed.')} />
+            {signedIn && <Snippet id="codex" title="Codex CLI" text={`codex mcp add strata --url ${mcpUrl}\ncodex mcp login strata`} note="터미널에서 실행한 뒤 브라우저에서 웹 앱과 같은 구글 계정으로 로그인하세요." />}
             <Snippet id="json" title="Cursor · Claude Desktop · Windsurf (mcp.json)" text={jsonConfig}
               note={t('Add to the client\'s MCP configuration file. Clients that support OAuth sign in on first use.')} />
           </div>

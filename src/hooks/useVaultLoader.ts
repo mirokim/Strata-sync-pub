@@ -27,7 +27,7 @@ import { buildFingerprint, loadTfIdfCache, saveTfIdfCache } from '@/lib/tfidfCac
 import { buildDocsFingerprint, loadDocsCache, saveDocsCache } from '@/lib/docsCache'
 import { vectorEmbedIndex } from '@/lib/vectorEmbedIndex'
 import { buildStatsSnapshot, saveStatsSnapshot } from '@/lib/vaultStatsLog'
-import type { VaultFile, LoadedDocument } from '@/types'
+import type { VaultFile, LoadedDocument, GraphLink } from '@/types'
 
 // A watcher refresh (background) may start while the previous load is still indexing;
 // only the newest load may apply its deferred results.
@@ -36,6 +36,31 @@ let loadRevision = 0
 // Progress bar share for the web sync phase; parsing continues from PULL_END.
 const PULL_START = 2
 const PULL_END = 40
+
+// Link reveal after a load: below this many links the graph just appears whole
+const PROGRESSIVE_MIN_LINKS = 200
+const REVEAL_STEPS = 24
+const REVEAL_INTERVAL_MS = 90
+
+/**
+ * Hand the graph its links a slice at a time so the connections form on screen. The simulation
+ * swaps links in place (useGraphSimulation), so node positions carry over between slices.
+ * `stillCurrent` stops the reveal when another load replaced the graph.
+ */
+function revealLinks(links: GraphLink[], stillCurrent: () => boolean): void {
+  const order = [...links]
+  for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]] }
+  const per = Math.ceil(order.length / REVEAL_STEPS)
+  let shown = 0
+  const step = () => {
+    if (!stillCurrent()) return
+    shown = Math.min(order.length, shown + per)
+    // The last slice is the original array, so everything else sees the graph it expects
+    useGraphStore.getState().setLinks(shown >= order.length ? links : order.slice(0, shown))
+    if (shown < order.length) setTimeout(step, REVEAL_INTERVAL_MS)
+  }
+  setTimeout(step, REVEAL_INTERVAL_MS)
+}
 
 /**
  * Co-occurrence based dynamic synonym registration — runs in a worker.
@@ -198,10 +223,18 @@ export function useVaultLoader() {
 
         // Graph build: run synchronously before finally(setVaultReady) to avoid the
         // setGraph → graphLayoutReady=false → overlay re-activation race
+        let graphLinks: GraphLink[] | null = null
         try {
           const { nodes, links } = buildGraph(docs)
           logger.debug(`[vault] Graph: ${nodes.length} nodes, ${links.length} links`)
-          setGraph(nodes, links)
+          graphLinks = links
+          if (background || links.length < PROGRESSIVE_MIN_LINKS) {
+            setGraph(nodes, links)
+          } else {
+            // Documents first, connections after: the graph visibly links itself up
+            setGraph(nodes, [])
+            revealLinks(links, () => revision === loadRevision && useGraphStore.getState().nodes === nodes)
+          }
         } catch (e: unknown) {
           logger.warn('[vault] Graph build failed:', e instanceof Error ? e.message : String(e))
         }
@@ -220,7 +253,8 @@ export function useVaultLoader() {
           if (revision !== loadRevision) return
           // BM25 index: cache hit  → restore (fast) + compute implicit links in the worker
           //             cache miss → build in the worker + compute implicit links (non-blocking main thread)
-          const { links: currentLinks } = useGraphStore.getState()
+          // The full set, not the store's: links may still be arriving on screen
+          const currentLinks = graphLinks ?? useGraphStore.getState().links
           const adj = buildAdjacencyMap(currentLinks)
           try {
             const cached = await loadTfIdfCache(dirPath, fingerprint)

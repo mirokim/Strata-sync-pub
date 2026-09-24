@@ -110,8 +110,10 @@ export default function LaunchPage({ onComplete }: Props) {
           }}
           data-testid="launch-page"
         >
-          <Svg2DSequence stage={stage} />
-          <BrandLogo width={260} />
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <Svg2DSequence stage={stage} />
+            <BrandLogo width={260} />
+          </div>
         </motion.div>
       )}
     </AnimatePresence>

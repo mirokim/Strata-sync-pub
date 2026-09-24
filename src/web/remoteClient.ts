@@ -141,6 +141,27 @@ export class RemoteClient {
     return res.json()
   }
 
+  /**
+   * The whole team vault in one gzip download — where an empty mirror starts. Null when the server
+   * predates the bundle (404) or the browser cannot decompress; the caller pages /v1/docs instead.
+   */
+  async bundle(): Promise<{ head: number; generation: number; docs: RemoteDoc[] } | null> {
+    if (typeof DecompressionStream === 'undefined') return null
+    const res = await this.request('/v1/bundle', { signal: AbortSignal.timeout(120_000) })
+    if (res.status === 404) return null
+    if (!res.ok) throw new RemoteError(res.status, `bundle failed (${res.status})`)
+    const text = await new Response(res.body!.pipeThrough(new DecompressionStream('gzip'))).text()
+    const b = JSON.parse(text) as { version: number; head: number; generation: number; docs: RemoteDoc[] }
+    return b.version === 1 && Array.isArray(b.docs) ? b : null
+  }
+
+  /** This viewer's own personal documents (the bundle leaves them out); none for the team token. */
+  async personalDocs(): Promise<DocsPage> {
+    const res = await this.request('/v1/docs?personal=1', { signal: AbortSignal.timeout(60_000) })
+    if (!res.ok) throw new RemoteError(res.status, `docs failed (${res.status})`)
+    return res.json()
+  }
+
   async manifest(since = 0): Promise<{ head: number; next: number | null; files: RemoteRow[] }> {
     const res = await this.request(`/v1/manifest?since=${since}`)
     if (!res.ok) throw new RemoteError(res.status, `manifest failed (${res.status})`)

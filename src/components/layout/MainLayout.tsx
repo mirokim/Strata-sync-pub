@@ -1,16 +1,9 @@
-import { useCallback } from 'react'
+import { useCallback, lazy, Suspense } from 'react'
 import { motion } from 'framer-motion'
 import TopBar from './TopBar'
 import ResizeHandle from './ResizeHandle'
 import FileTree from '@/components/fileTree/FileTree'
 import GraphPanel from '@/components/graph/GraphPanel'
-import SettingsPanel from '@/components/settings/SettingsPanel'
-import ConverterEditor from '@/components/converter/ConverterEditor'
-import MarkdownEditor from '@/components/editor/MarkdownEditor'
-import ImageViewer from '@/components/editor/ImageViewer'
-import ReportViewer from '@/components/editor/ReportViewer'
-import SlackLogViewer from '@/components/slackLog/SlackLogViewer'
-import MyDeskPanel from '@/components/me/MyDeskPanel'
 import PhysicsControls from '@/components/graph/PhysicsControls'
 import StatusBar from './StatusBar'
 import ToastContainer from '@/components/shared/ToastContainer'
@@ -19,6 +12,14 @@ import ErrorBoundary from '@/components/shared/ErrorBoundary'
 import { useUIStore } from '@/stores/uiStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useT } from '@/i18n'
+
+const SettingsPanel = lazy(() => import('@/components/settings/SettingsPanel'))
+const ConverterEditor = lazy(() => import('@/components/converter/ConverterEditor'))
+const MarkdownEditor = lazy(() => import('@/components/editor/MarkdownEditor'))
+const ImageViewer = lazy(() => import('@/components/editor/ImageViewer'))
+const ReportViewer = lazy(() => import('@/components/editor/ReportViewer'))
+const SlackLogViewer = lazy(() => import('@/components/slackLog/SlackLogViewer'))
+const MyDeskPanel = lazy(() => import('@/components/me/MyDeskPanel'))
 
 const LEFT_MIN = 140
 const LEFT_MAX = 340
@@ -168,6 +169,7 @@ export default function MainLayout() {
                   ...solidPanel,
                 }}
               >
+                <Suspense fallback={<div role="status" style={{ padding: 24 }}>{t('Loading...')}</div>}>
                 {centerTab === 'settings'
                   ? <SettingsPanel />
                   : centerTab === 'me'
@@ -182,6 +184,7 @@ export default function MainLayout() {
                           ? <MarkdownEditor />
                           : <ConverterEditor />
                 }
+                </Suspense>
               </motion.div>
             )}
           </div>

@@ -199,9 +199,9 @@ export class RemoteCache {
 
   /** Forget everything (server sequence reset or disconnect). */
   async reset(): Promise<void> {
-    this.rows.clear(); this.cursor = 0; this.generation = null; this.emptyFolders.clear(); this.dirty.clear()
     if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = null }
     await this.saving // a queued flush must not land in the fresh store
+    this.rows.clear(); this.cursor = 0; this.generation = null; this.emptyFolders.clear(); this.dirty.clear()
     await this.backend.clear().catch(() => {})
   }
 
@@ -222,13 +222,18 @@ export class RemoteCache {
   /** Persist what changed since the last flush (also awaited by tests). */
   flush(): Promise<void> {
     if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = null }
-    const touched = [...this.dirty]; this.dirty.clear()
-    const delta: CacheDelta = {
-      cursor: this.cursor, generation: this.generation, emptyFolders: [...this.emptyFolders],
-      rows: touched.map(p => this.rows.get(p)).filter((r): r is CachedRow => Boolean(r)),
-      removed: touched.filter(p => !this.rows.has(p)),
-    }
-    this.saving = this.saving.then(() => this.backend.write(delta)).catch(() => {})
+    // Snapshot inside the queue: a failed predecessor must restore its dirty paths before
+    // the next delta can advance the durable cursor. New edits during I/O stay dirty.
+    this.saving = this.saving.then(async () => {
+      const touched = [...this.dirty]; this.dirty.clear()
+      const delta: CacheDelta = {
+        cursor: this.cursor, generation: this.generation, emptyFolders: [...this.emptyFolders],
+        rows: touched.map(p => this.rows.get(p)).filter((r): r is CachedRow => Boolean(r)),
+        removed: touched.filter(p => !this.rows.has(p)),
+      }
+      try { await this.backend.write(delta) }
+      catch { for (const path of touched) this.dirty.add(path) }
+    })
     return this.saving
   }
 }

@@ -33,6 +33,12 @@ export async function applyR2Events(deps: SyncDeps, messages: R2EventMessage[], 
     const path = normalizeVaultPath(key)
     if (!path) { result.skipped++; continue }
 
+    if (deps.writer) {
+      const part = await deps.writer.reconcile({ ...msg, object: { ...msg.object, key: path } })
+      result.indexed += part.indexed; result.tombstoned += part.tombstoned; result.skipped += part.skipped
+      continue
+    }
+
     const current = await deps.meta.get(path)
     const isDelete = msg.action === 'DeleteObject' || msg.action === 'LifecycleDeletion'
 

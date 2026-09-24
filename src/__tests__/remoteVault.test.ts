@@ -18,6 +18,10 @@ class FakeWorker {
   token = 'tok'
   requests: string[] = []
   failNext: number | null = null
+  /** Every request fails with 502 (server down). */
+  down = false
+  /** Serve /v1/bundle (a Worker that has it); off = an older Worker, 404. */
+  bundleOn = false
   searchDown = false
 
   private etagOf(bytes: Uint8Array): string {
@@ -49,12 +53,24 @@ class FakeWorker {
     const method = (init.method ?? 'GET').toUpperCase()
     this.requests.push(`${method} ${url.pathname}${url.search}`)
     if (this.failNext !== null) { const s = this.failNext; this.failNext = null; return new Response('boom', { status: s }) }
+    if (this.down) return new Response('boom', { status: 502 })
     const headers = new Headers(init.headers as Record<string, string>)
     const json = (status: number, body: unknown, extra: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...extra } })
 
     if (url.pathname === '/health') return json(200, { ok: true })
     if (headers.get('authorization') !== `Bearer ${this.token}`) return json(401, { error: 'unauthorized' })
 
+    if (url.pathname === '/v1/bundle' && this.bundleOn) {
+      const docs = [...this.rows.values()].filter(r => !r.deleted && !r.path.startsWith('_personal/')).sort((a, b) => a.seq - b.seq)
+        .map(r => ({ ...r, content: r.path.endsWith('.md') ? new TextDecoder().decode(this.blobs.get(r.path)!) : null }))
+      const raw = new TextEncoder().encode(JSON.stringify({ version: 1, head: this.seq, generation: this.generation, docs }))
+      return new Response(new Response(raw).body!.pipeThrough(new CompressionStream('gzip')), { status: 200 })
+    }
+    if (url.pathname === '/v1/docs' && url.searchParams.get('personal') === '1') {
+      const docs = [...this.rows.values()].filter(r => !r.deleted && r.path.startsWith(`_personal/${this.sub}/`))
+        .map(r => ({ ...r, content: new TextDecoder().decode(this.blobs.get(r.path)!) }))
+      return json(200, { head: this.seq, generation: this.generation, next: null, docs })
+    }
     if (url.pathname === '/v1/docs') {
       const after = Number(url.searchParams.get('after') ?? 0)
       const limit = Number(url.searchParams.get('limit') ?? 200)
@@ -269,7 +285,7 @@ describe('loadFiles / scanMetadata', () => {
     expect(vault.status.lastError).toContain('502')
 
     const empty = makeVault()
-    server.failNext = 502
+    server.down = true
     await expect(empty.api.loadFiles(empty.vaultPath)).rejects.toThrow()
   })
 
@@ -462,6 +478,42 @@ describe('images', () => {
     expect(doc).toContain('![[pasted-20260912-1030-00.png]]')
     expect(seen).toEqual([docRel])
     expect(vault.imageRegistry()[imageRel.split('/').pop()!.toLowerCase()]?.relativePath ?? Object.values(vault.imageRegistry()).some(r => r.relativePath === imageRel)).toBeTruthy()
+  })
+})
+
+describe('bundle (cold start in one download)', () => {
+  it('fills an empty mirror from the bundle, then pages only what came after it', async () => {
+    server.bundleOn = true
+    const v = makeVault()
+    server.requests.length = 0
+    const { files } = await v.api.loadFiles(v.vaultPath)
+    expect(server.requests).toEqual(['GET /v1/bundle', `GET /v1/docs?after=${server.seq}&limit=500`])
+    expect(files.map(f => f.relativePath).sort()).toEqual(['active/Combat System.md', 'active/Stamina.md'])
+    expect(v.cache.cursor).toBe(server.seq)
+    // Later reloads never touch the bundle again
+    server.put('active/New.md', '# New')
+    server.requests.length = 0
+    await v.api.loadFiles(v.vaultPath)
+    expect(server.requests).toEqual([`GET /v1/docs?after=${server.seq - 1}&limit=500`])
+  })
+
+  it('adds the signed-in owner personal documents, which the bundle leaves out', async () => {
+    server.bundleOn = true
+    server.sub = '1001'
+    server.put('_personal/1001/active/Draft.md', '# Draft')
+    const v = new RemoteVault({ ...CONFIG, auth: 'oauth' }, { fetchImpl: server.fetch, backend: new MemoryCacheBackend() })
+    const { files } = await v.api.loadFiles(v.vaultPath)
+    expect(files.find(f => f.relativePath === 'active/Draft.md')?.personal).toBe(true)
+    expect(server.requests).toContain('GET /v1/docs?personal=1')
+  })
+
+  it('falls back to paging when the bundle fails', async () => {
+    server.bundleOn = true
+    server.failNext = 500
+    const v = makeVault()
+    const { files } = await v.api.loadFiles(v.vaultPath)
+    expect(files).toHaveLength(2)
+    expect(server.requests.filter(r => r.startsWith('GET /v1/docs'))[0]).toBe('GET /v1/docs?after=0&limit=500')
   })
 })
 

@@ -1,3 +1,4 @@
+import BrandLogo from '@/components/layout/BrandLogo'
 /**
  * AboutTab — what this thing is, in one screen. Kept in step with the product: a shared brain for
  * a team (vault + graph + AI members over MCP), not the earlier director-persona proxy.
@@ -49,7 +50,7 @@ export default function AboutTab() {
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
         <div>
           <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-text-primary)', letterSpacing: '-0.02em' }}>
-            STRATA SYNC
+            <BrandLogo width={220} />
           </h2>
           <p style={{ fontSize: 11, color: 'var(--color-accent)', marginTop: 2 }} data-testid="about-version">
             {t('v{version} · A shared brain for your team', { version: VERSION })}

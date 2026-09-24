@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useGraphStore } from '@/stores/graphStore'
 import { useSettingsStore } from '@/stores/settingsStore'
-import type { GraphNode } from '@/types'
+import type { GraphNode, GraphLink } from '@/types'
 
 /** Compute cluster group key — tag uses first tag, folder uses top-level folder name */
 function getClusterKey(node: GraphNode, mode: 'tag' | 'folder'): string {
@@ -58,9 +58,16 @@ export function useGraphSimulation3D({ onTick }: Options) {
   const clusterModeRef = useRef(clusterMode)
   clusterModeRef.current = clusterMode
 
-  // Initialize (or reinitialize) simulation when nodes/links dataset changes
+  // Latest links for the init effect; which array the running simulation already has
+  const linksRef = useRef(links)
+  linksRef.current = links
+  const appliedLinksRef = useRef<GraphLink[] | null>(null)
+  const resetFastTicksRef = useRef<() => void>(() => {})
+
+  // Initialize (or reinitialize) simulation when the node set changes (vault load or clear)
   useEffect(() => {
     let cancelled = false
+    const links = linksRef.current
 
     const spread = 80
     simNodesRef.current = nodes.map(n => ({
@@ -83,6 +90,9 @@ export function useGraphSimulation3D({ onTick }: Options) {
     }) => {
       if (cancelled) return
 
+      // The import is async: links that arrived meanwhile are the ones to start with
+      appliedLinksRef.current = linksRef.current
+      simLinksRef.current = linksRef.current.map(l => ({ ...l })) as SimLink3D[]
       const sim = (forceSimulation as (nodes: SimNode3D[]) => any)(sNodes)
         .numDimensions(3)
         .force(
@@ -133,6 +143,7 @@ export function useGraphSimulation3D({ onTick }: Options) {
       // and ensures scene meshes are built before the first onTick fires)
       const MAX_TICKS_FAST = 80
       let ticksDone = 0
+      resetFastTicksRef.current = () => { ticksDone = 0 }
       sim.on('tick', () => {
         onTickRef.current(simNodesRef.current, simLinksRef.current)
         if (isFastRef.current && ++ticksDone >= MAX_TICKS_FAST) sim.stop()
@@ -151,7 +162,18 @@ export function useGraphSimulation3D({ onTick }: Options) {
     }
     // physics is intentionally excluded: reheating is handled in the effect below
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, links])
+  }, [nodes])
+
+  // Links changed on the same nodes: swap them into the running simulation, positions kept
+  useEffect(() => {
+    const sim = simRef.current as any
+    if (!sim || appliedLinksRef.current === links) return
+    appliedLinksRef.current = links
+    simLinksRef.current = links.map(l => ({ ...l })) as SimLink3D[]
+    sim.force('link')?.links(simLinksRef.current)
+    resetFastTicksRef.current()
+    sim.alpha(Math.max(sim.alpha(), 0.3)).restart()
+  }, [links])
 
   // Reheat when physics params, quality mode, or cluster mode change
   useEffect(() => {

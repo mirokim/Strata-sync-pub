@@ -84,3 +84,12 @@ queue = "strata-reactions"
 max_batch_size = 5
 max_batch_timeout = 30
 max_retries = 3
+
+# Per-document coordination for conditional API/MCP writes across Worker isolates.
+[[durable_objects.bindings]]
+name = "VAULT_WRITER"
+class_name = "VaultWriter"
+
+[[migrations]]
+tag = "v1-vault-writer"
+new_sqlite_classes = ["VaultWriter"]

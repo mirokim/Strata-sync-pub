@@ -3,6 +3,7 @@
  *
  *   GET    /health
  *   GET    /v1/manifest?since=<seq>      changes after <seq> (paged, see `next`)
+ *   GET    /v1/bundle                    every live team document with text, one gzip object (see bundle.ts)
  *   GET    /v1/file?path=<vault path>    bytes + ETag / X-Mtime / X-Author / X-Seq
  *   PUT    /v1/file?path=<vault path>    body = bytes; headers If-Match | If-None-Match: *, X-Mtime, X-Author
  *   DELETE /v1/file?path=<vault path>    headers If-Match (optional), X-Author
@@ -10,8 +11,10 @@
  * Every /v1 route requires `Authorization: Bearer <TEAM_TOKEN>`.
  */
 import { D1MetaStore, R2BlobStore } from './stores.js'
+import { coordinatedWriter } from './writeCoordinator.js'
+export { VaultWriter } from './writeCoordinator.js'
 import { getManifest, getFile, putFile, deleteFile, parseIfMatch, normalizeVaultPath, type FileRow, type SyncDeps } from './sync.js'
-import { runNightly, batchStatus, semanticSearch, type NightlyDeps, type VectorStore, type VectorQuery } from './nightly.js'
+import { runNightly, listLiveRows, batchStatus, semanticSearch, type NightlyDeps, type VectorStore, type VectorQuery } from './nightly.js'
 import { applyR2Events, type R2EventMessage } from './r2events.js'
 import { reactToSave, shouldEnqueueReaction, type ReactionJob, type LlmCall } from './reactions.js'
 import Anthropic from '@anthropic-ai/sdk'
@@ -19,6 +22,7 @@ import { preflight, withCors } from './cors.js'
 import { handleMcpRequest } from './mcp.js'
 import { invalidateVaultView, loadVaultView } from './vaultIndex.js'
 import { meOverview } from './me.js'
+import { serveBundle } from './bundle.js'
 import { readInbox, inboxFor, sendInbox, replyInbox, INBOX_STATUSES, type InboxStatus } from './inbox.js'
 import { radarCheck } from './radar.js'
 import { buildProposal } from '../../mcp/src/proposals.js'
@@ -30,6 +34,7 @@ import { ensureImageDoc, isImagePath } from './images.js'
 import { canSee, isPersonalPath, visibleRows, setVisibility, type Viewer } from './personal.js'
 
 export interface Env extends AuthEnv {
+  VAULT_WRITER?: DurableObjectNamespace
   VAULT: R2Bucket
   DB: D1Database
   TEAM_TOKEN: string
@@ -289,7 +294,26 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
       })
     }
 
+    // ── Web client: the whole team vault in one gzip download (a cold mirror starts here) ──
+    if (url.pathname === '/v1/bundle' && req.method === 'GET') {
+      const bytes = await serveBundle(deps, { background: work => ctx.waitUntil(work) })
+      return new Response(bytes as BodyInit, { status: 200, headers: { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' } })
+    }
+
     // ── Web client: documents with content, paged by sequence ─────────────────
+    if (url.pathname === '/v1/docs' && req.method === 'GET' && url.searchParams.get('personal') === '1') {
+      // The bundle leaves personal documents out; their owner fetches them here, all at once
+      const mine = (await listLiveRows(deps.meta)).filter(r => isPersonalPath(r.path) && canSee(r.path, viewer))
+      const docs: (FileRow & { content: string | null })[] = []
+      for (let i = 0; i < mine.length; i += 50) {
+        docs.push(...await Promise.all(mine.slice(i, i + 50).map(async row => {
+          if (!row.path.toLowerCase().endsWith('.md')) return { ...row, content: null }
+          const bytes = await deps.blobs.get(row.path)
+          return { ...row, content: bytes ? new TextDecoder().decode(bytes) : null }
+        })))
+      }
+      return json(200, { head: await deps.meta.head(), generation: await deps.meta.generation(), next: null, docs })
+    }
     if (url.pathname === '/v1/docs' && req.method === 'GET') {
       const after = Number(url.searchParams.get('after') ?? '0')
       const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 200, 1), 500)
@@ -446,6 +470,7 @@ function enqueueReaction(env: Env, ctx: ExecutionContext, deps: SyncDeps, row: F
 
 function baseDeps(env: Env): SyncDeps {
   return {
+    writer: coordinatedWriter(env.VAULT_WRITER),
     meta: new D1MetaStore(env.DB),
     blobs: new R2BlobStore(env.VAULT),
     maxFileBytes: Number(env.MAX_FILE_BYTES ?? 10 * 1024 * 1024),

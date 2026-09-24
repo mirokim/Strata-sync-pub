@@ -11,6 +11,7 @@
  */
 
 import { archiveVersion, keepsHistory } from './history.js'
+import type { R2EventMessage, BridgeResult } from './r2events.js'
 
 export interface FileRow {
   path: string
@@ -53,6 +54,24 @@ export interface SyncDeps {
   blobs: BlobStore
   maxFileBytes: number
   now?: () => number
+  /** Production writes are routed to one Durable Object per normalized path. */
+  writer?: {
+    put(input: PutInput): Promise<SyncResult>
+    delete(path: string, ifMatch: string | undefined, author: string, authorSub: string): Promise<SyncResult>
+    reconcile(message: R2EventMessage): Promise<BridgeResult>
+  }
+}
+
+// The in-process protocol also serializes writes (tests and a Durable Object's local stores).
+// This is NOT the cross-isolate lock: production must supply `writer`.
+const pendingWrites = new WeakMap<MetaStore, Map<string, Promise<unknown>>>()
+export function serialize<T>(meta: MetaStore, path: string, work: () => Promise<T>): Promise<T> {
+  let paths = pendingWrites.get(meta)
+  if (!paths) { paths = new Map(); pendingWrites.set(meta, paths) }
+  const prior = paths.get(path) ?? Promise.resolve()
+  const next = prior.catch(() => {}).then(work)
+  paths.set(path, next)
+  return next.finally(() => { if (paths!.get(path) === next) paths!.delete(path) })
 }
 
 export type SyncResult =
@@ -146,6 +165,13 @@ export interface PutInput {
 export async function putFile(deps: SyncDeps, input: PutInput): Promise<SyncResult> {
   const path = normalizeVaultPath(input.path)
   if (!path) return { status: 400, body: { error: 'invalid path' } }
+  if (deps.writer) return deps.writer.put({ ...input, path })
+  return serialize(deps.meta, path, () => putFileUnlocked(deps, { ...input, path }))
+}
+
+async function putFileUnlocked(deps: SyncDeps, input: PutInput): Promise<SyncResult> {
+  const path = normalizeVaultPath(input.path)
+  if (!path) return { status: 400, body: { error: 'invalid path' } }
   if (input.body.byteLength > deps.maxFileBytes) return { status: 413, body: { error: `file larger than ${deps.maxFileBytes} bytes` } }
   if (!Number.isFinite(input.mtime) || input.mtime <= 0) return { status: 400, body: { error: 'X-Mtime header required (ms since epoch)' } }
 
@@ -174,6 +200,13 @@ export async function putFile(deps: SyncDeps, input: PutInput): Promise<SyncResu
 }
 
 export async function deleteFile(deps: SyncDeps, rawPath: string | null, ifMatch: string | undefined, author: string, authorSub = ''): Promise<SyncResult> {
+  const path = normalizeVaultPath(rawPath)
+  if (!path) return { status: 400, body: { error: 'invalid path' } }
+  if (deps.writer) return deps.writer.delete(path, ifMatch, author, authorSub)
+  return serialize(deps.meta, path, () => deleteFileUnlocked(deps, path, ifMatch, author, authorSub))
+}
+
+async function deleteFileUnlocked(deps: SyncDeps, rawPath: string | null, ifMatch: string | undefined, author: string, authorSub: string): Promise<SyncResult> {
   const path = normalizeVaultPath(rawPath)
   if (!path) return { status: 400, body: { error: 'invalid path' } }
   const current = await deps.meta.get(path)

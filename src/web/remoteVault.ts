@@ -13,7 +13,7 @@
  */
 import { remoteVaultPath, saveWebConfig, type WebConfig } from './config'
 import { RemoteClient, RemoteError, type FetchLike } from './remoteClient'
-import { RemoteCache, defaultCacheBackend, type CacheBackend, type CachedRow } from './remoteCache'
+import { RemoteCache, MemoryCacheBackend, defaultCacheBackend, type CacheBackend, type CachedRow } from './remoteCache'
 import { conflictName, numberedName } from '@/lib/conflictCopy'
 import { pastedImagePath, imageDocPath, renderImageDoc } from '@/lib/imageDoc'
 import { PersonalMapper, personalRootFor, isPersonalPath } from './personal'
@@ -63,7 +63,8 @@ const dec = new TextDecoder()
 export class RemoteVault {
   readonly vaultPath: string
   readonly client: RemoteClient
-  readonly cache: RemoteCache
+  cache: RemoteCache
+  private readonly cacheBackend?: CacheBackend
   readonly api: VaultAPI
   readonly sync: SyncAPI
   status: RemoteVaultStatus = { inFlight: false, lastSyncAt: null, lastSeq: 0, pending: 0, conflicts: [], errors: [], lastError: null }
@@ -92,7 +93,10 @@ export class RemoteVault {
     this.vaultPath = remoteVaultPath(config.url)
     this.fetchImpl = options.fetchImpl
     this.client = new RemoteClient(config, options.fetchImpl, options.onUnauthorized)
-    this.cache = new RemoteCache(options.backend ?? defaultCacheBackend(new URL(config.url).host))
+    this.cacheBackend = options.backend
+    // Never open the legacy host-only database, which may contain another user's documents.
+    // OAuth identity must be verified before choosing a persistent cache.
+    this.cache = new RemoteCache(options.backend ?? new MemoryCacheBackend())
     this.now = options.now ?? (() => Date.now())
     this.opts = {
       pollIntervalMs: options.pollIntervalMs ?? 15_000,
@@ -160,7 +164,14 @@ export class RemoteVault {
   // ── Sync core ──────────────────────────────────────────────────────────────
 
   private ensureLoaded(): Promise<void> {
-    return this.loaded ??= this.cache.load()
+    return this.loaded ??= (async () => {
+      await this.ensureIdentity()
+      await this.cache.load()
+      // Defense in depth for old/injected backends: private rows must belong to this identity.
+      for (const path of this.cache.rows.keys()) {
+        if (isPersonalPath(path) && !this.personal.virtualOf(path).personal) this.cache.removeRow(path)
+      }
+    })().catch(e => { this.loaded = null; throw e })
   }
 
   /**
@@ -176,12 +187,15 @@ export class RemoteVault {
   /** Who is signed in decides which `_personal/<owner>/` prefix the app strips. Checked once. */
   private ensureIdentity(): Promise<void> {
     return this.identityChecked ??= (async () => {
-      if (this.config.auth !== 'oauth') return
-      try {
+      let identity = 'service'
+      if (this.config.auth === 'oauth') {
         const me = await this.client.me()
-        if (!me.service && me.sub) this.personal = new PersonalMapper(personalRootFor(me.sub), p => this.cache.rows.has(p))
-      } catch { /* stays team-only until the next load */ }
-    })()
+        if (me.service || !me.sub) throw new Error('Signed-in identity could not be verified')
+        identity = `user:${me.sub}`
+        this.personal = new PersonalMapper(personalRootFor(me.sub), p => this.cache.rows.has(p))
+      }
+      if (!this.cacheBackend) this.cache = new RemoteCache(defaultCacheBackend(`v2:${encodeURIComponent(this.config.url)}:${encodeURIComponent(identity)}`))
+    })().catch(e => { this.identityChecked = null; throw e })
   }
 
   /** Whether this session can own personal documents (signed in, not the team token). */
@@ -199,6 +213,11 @@ export class RemoteVault {
     const changed: string[] = []
     const removed: string[] = []
     try {
+      // An empty mirror starts from the bundle (one download) instead of paging from zero
+      if (this.cache.cursor === 0 && this.cache.rows.size === 0) {
+        const got = await this.pullBundle()
+        if (got) changed.push(...got)
+      }
       let after = this.cache.cursor
       let startedAt = after
       for (;;) {
@@ -235,6 +254,29 @@ export class RemoteVault {
       if (this.cache.rows.size === 0) throw e
       return { changed, removed }
     }
+  }
+
+  /**
+   * Fill an empty mirror from `/v1/bundle` plus this viewer's personal documents, and set the
+   * cursor to the bundle's head so the regular delta takes over from there. Returns the paths
+   * received, or null when the server has no bundle (older Worker) — then paging does it all.
+   */
+  private async pullBundle(): Promise<string[] | null> {
+    let bundle: Awaited<ReturnType<RemoteClient['bundle']>>
+    try { bundle = await this.client.bundle() } catch (e) {
+      if (e instanceof RemoteError && e.status === 401) throw e
+      return null // any other trouble: page as before
+    }
+    if (!bundle) return null
+    const personal = this.personal.enabled ? (await this.client.personalDocs()).docs : []
+    const docs = [...bundle.docs, ...personal]
+    this.setStatus({ expected: docs.length })
+    const r = this.cache.apply(docs)
+    // apply() advanced the cursor to the highest row it saw; rows above the head may be missing
+    this.cache.cursor = bundle.head
+    this.cache.generation = bundle.generation
+    this.setStatus({ received: docs.length })
+    return r.changed
   }
 
   private emitChanged(changedFile?: string): void {

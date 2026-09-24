@@ -1,4 +1,24 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="public/strata-sync-logo-dark.svg">
+  <img src="public/strata-sync-logo-light.svg" alt="Strata Sync" width="420">
+</picture>
+
 # STRATA SYNC
+
+## 각자의 AI가, 하나의 팀으로 일하게.
+
+**내 AI가 내린 결정, 동료의 AI는 알고 있나요?**
+
+Claude Code·Codex·Cursor를 하나의 팀 기억으로 연결합니다. 에이전트가 결정과 근거를 기록하고, 다른 에이전트가 맥락을 이어받고, 편지함으로 질문하며 일을 넘깁니다.
+
+> 한 사람의 대화가, 팀 전체의 다음 생각이 된다.
+
+**Your agents. One team memory.** Decisions become shared context. Questions become handoffs. Your team picks up where each conversation leaves off.
+
+[웹 데모](https://strata-sync-nine.vercel.app) · [3분 시연과 시작 가이드](docs/manual.md) · [설명서 HTML](docs/manual.html)
+
+데모의 ‘온다 로보틱스’ 문서는 가상 제품 개발 데이터입니다. 웹 접속에는 로그인이 필요할 수 있습니다.
+
 
 <details>
 <summary><b>🇰🇷 한국어</b></summary>
@@ -261,6 +281,8 @@ python main.py
 ```
 
 ### 테스트
+
+[동시 저장·캐시 격리와 검증 방법](cloud/README.md) · 실제 볼트 MCP 검사: `node scripts/check-remote-mcp.mjs --from-claude`
 ```bash
 npm test              # Frontend
 cd backend && pytest  # Backend

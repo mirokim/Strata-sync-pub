@@ -45,6 +45,27 @@ describe('parseIfMatch', () => {
 })
 
 describe('putFile / getFile', () => {
+  it('only accepts one of two concurrent writes against the same version', async () => {
+    const first = await put('race.md', 'initial')
+    const ifMatch = (first.body as { etag: string }).etag
+    const results = await Promise.all(['Alice', 'Bob'].map(author => put('race.md', author, { author, ifMatch })))
+    expect(results.map(r => r.status).sort()).toEqual([200, 409])
+    const row = await meta.get('race.md')
+    expect(row!.etag).toBe(await sha256Hex((await blobs.get('race.md'))!))
+  })
+
+  it('serializes create-only and delete/write races and releases locks on errors', async () => {
+    const created = await Promise.all([put('race.md', 'a', { createOnly: true }), put('race.md', 'b', { createOnly: true })])
+    expect(created.map(r => r.status).sort()).toEqual([201, 409])
+    const ifMatch = (await meta.get('race.md'))!.etag
+    const results = await Promise.all([deleteFile(deps, 'race.md', ifMatch, 'a'), put('race.md', 'c', { ifMatch })])
+    expect(results.map(r => r.status)).toEqual([200, 409])
+    const original = blobs.put.bind(blobs)
+    blobs.put = async () => { throw new Error('R2 unavailable') }
+    await expect(put('retry.md', 'fail')).rejects.toThrow('R2 unavailable')
+    blobs.put = original
+    expect((await put('retry.md', 'works', { createOnly: true })).status).toBe(201)
+  })
   it('creates, then replaces with a matching If-Match, and returns the stored row', async () => {
     const created = await put('notes/a.md', 'hello')
     expect(created.status).toBe(201)

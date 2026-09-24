@@ -53,8 +53,15 @@ export function useGraphSimulation({ width, height, onTick, onComplete }: Option
   // Skip reheat on initial mount — init effect handles first-run tick scheduling
   const reheatMountedRef = useRef(false)
 
-  // Initialize (or reinitialize) simulation when nodes/links dataset changes
+  // Latest links for the init effect; which array the running simulation already has
+  const linksRef = useRef(links)
+  linksRef.current = links
+  const appliedLinksRef = useRef<GraphLink[] | null>(null)
+
+  // Initialize (or reinitialize) simulation when the node set changes (vault load or clear)
   useEffect(() => {
+    const links = linksRef.current
+    appliedLinksRef.current = links
     simNodesRef.current = nodes.map(n => ({
       ...n,
       x: width / 2 + (Math.random() - 0.5) * 200,
@@ -113,7 +120,23 @@ export function useGraphSimulation({ width, height, onTick, onComplete }: Option
     }
     // physics is intentionally excluded: reheating is handled in the effect below
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [width, height, nodes, links])
+  }, [width, height, nodes])
+
+  // Links changed on the same nodes (links arriving after a load, an edit adding one): swap them
+  // into the running simulation — nodes keep their positions and the graph pulls itself together
+  useEffect(() => {
+    const sim = simRef.current
+    if (!sim || appliedLinksRef.current === links) return
+    appliedLinksRef.current = links
+    simLinksRef.current = links.map(l => ({ ...l })) as SimLink[]
+    ;(sim.force('link') as ReturnType<typeof forceLink<SimNode, SimLink>> | null)?.links(simLinksRef.current)
+    if (isFastRef.current) {
+      sim.tick(30)
+      onTickRef.current(simNodesRef.current, simLinksRef.current)
+    } else {
+      sim.alpha(Math.max(sim.alpha(), 0.3)).restart()
+    }
+  }, [links])
 
   // Reheat when physics params or quality mode change
   // Skip initial mount: init effect already schedules ticks; reheat must not prematurely stop the sim
