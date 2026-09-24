@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useGraphStore } from '@/stores/graphStore'
+import { useUIStore } from '@/stores/uiStore'
 import { useVaultStore } from '@/stores/vaultStore'
 import { MOCK_DOCUMENTS } from '@/data/mockDocuments'
 import { SPEAKER_CONFIG } from '@/lib/speakerConfig'
@@ -11,10 +12,16 @@ interface NodeTooltipProps {
   x: number
   /** Viewport Y coordinate */
   y: number
+  /**
+   * Click popups (not hover tooltips): the card itself opens the document, then this runs so the
+   * graph can drop the popup. Without it the card lets clicks through to the graph.
+   */
+  onOpen?: () => void
 }
 
-export default function NodeTooltip({ nodeId, x, y }: NodeTooltipProps) {
+export default function NodeTooltip({ nodeId, x, y, onOpen }: NodeTooltipProps) {
   const t = useT()
+  const openInEditor = useUIStore(s => s.openInEditor)
   const { nodes } = useGraphStore()
   const { vaultPath, loadedDocuments } = useVaultStore()
 
@@ -35,10 +42,20 @@ export default function NodeTooltip({ nodeId, x, y }: NodeTooltipProps) {
 
   const offsetX = x + 16
   const offsetY = y - 10
+  // Phantom nodes (linked names without a document) have nothing to open
+  const openable = Boolean(onOpen && doc)
+  const open = () => { if (!doc) return; openInEditor(doc.id); onOpen?.() }
 
   return (
     <div
-      role="tooltip"
+      role={openable ? 'button' : 'tooltip'}
+      tabIndex={openable ? 0 : undefined}
+      title={openable ? t('Open document') : undefined}
+      data-testid="node-popup"
+      onClick={openable ? open : undefined}
+      onKeyDown={openable ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open() } } : undefined}
+      // The graph closes the popup on any click it sees; a click on the card is ours
+      onMouseDown={openable ? e => e.stopPropagation() : undefined}
       style={{
         position: 'fixed',
         left: offsetX,
@@ -50,7 +67,8 @@ export default function NodeTooltip({ nodeId, x, y }: NodeTooltipProps) {
         padding: '8px 10px',
         minWidth: 180,
         maxWidth: 280,
-        pointerEvents: 'none',
+        pointerEvents: openable ? 'auto' : 'none',
+        cursor: openable ? 'pointer' : undefined,
         boxShadow: `0 4px 12px rgba(0,0,0,0.4), 0 0 0 1px ${color}22`,
       }}
     >
@@ -80,6 +98,11 @@ export default function NodeTooltip({ nodeId, x, y }: NodeTooltipProps) {
               {tag}
             </span>
           ))}
+        </div>
+      )}
+      {openable && (
+        <div className="text-[9px] mt-1.5" style={{ color: 'var(--color-text-muted)' }}>
+          {t('Click to open')}
         </div>
       )}
     </div>

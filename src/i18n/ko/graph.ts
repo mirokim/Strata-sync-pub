@@ -64,5 +64,7 @@ const graph: Record<string, string> = {
   'Unclassified': '미분류',
   'Minimap — click to focus node': '미니맵 — 클릭해서 노드로 이동',
   'Knowledge graph: {nodes} nodes, {links} links': '지식 그래프: 노드 {nodes}개, 링크 {links}개',
+  'Open document': '문서 열기',
+  'Click to open': '클릭해서 열기',
 }
 export default graph

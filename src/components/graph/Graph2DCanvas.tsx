@@ -381,7 +381,7 @@ export default function Graph2DCanvas({ width, height }: Props) {
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
       />
-      {tooltip && <NodeTooltip nodeId={tooltip.nodeId} x={tooltip.x} y={tooltip.y} />}
+      {tooltip && <NodeTooltip nodeId={tooltip.nodeId} x={tooltip.x} y={tooltip.y} onOpen={() => setTooltip(null)} />}
     </div>
   )
 }

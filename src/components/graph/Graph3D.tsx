@@ -1391,7 +1391,7 @@ export default function Graph3D({ width, height }: Props) {
           borderWidth: 0,
         }}
       />
-      {tooltip && <NodeTooltip nodeId={tooltip.nodeId} x={tooltip.x} y={tooltip.y} />}
+      {tooltip && <NodeTooltip nodeId={tooltip.nodeId} x={tooltip.x} y={tooltip.y} onOpen={() => setTooltip(null)} />}
     </div>
   )
 }
