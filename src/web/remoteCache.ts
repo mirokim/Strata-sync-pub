@@ -187,7 +187,7 @@ export class RemoteCache {
       const folder = d.path.includes('/') ? d.path.slice(0, d.path.lastIndexOf('/')) : ''
       if (folder) for (const f of [...this.emptyFolders]) if (folder === f || folder.startsWith(f + '/')) this.emptyFolders.delete(f)
     }
-    this.scheduleSave()
+    if (docs.length > 0) this.scheduleSave() // a quiet poll touches nothing on disk
     return { changed, removed }
   }
 

@@ -68,8 +68,10 @@ describe('docs bundle', () => {
     await put('a.md', 'A')
     await serveBundle(deps)
     meta.gen = 2
+    reads = []
     const bundle = (await readBundle(await serveBundle(deps, { background: () => { throw new Error('must rebuild inline') } })))!
     expect(bundle.generation).toBe(2)
+    expect(reads).toEqual([DOCS_BUNDLE_KEY])                // unchanged text is reused (etag = content hash)
   })
 })
 

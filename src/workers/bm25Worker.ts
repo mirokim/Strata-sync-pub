@@ -9,6 +9,8 @@
  *         → cache restore + findImplicitLinks → { type: 'done', implicitLinks }
  *   IN  { type: 'updateDoc', serialized, doc, adjacency, threshold, topN, fingerprint }
  *         → single-document incremental update → { type: 'done', serialized, implicitLinks }
+ *   IN  { type: 'updateDocs', serialized, docs, removedIds, adjacency, threshold, topN, fingerprint }
+ *         → several documents changed/removed at once (a server pull) → { type: 'done', serialized, implicitLinks }
  *   IN  { type: 'synonyms',  sections }
  *         → co-occurrence synonym extraction → { type: 'done', synonyms }
  *   OUT { type: 'error', message }
@@ -22,6 +24,7 @@ type InMsg =
   | { type: 'build';      requestId: string; docs: LoadedDocument[]; adjacency: [string, string[]][]; threshold: number; topN: number; fingerprint: string }
   | { type: 'findLinks';  requestId: string; serialized: SerializedTfIdf; adjacency: [string, string[]][]; threshold: number; topN: number }
   | { type: 'updateDoc';  requestId: string; serialized: SerializedTfIdf; doc: LoadedDocument; adjacency: [string, string[]][]; threshold: number; topN: number; fingerprint: string }
+  | { type: 'updateDocs'; requestId: string; serialized: SerializedTfIdf; docs: LoadedDocument[]; removedIds: string[]; adjacency: [string, string[]][]; threshold: number; topN: number; fingerprint: string }
   | { type: 'synonyms';   requestId: string; sections: string[]; minCoOccurrence?: number; pmiThreshold?: number }
 
 type OutMsg =
@@ -52,6 +55,11 @@ self.onmessage = (e: MessageEvent<InMsg>) => {
       // Incremental update: restore existing index, then rebuild only the single document
       index.restore(msg.serialized)
       index.updateDoc(msg.doc)
+      serialized = index.serialize(msg.fingerprint)
+    } else if (msg.type === 'updateDocs') {
+      index.restore(msg.serialized)
+      for (const id of msg.removedIds) index.removeDoc(id)
+      for (const doc of msg.docs) index.updateDoc(doc)
       serialized = index.serialize(msg.fingerprint)
     } else {
       index.restore(msg.serialized)

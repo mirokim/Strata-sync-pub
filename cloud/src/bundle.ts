@@ -72,7 +72,8 @@ export async function serveBundle(deps: SyncDeps, opts: BundleOptions = {}): Pro
       return raw
     }
   }
-  const { bytes } = await buildBundle(deps, stored && stored.generation === generation ? stored : null, opts)
+  // Even across a generation change the old text is reusable: an etag is the hash of the bytes
+  const { bytes } = await buildBundle(deps, stored, opts)
   return bytes
 }
 

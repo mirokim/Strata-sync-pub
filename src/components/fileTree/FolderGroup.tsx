@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import { ChevronRight, ChevronDown, Folder } from 'lucide-react'
 import type { MockDocument, LoadedDocument } from '@/types'
 import FileTreeItem from './FileTreeItem'
@@ -14,17 +14,20 @@ interface FolderGroupProps {
   onContextMenu?: (state: ContextMenuState) => void
 }
 
-export default function FolderGroup({
+// A big folder starts closed: rendering thousands of rows up front delays the first screen
+const OPEN_BY_DEFAULT_MAX = 40
+
+export default memo(function FolderGroup({
   folderPath,
   docs,
   isOpenOverride,
   onContextMenu,
 }: FolderGroupProps) {
   const t = useT()
-  const [localOpen, setLocalOpen] = useState(true)
-  const { folderColors, setFolderColor } = useSettingsStore()
+  const [localOpen, setLocalOpen] = useState(() => docs.length <= OPEN_BY_DEFAULT_MAX)
+  const customColor = useSettingsStore(s => s.folderColors[folderPath])
+  const setFolderColor = useSettingsStore(s => s.setFolderColor)
   const colorInputRef = useRef<HTMLInputElement>(null)
-  const customColor = folderColors[folderPath]
 
   // Sync local state when override changes
   useEffect(() => {
@@ -106,4 +109,4 @@ export default function FolderGroup({
       )}
     </div>
   )
-}
+})

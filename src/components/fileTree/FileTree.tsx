@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { SPEAKER_IDS } from '@/lib/speakerConfig'
 import { useDocumentFilter } from '@/hooks/useDocumentFilter'
+import { useShallow } from 'zustand/react/shallow'
 import { useVaultStore } from '@/stores/vaultStore'
 import { useGraphStore } from '@/stores/graphStore'
 import { useUIStore } from '@/stores/uiStore'
@@ -148,9 +149,17 @@ export default function FileTree() {
     filtered, grouped, folderGroups, tagGroups, totalCount, isVaultLoaded,
   } = useDocumentFilter()
 
-  const { vaultPath, loadedDocuments, setLoadedDocuments, vaultFolders, setVaultFolders } = useVaultStore()
-  const { setNodes, setLinks, nodes, links } = useGraphStore()
-  const { openInEditor, editingDocId } = useUIStore()
+  // Selectors, not whole stores: this component holds thousands of rows, and the graph store
+  // changes many times a second while links are revealed after a load
+  const { vaultPath, loadedDocuments, setLoadedDocuments, vaultFolders, setVaultFolders } = useVaultStore(useShallow(s => ({
+    vaultPath: s.vaultPath, loadedDocuments: s.loadedDocuments, setLoadedDocuments: s.setLoadedDocuments, vaultFolders: s.vaultFolders, setVaultFolders: s.setVaultFolders,
+  })))
+  const setNodes = useGraphStore(s => s.setNodes)
+  const setLinks = useGraphStore(s => s.setLinks)
+  const nodeCount = useGraphStore(s => s.nodes.length)
+  const linkCount = useGraphStore(s => s.links.length)
+  const openInEditor = useUIStore(s => s.openInEditor)
+  const editingDocId = useUIStore(s => s.editingDocId)
   const pushTrash = useTrashStore(s => s.push)
 
   const rebuildGraph = useCallback((docs: LoadedDocument[]) => {
@@ -516,9 +525,9 @@ export default function FileTree() {
         style={{ color: 'var(--color-text-muted)', borderTop: '1px solid var(--color-border)' }}
       >
         <span>{t('{filtered} / {total} docs', { filtered: filtered.length, total: totalCount })}</span>
-        {nodes.length > 0 && (
+        {nodeCount > 0 && (
           <span style={{ opacity: 0.6 }}>
-            {' · '}{t('{nodes} nodes · {wires} wires', { nodes: nodes.length, wires: links.length })}
+            {' · '}{t('{nodes} nodes · {wires} wires', { nodes: nodeCount, wires: linkCount })}
           </span>
         )}
       </div>

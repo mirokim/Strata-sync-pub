@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { MockDocument, LoadedDocument } from '@/types'
 import { SPEAKER_CONFIG } from '@/lib/speakerConfig'
 import { useUIStore } from '@/stores/uiStore'
@@ -11,10 +12,11 @@ interface FileTreeItemProps {
   onContextMenu?: (state: ContextMenuState) => void
 }
 
-export default function FileTreeItem({ doc, onContextMenu }: FileTreeItemProps) {
+// Thousands of rows: each one re-renders only when its own selection flips
+export default memo(function FileTreeItem({ doc, onContextMenu }: FileTreeItemProps) {
   const t = useT()
-  const { editingDocId, openInEditor } = useUIStore()
-  const isSelected = editingDocId === doc.id
+  const openInEditor = useUIStore(s => s.openInEditor)
+  const isSelected = useUIStore(s => s.editingDocId === doc.id)
   const speakerColor = SPEAKER_CONFIG[doc.speaker].color
 
   const handleClick = () => {
@@ -62,4 +64,4 @@ export default function FileTreeItem({ doc, onContextMenu }: FileTreeItemProps) 
       {doc.personal && <EyeOff size={10} style={{ color: 'var(--color-text-muted)', flexShrink: 0, marginLeft: 'auto' }} aria-label={t('Only you can see this')} data-testid="personal-mark" />}
     </button>
   )
-}
+})

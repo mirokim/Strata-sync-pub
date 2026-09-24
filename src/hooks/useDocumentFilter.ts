@@ -29,11 +29,15 @@ export interface TagGroup {
   docs: AnyDoc[]
 }
 
+// One collator for every comparison: localeCompare with options builds one per call
+const byName = new Intl.Collator(undefined, { numeric: true })
+const byFolder = new Intl.Collator()
+
 function sortDocs(docs: AnyDoc[], sortBy: SortBy, sortDir: SortDir): AnyDoc[] {
   return [...docs].sort((a, b) => {
     let cmp = 0
     if (sortBy === 'name') {
-      cmp = a.filename.localeCompare(b.filename, undefined, { numeric: true })
+      cmp = byName.compare(a.filename, b.filename)
     } else {
       const aTime = a.mtime ?? new Date(a.date || 0).getTime()
       const bTime = b.mtime ?? new Date(b.date || 0).getTime()
@@ -44,7 +48,8 @@ function sortDocs(docs: AnyDoc[], sortBy: SortBy, sortDir: SortDir): AnyDoc[] {
 }
 
 export function useDocumentFilter() {
-  const { vaultPath, loadedDocuments } = useVaultStore()
+  const vaultPath = useVaultStore(s => s.vaultPath)
+  const loadedDocuments = useVaultStore(s => s.loadedDocuments)
   const [search, setSearch] = useState('')
   const [sortBy, setSortBy] = useState<SortBy>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
@@ -67,6 +72,7 @@ export function useDocumentFilter() {
   // Speaker-based grouping (mock mode)
   const grouped = useMemo(() => {
     const map: Partial<Record<SpeakerId, AnyDoc[]>> = {}
+    if (isVaultLoaded) return map // vault mode groups by folder or tag
     for (const id of SPEAKER_IDS) {
       map[id] = sortDocs(filtered.filter(d => d.speaker === id), sortBy, sortDir)
     }
@@ -76,7 +82,7 @@ export function useDocumentFilter() {
       map['unknown' as SpeakerId] = sortDocs(unknownDocs, sortBy, sortDir)
     }
     return map
-  }, [filtered, sortBy, sortDir])
+  }, [filtered, isVaultLoaded, sortBy, sortDir])
 
   // Folder-based grouping (vault mode)
   const folderGroups = useMemo((): FolderGroup[] => {
@@ -94,7 +100,7 @@ export function useDocumentFilter() {
       .sort(([a], [b]) => {
         if (a === '' && b !== '') return -1
         if (a !== '' && b === '') return 1
-        return a.localeCompare(b)
+        return byFolder.compare(a, b)
       })
       .map(([folderPath, docs]) => ({
         folderPath,
@@ -124,7 +130,7 @@ export function useDocumentFilter() {
       .sort(([a], [b]) => {
         if (a === '' && b !== '') return 1
         if (a !== '' && b === '') return -1
-        return a.localeCompare(b)
+        return byFolder.compare(a, b)
       })
       .map(([tag, docs]) => ({ tag, docs: sortDocs(docs, sortBy, sortDir) }))
   }, [filtered, isVaultLoaded, sortBy, sortDir])

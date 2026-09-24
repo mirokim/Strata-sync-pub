@@ -181,7 +181,8 @@ export function useVaultLoader() {
         // ── Step 3: on cache miss, full parse ─────────────────────────────
         if (!docs) {
           const total = files!.length
-          docs = await parseVaultFilesAsync(files!, (parsed) => {
+          // A background refresh shows no progress: each update re-renders whatever reads the vault store
+          docs = await parseVaultFilesAsync(files!, background ? undefined : (parsed) => {
             const pct = parseBase + Math.round((parsed / total) * (85 - parseBase))
             setLoadingProgress(pct, `Parsing documents... (${parsed}/${total})`)
           })

@@ -56,7 +56,12 @@ declare global {
       loadSnapshot?(dirPath: string): ReturnType<NonNullable<Window['vaultAPI']>['loadFiles']>
       watchStart(dirPath: string): Promise<boolean>
       watchStop(): Promise<boolean>
-      onChanged(callback: (data: { vaultPath: string; changedFile?: string }) => void): () => void
+      /**
+       * `changedFile`: exactly one file changed (desktop fs.watch, or one web edit). `changedFiles` /
+       * `removedFiles` (web): every markdown document a pull changed or deleted, as app paths — the
+       * watcher patches just those. Neither → something else moved; reload everything.
+       */
+      onChanged(callback: (data: { vaultPath: string; changedFile?: string; changedFiles?: string[]; removedFiles?: string[] }) => void): () => void
       saveFile(filePath: string, content: string): Promise<{ success: boolean; path: string }>
       setActivePath?(vaultPath: string): Promise<boolean>
       renameFile(absolutePath: string, newFilename: string): Promise<{ success: boolean; newPath: string }>

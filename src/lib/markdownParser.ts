@@ -294,7 +294,9 @@ function _enforceSizePolicy(sections: DocSection[], docId: string): DocSection[]
  *   links:   string[] → default []
  */
 export function parseMarkdownFile(file: VaultFile): LoadedDocument {
-  const { data, content: body } = matter(file.content)
+  // Options (even empty) turn off gray-matter's module cache, which keeps every document ever
+  // parsed — keyed by its full text — for the life of the page
+  const { data, content: body } = matter(file.content, {})
 
   // ── speaker ────────────────────────────────────────────────────────────────
   const rawSpeaker = typeof data.speaker === 'string' ? data.speaker.trim().toLowerCase() : ''
@@ -452,15 +454,23 @@ export function parseVaultFiles(files: VaultFile[]): LoadedDocument[] {
 
 // ── parseVaultFilesAsync ──────────────────────────────────────────────────────
 
-/** Number of files parsed per chunk before yielding to the event loop. */
-const PARSE_CHUNK = 50
+/** Parse for this long, then yield so the UI (e.g. a loading progress bar) can repaint. */
+const PARSE_SLICE_MS = 12
+
+/**
+ * A macrotask without setTimeout's 4 ms clamp on nested timers (MessageChannel); falls back to
+ * setTimeout where there is none.
+ */
+function yieldToEventLoop(): Promise<void> {
+  if (typeof MessageChannel === 'undefined') return new Promise(r => setTimeout(r, 0))
+  return new Promise(r => { const ch = new MessageChannel(); ch.port1.onmessage = () => { ch.port1.close(); r() }; ch.port2.postMessage(null) })
+}
 
 /**
  * Async version of parseVaultFiles that yields to the event loop every
- * PARSE_CHUNK files, allowing the UI (e.g. a loading progress bar) to update
- * during parsing.
+ * PARSE_SLICE_MS of work, allowing the UI to update during parsing.
  *
- * @param onProgress  Called after each chunk: (parsed, total)
+ * @param onProgress  Called at each yield and at the end: (parsed, total)
  */
 export async function parseVaultFilesAsync(
   files: VaultFile[],
@@ -469,6 +479,7 @@ export async function parseVaultFilesAsync(
   const results: LoadedDocument[] = []
   const seenIds = new Set<string>()
   const total = files.length
+  let sliceStart = performance.now()
 
   for (let i = 0; i < total; i++) {
     const file = files[i]
@@ -480,10 +491,13 @@ export async function parseVaultFilesAsync(
       logger.warn(`[markdownParser] Failed to parse ${file.relativePath}:`, err)
     }
 
-    // Yield to the event loop every PARSE_CHUNK files so the UI can repaint
-    if ((i + 1) % PARSE_CHUNK === 0 || i === total - 1) {
+    // Yield on a time budget rather than a file count: small files no longer pay for idle waits
+    if (i === total - 1) {
+      onProgress?.(total, total)
+    } else if (performance.now() - sliceStart >= PARSE_SLICE_MS) {
       onProgress?.(i + 1, total)
-      await new Promise<void>(r => setTimeout(r, 0))
+      await yieldToEventLoop()
+      sliceStart = performance.now()
     }
   }
 

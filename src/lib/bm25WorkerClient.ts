@@ -112,6 +112,29 @@ export function updateDocInWorker(
 }
 
 /**
+ * Several documents changed or disappeared at once (a server pull): one round trip to the worker
+ * instead of a full rebuild.
+ */
+export function updateDocsInWorker(
+  serialized: SerializedTfIdf,
+  docs: LoadedDocument[],
+  removedIds: string[],
+  adjacency: Map<string, string[]>,
+  fingerprint: string,
+  threshold = 0.25,
+  topN = 6,
+): Promise<{ serialized: SerializedTfIdf; implicitLinks: ImplicitLink[] }> {
+  const adj = [...adjacency.entries()]
+  return callWorker(
+    { type: 'updateDocs', serialized, docs, removedIds, adjacency: adj, threshold, topN, fingerprint },
+    (r) => {
+      if (!r.serialized) throw new Error('Worker response is missing serialized')
+      return { serialized: r.serialized, implicitLinks: r.implicitLinks ?? [] }
+    },
+  )
+}
+
+/**
  * On cache hit: takes the already-serialized index and runs only findImplicitLinks in the worker.
  *
  * Sends only the bm25Vec + bm25Norm + id that findImplicitLinks needs —

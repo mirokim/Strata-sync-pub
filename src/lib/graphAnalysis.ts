@@ -492,6 +492,16 @@ export class TfIdfIndex {
     this._implicitLinks = null
   }
 
+  /** Drop one document (deleted from the vault). IDF is kept as is, like updateDoc. */
+  removeDoc(docId: string): void {
+    if (!this.built) return
+    const i = this.docs.findIndex(d => d.docId === docId)
+    if (i === -1) return
+    this.docs.splice(i, 1)
+    this.avgdl = this.docs.length ? this.docs.reduce((a, d) => a + d.docLen, 0) / this.docs.length : 0
+    this._implicitLinks = null
+  }
+
   search(query: string, topN: number = 8): TfIdfResult[] {
     if (!this.built || this.docs.length === 0) return []
 

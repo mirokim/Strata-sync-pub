@@ -28,6 +28,8 @@ type ChangeListener = Parameters<VaultAPI['onChanged']>[0]
 const IMAGE_EXT = /\.(png|jpg|jpeg|gif|webp|svg|bmp|avif|tiff?|heic)$/i
 const PRIVATE_KEY = 'strata-sync-web-private'
 const IMAGE_CACHE_MAX = 48
+/** A pull that changed more documents than this reloads the vault instead of patching it. */
+const MAX_INCREMENTAL_CHANGES = 200
 
 export interface RemoteVaultOptions {
   fetchImpl?: FetchLike
@@ -157,7 +159,7 @@ export class RemoteVault {
     this.cache.setRow({ path: moved.path, etag: moved.row.etag, size: moved.row.size, mtime: moved.row.mtime, author: moved.row.author, seq: moved.row.seq, content: old?.content ?? null })
     this.staleAfterConflict.delete(physical)
     const app = this.personal.virtualOf(moved.path).path
-    this.emitChanged(app) // one document changed its flag: the watcher patches it in place, no full reload
+    this.emitChanged(app, { changed: [app], removed: [] }) // one document changed its flag: the watcher patches it in place, no full reload
     return { path: app, personal: moved.personal }
   }
 
@@ -279,9 +281,10 @@ export class RemoteVault {
     return r.changed
   }
 
-  private emitChanged(changedFile?: string): void {
+  private emitChanged(changedFile?: string, docs?: { changed: string[]; removed: string[] }): void {
+    const data = { vaultPath: this.vaultPath, changedFile, ...(docs ? { changedFiles: docs.changed, removedFiles: docs.removed } : {}) }
     for (const cb of this.listeners) {
-      try { cb({ vaultPath: this.vaultPath, changedFile }) } catch { /* listener error must not stop others */ }
+      try { cb(data) } catch { /* listener error must not stop others */ }
     }
   }
 
@@ -545,9 +548,13 @@ export class RemoteVault {
     const changed = r.changed.filter(p => !this.isPrivate(p))
     const removed = r.removed.filter(p => !this.isPrivate(p))
     if (changed.length === 0 && removed.length === 0) return
-    // Exactly one markdown edit → incremental update; anything else → full reload
-    const single = changed.length === 1 && removed.length === 0 && changed[0].toLowerCase().endsWith('.md')
-    this.emitChanged(single ? this.personal.virtualOf(changed[0]).path : undefined)
+    // Markdown only and not too many → the watcher patches just these documents; anything else
+    // (images change the registry, a bulk import is cheaper to reload) → full reload
+    const isMd = (p: string) => p.toLowerCase().endsWith('.md')
+    const app = (p: string) => this.personal.virtualOf(p).path
+    const single = changed.length === 1 && removed.length === 0 && isMd(changed[0])
+    const incremental = changed.length + removed.length <= MAX_INCREMENTAL_CHANGES && changed.every(isMd) && removed.every(isMd)
+    this.emitChanged(single ? app(changed[0]) : undefined, incremental ? { changed: changed.map(app), removed: removed.map(app) } : undefined)
   }
 
   // ── window.syncAPI (team search + status for the Server tab) ───────────────

@@ -12,9 +12,19 @@ import { parseVaultFiles } from '@/lib/markdownParser'
 
 const loadVault = vi.hoisted(() => vi.fn())
 vi.mock('@/hooks/useVaultLoader', () => ({ useVaultLoader: () => ({ loadVault }) }))
-vi.mock('@/lib/bm25WorkerClient', () => ({
-  updateDocInWorker: async (serialized: unknown) => ({ serialized, implicitLinks: [] }),
-}))
+// The worker's logic, run in place: restore, apply the batch, serialize
+vi.mock('@/lib/bm25WorkerClient', async () => {
+  const { TfIdfIndex } = await vi.importActual<typeof import('@/lib/graphAnalysis')>('@/lib/graphAnalysis')
+  return {
+    updateDocsInWorker: async (serialized: never, docs: never[], removedIds: string[], _adj: unknown, fingerprint: string) => {
+      const index = new TfIdfIndex()
+      index.restore(serialized)
+      for (const id of removedIds) index.removeDoc(id)
+      for (const doc of docs) index.updateDoc(doc)
+      return { serialized: index.serialize(fingerprint), implicitLinks: [] }
+    },
+  }
+})
 vi.mock('@/lib/tfidfCache', () => ({ invalidateTfIdfCache: async () => {} }))
 
 import { useVaultWatcher } from '@/hooks/useVaultWatcher'
@@ -23,7 +33,7 @@ const VAULT = 'C:/vault'
 const team = { relativePath: 'notes/Team.md', absolutePath: `${VAULT}/notes/Team.md`, content: '# Team\n\nshared', mtime: 1 }
 
 describe('useVaultWatcher and personal documents', () => {
-  let onChanged: ((d: { vaultPath: string; changedFile?: string }) => void) | null = null
+  let onChanged: ((d: { vaultPath: string; changedFile?: string; changedFiles?: string[]; removedFiles?: string[] }) => void) | null = null
   const files = new Map<string, string>()
   const personal = new Set<string>()
 
@@ -54,6 +64,29 @@ describe('useVaultWatcher and personal documents', () => {
     await fire('notes/New.md')
     expect(loadVault).toHaveBeenCalledWith(VAULT, true)
     expect(useVaultStore.getState().isLoading).toBe(false)
+  })
+
+  it('web: patches only the documents a pull listed — no reload, graph and search follow', async () => {
+    window.vaultAPI!.loadSnapshot = vi.fn()
+    renderHook(() => useVaultWatcher())
+    files.set(`${VAULT}/notes/New.md`, '# New\n\nlinks [[Team]] about zebras')
+    await act(async () => { onChanged!({ vaultPath: VAULT, changedFiles: ['notes/New.md'], removedFiles: [] }); await new Promise(r => setTimeout(r, 20)) })
+    expect(loadVault).not.toHaveBeenCalled()
+    const paths = () => useVaultStore.getState().loadedDocuments!.map(d => d.relativePath ?? d.absolutePath)
+    expect(paths().some(p => p.endsWith('New.md'))).toBe(true)
+    expect(useGraphStore.getState().links.length).toBeGreaterThan(0)
+    expect(tfidfIndex.search('zebras').length).toBeGreaterThan(0)
+    // Deletion through the same path
+    await act(async () => { onChanged!({ vaultPath: VAULT, changedFiles: [], removedFiles: ['notes/Team.md'] }); await new Promise(r => setTimeout(r, 20)) })
+    expect(loadVault).not.toHaveBeenCalled()
+    expect(paths().some(p => p.endsWith('Team.md'))).toBe(false)
+  })
+
+  it('web: a change without a document list still reloads from the snapshot', async () => {
+    window.vaultAPI!.loadSnapshot = vi.fn()
+    renderHook(() => useVaultWatcher())
+    await act(async () => { onChanged!({ vaultPath: VAULT }); await new Promise(r => setTimeout(r, 20)) })
+    expect(loadVault).toHaveBeenCalledWith(VAULT, true)
   })
 
   it('coalesces web changes arriving while a snapshot is being parsed', async () => {
