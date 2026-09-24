@@ -78,8 +78,18 @@ export class IndexedDbCacheBackend implements CacheBackend {
         if (!db.objectStoreNames.contains('rows')) db.createObjectStore('rows', { keyPath: 'path' })
         if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta')
       }
-      req.onsuccess = () => resolve(req.result)
-      req.onerror = () => reject(req.error)
+      // Another tab deleting this database blocks the open for as long as it waits; the mirror is
+      // a cache, so give up and let the caller go to the server instead
+      let timedOut = false
+      const timer = setTimeout(() => { timedOut = true; reject(new Error(`${this.dbName}: open timed out`)) }, 4000)
+      req.onsuccess = () => {
+        clearTimeout(timer)
+        const db = req.result
+        if (timedOut) { db.close(); return }
+        db.onversionchange = () => db.close()
+        resolve(db)
+      }
+      req.onerror = () => { clearTimeout(timer); reject(req.error) }
     })
   }
 

@@ -35,6 +35,7 @@ export interface DocsCacheResult {
 // ── IndexedDB singleton ────────────────────────────────────────────────────
 
 let _dbPromise: Promise<IDBDatabase> | null = null
+const OPEN_TIMEOUT_MS = 4000
 
 function openDB(): Promise<IDBDatabase> {
   if (_dbPromise) return _dbPromise
@@ -45,8 +46,19 @@ function openDB(): Promise<IDBDatabase> {
         req.result.createObjectStore(STORE)
       }
     }
-    req.onsuccess  = () => resolve(req.result)
-    req.onerror    = () => { _dbPromise = null; reject(req.error) }
+    // A cache is never worth waiting on: another tab deleting or upgrading the database blocks
+    // the open indefinitely, and the load behind it would never finish. Give up and go without.
+    let timedOut = false
+    const timer = setTimeout(() => { timedOut = true; _dbPromise = null; reject(new Error(`${DB_NAME}: open timed out`)) }, OPEN_TIMEOUT_MS)
+    req.onsuccess = () => {
+      clearTimeout(timer)
+      const db = req.result
+      if (timedOut) { db.close(); return } // opened after we gave up: nobody holds this handle
+      // Let another tab delete or upgrade the database instead of blocking it for as long as we live
+      db.onversionchange = () => { db.close(); _dbPromise = null }
+      resolve(db)
+    }
+    req.onerror = () => { clearTimeout(timer); _dbPromise = null; reject(req.error) }
   })
   return _dbPromise
 }
