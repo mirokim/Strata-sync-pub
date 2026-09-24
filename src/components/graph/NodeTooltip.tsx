@@ -44,6 +44,7 @@ export default function NodeTooltip({ nodeId, x, y, onOpen }: NodeTooltipProps) 
   const offsetY = y - 10
   // Phantom nodes (linked names without a document) have nothing to open
   const openable = Boolean(onOpen && doc)
+  const phantom = node.docId.startsWith('_phantom_')
   const open = () => { if (!doc) return; openInEditor(doc.id); onOpen?.() }
 
   return (
@@ -103,6 +104,11 @@ export default function NodeTooltip({ nodeId, x, y, onOpen }: NodeTooltipProps) 
       {openable && (
         <div className="text-[9px] mt-1.5" style={{ color: 'var(--color-text-muted)' }}>
           {t('Click to open')}
+        </div>
+      )}
+      {phantom && (
+        <div className="text-[9px] mt-1.5" style={{ color: 'var(--color-text-muted)' }} data-testid="node-popup-phantom">
+          {t('Link without a document')} · {t('double-click the node to create it')}
         </div>
       )}
     </div>

@@ -66,5 +66,7 @@ const graph: Record<string, string> = {
   'Knowledge graph: {nodes} nodes, {links} links': '지식 그래프: 노드 {nodes}개, 링크 {links}개',
   'Open document': '문서 열기',
   'Click to open': '클릭해서 열기',
+  'Link without a document': '문서 없는 링크',
+  'double-click the node to create it': '점을 두 번 클릭하면 문서를 만듭니다',
 }
 export default graph

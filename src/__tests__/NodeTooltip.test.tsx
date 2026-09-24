@@ -46,5 +46,8 @@ describe('NodeTooltip', () => {
     fireEvent.click(screen.getByTestId('node-popup'))
     expect(onOpen).not.toHaveBeenCalled()
     expect(useUIStore.getState().editingDocId).toBeNull()
+    // …and says so, instead of looking like a document that fails to open
+    expect(screen.getByTestId('node-popup-phantom').textContent).toMatch(/Link without a document/)
+    expect(screen.queryByText('Click to open')).toBeNull()
   })
 })
