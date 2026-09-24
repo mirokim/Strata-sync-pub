@@ -18,6 +18,7 @@ const settingsPanel: Record<string, string> = {
   'Server': '서버',
   'MCP': 'MCP',
   'AI Members': 'AI 멤버',
+  'Members': '멤버',
   'Vault Manager': '볼트 관리',
   'Team Sync': '팀 동기화',
   'Trash': '휴지통',

@@ -6,6 +6,9 @@ import BrandLogo from '@/components/layout/BrandLogo'
 import { isWebMode } from '@/web/config'
 import { useT } from '@/i18n'
 
+/** Public source repository (shown under the developer contact). */
+const REPO_URL = 'https://github.com/mirokim/Strata-sync-pub'
+
 const VERSION = '0.5.0'
 
 export default function AboutTab() {
@@ -61,6 +64,11 @@ export default function AboutTab() {
           <a href="mailto:miro85a@gmail.com" style={{ color: 'var(--color-accent)', textDecoration: 'none' }}>
             miro85a@gmail.com
           </a>
+          <div>
+            <a href={REPO_URL} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-accent)', textDecoration: 'none' }} data-testid="about-repo">
+              github.com/mirokim/Strata-sync-pub
+            </a>
+          </div>
         </div>
       </div>
 

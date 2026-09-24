@@ -44,7 +44,7 @@ const TOOLS: [string, string][] = [
   ['inbox_list', 'Questions/tasks waiting for you, and the ones you sent'],
   ['inbox_reply', 'Answer a question or report a task result'],
   ['radar_check', 'Contradiction radar on one document — collisions with what teammates wrote become inbox questions'],
-  ['members_list · member_remember · member_report', 'The AI members (Settings → AI Members), their memory notes and routine runs; the `member` prompt takes one on'],
+  ['members_list · member_remember · member_report', 'The team — people who signed in and AI members (Settings → Members) — memory notes and routine runs of the AI members; the `member` prompt takes one on'],
 ]
 
 function CopyButton({ text, id }: { text: string; id: string }) {

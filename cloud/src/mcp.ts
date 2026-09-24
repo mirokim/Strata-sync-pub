@@ -38,6 +38,8 @@ export interface McpDeps extends SyncDeps {
   webOrigin?: string
   /** Server-side model for the contradiction radar; absent without ANTHROPIC_API_KEY. */
   llm?: import('./reactions.js').LlmCall
+  /** The people who signed in (members_list shows them next to the AI members). */
+  people?: () => Promise<import('./people.js').Person[]>
 }
 
 const enc = new TextEncoder()
@@ -63,7 +65,7 @@ const TOOLS = [
   { name: 'vault_visibility', description: 'Move a document between the team space and the user\'s personal space. personal=false publishes a personal document to the team at its own path (from then on everyone sees it, members react, history starts); personal=true withdraws a team document the user alone has ever saved.', inputSchema: { type: 'object' as const, properties: { path: { type: 'string' }, personal: { type: 'boolean' } }, required: ['path', 'personal'] } },
   { name: 'vault_changes', description: 'Documents created, changed or deleted since a point in time (ISO date or ms since epoch), newest first, with author and title. Use it to see what moved before reviewing premises or writing a digest.', inputSchema: { type: 'object' as const, properties: { since: { type: 'string', description: 'ISO 8601 date/time, or ms since epoch' }, limit: { type: 'number', description: 'default 100, max 500' } }, required: ['since'] } },
   { name: 'images_undescribed', description: 'Image documents whose Description is still empty (images pasted in the app or uploaded). For each: vault_read the image, then vault_write the image document with what it shows, the visible text and tags — that is how images become searchable.', inputSchema: { type: 'object' as const, properties: { limit: { type: 'number', description: 'default 20' } } } },
-  { name: 'members_list', description: 'The team\'s AI members (Settings → AI Members): id, name, role, scope, routines with cadence and last run, memory note path. Use the `member` prompt to act as one.', inputSchema: { type: 'object' as const, properties: { due: { type: 'boolean', description: 'Only members with a routine due now' } } } },
+  { name: 'members_list', description: 'The team (Settings → Members): the people who signed in (name, e-mail, documents, last seen — address them with inbox_send) and the AI members (id, name, role, scope, routines with cadence and last run, memory note path; use the `member` prompt to act as one).', inputSchema: { type: 'object' as const, properties: { due: { type: 'boolean', description: 'Only members with a routine due now' } } } },
   { name: 'member_remember', description: 'Append to an AI member\'s own memory note (_members/<Name> (memory).md) — a position taken, a question asked, what a routine found. The only document a member writes directly. Creates the note on first use.', inputSchema: { type: 'object' as const, properties: { member: { type: 'string', description: 'Member id or name' }, text: { type: 'string', description: 'Markdown to append (dated automatically)' } }, required: ['member', 'text'] } },
   { name: 'member_report', description: 'Record that a member routine was run: a short summary and the proposal paths created. Call once per routine after finishing it, even when nothing was proposed.', inputSchema: { type: 'object' as const, properties: { member: { type: 'string', description: 'Member id or name' }, routine: { type: 'string', description: 'Routine id' }, summary: { type: 'string' }, proposals: { type: 'array', items: { type: 'string' } } }, required: ['member', 'routine', 'summary'] } },
 ]
@@ -311,7 +313,8 @@ export async function callTool(deps: McpDeps, name: string, args: Args): Promise
       const config = await readMembers(deps)
       const now = Date.now()
       const members = config.members.filter(m => m.enabled && (args.due !== true || dueRoutines(m, now).length > 0))
-      return text({ members: members.map(m => ({ id: m.id, name: m.name, role: m.role, scope: m.scope, reactsOnSave: m.reactsOnSave, memory: memberNotePath(m), routines: m.routines.filter(r => r.enabled).map(r => ({ id: r.id, title: r.title, cadence: r.cadence, due: dueRoutines(m, now).some(d => d.id === r.id), lastRun: r.runs.length ? r.runs[r.runs.length - 1] : null })) })) })
+      const people = deps.people ? (await deps.people().catch(() => [])).map(p => ({ name: p.name, email: p.email, docs: p.docs, lastSeen: new Date(p.lastSeen).toISOString() })) : []
+      return text({ people, members: members.map(m => ({ id: m.id, name: m.name, role: m.role, scope: m.scope, reactsOnSave: m.reactsOnSave, memory: memberNotePath(m), routines: m.routines.filter(r => r.enabled).map(r => ({ id: r.id, title: r.title, cadence: r.cadence, due: dueRoutines(m, now).some(d => d.id === r.id), lastRun: r.runs.length ? r.runs[r.runs.length - 1] : null })) })) })
     }
     case 'member_remember': {
       const config = await readMembers(deps)

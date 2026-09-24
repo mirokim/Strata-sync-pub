@@ -142,7 +142,7 @@ function BrainPanel({ doc }: { doc: LoadedDocument }) {
   return (
     <aside style={panel} data-testid="brain-panel" aria-label={t('Around this document')}>
       <Section id="remarks" icon={<MessageSquare size={11} />} title={t('Members said')} n={info.remarks.length}>
-        {info.remarks.length === 0 && <div style={empty}>{t('No member has reacted to this document yet. Members react to saves in their scope (Settings → AI Members).')}</div>}
+        {info.remarks.length === 0 && <div style={empty}>{t('No member has reacted to this document yet. Members react to saves in their scope (Settings → Members).')}</div>}
         {info.remarks.map(r => (
           <div key={r.doc.id} style={{ padding: '4px 10px 8px', borderBottom: '1px solid var(--color-border)' }} data-testid={`brain-remark-${r.doc.id}`}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 4 }}>

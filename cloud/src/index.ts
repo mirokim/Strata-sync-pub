@@ -23,6 +23,7 @@ import { handleMcpRequest } from './mcp.js'
 import { invalidateVaultView, loadVaultView } from './vaultIndex.js'
 import { meOverview } from './me.js'
 import { serveBundle } from './bundle.js'
+import { D1PeopleStore, recordPerson, backfillFromGrants, type PeopleStore } from './people.js'
 import { readInbox, inboxFor, sendInbox, replyInbox, INBOX_STATUSES, type InboxStatus } from './inbox.js'
 import { radarCheck } from './radar.js'
 import { buildProposal } from '../../mcp/src/proposals.js'
@@ -226,7 +227,7 @@ function anthropicLlm(env: Env): LlmCall | null {
  * the bearer token and passes `identity`; without one (tests, direct use) the team token is checked
  * here. Exported so tests can drive the routes with in-memory stores (`deps`).
  */
-export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?: SyncDeps, identity?: Identity): Promise<Response> {
+export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?: SyncDeps & { people?: PeopleStore }, identity?: Identity): Promise<Response> {
   const url = new URL(req.url)
 
   if (url.pathname === '/health') return json(200, { ok: true, service: 'strata-sync-cloud' })
@@ -242,10 +243,20 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
   const viewer: Viewer = { sub: identity.sub, service: identity.service }
 
   deps ??= baseDeps(env)
+  const people = deps.people
+  // Who is on the team: a signed-in person using the API is on record (throttled, never blocks the request)
+  if (people && !identity.service) ctx.waitUntil(recordPerson(people, identity).catch(e => console.error('[people] record failed', e)))
 
   try {
     if (url.pathname === '/v1/me' && req.method === 'GET') {
       return json(200, { sub: identity.sub, email: identity.email, name: identity.name, picture: identity.picture ?? null, service: Boolean(identity.service), author })
+    }
+    // The people on the team (everyone who signed in), newest activity first
+    if (url.pathname === '/v1/people' && req.method === 'GET') {
+      if (!people) return json(200, { people: [] })
+      // People who signed in before the table existed come from their OAuth grants, once
+      if (env.OAUTH_KV && (await people.count()) === 0) await backfillFromGrants(people, env.OAUTH_KV).catch(e => console.error('[people] backfill failed', e))
+      return json(200, { people: await people.list() })
     }
     // My desk: this person's documents, remarks on them, proposals citing them, what others changed
     if (url.pathname === '/v1/me/overview' && req.method === 'GET') {
@@ -290,6 +301,7 @@ export async function route(req: Request, env: Env, ctx: ExecutionContext, deps?
         viewer,
         webOrigin: env.ALLOWED_ORIGINS,
         llm: anthropicLlm(env) ?? undefined,
+        people: people ? () => people.list() : undefined,
         onWrite: row => enqueueReaction(env, ctx, deps, row),
       })
     }
@@ -468,8 +480,9 @@ function enqueueReaction(env: Env, ctx: ExecutionContext, deps: SyncDeps, row: F
   ctx.waitUntil(env.REACTION_QUEUE.send({ path: row.path, etag: row.etag }).catch(e => console.error('[reactions] enqueue failed', e)))
 }
 
-function baseDeps(env: Env): SyncDeps {
+function baseDeps(env: Env): SyncDeps & { people?: PeopleStore } {
   return {
+    people: env.DB ? new D1PeopleStore(env.DB) : undefined,
     writer: coordinatedWriter(env.VAULT_WRITER),
     meta: new D1MetaStore(env.DB),
     blobs: new R2BlobStore(env.VAULT),

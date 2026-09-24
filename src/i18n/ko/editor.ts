@@ -9,7 +9,7 @@ const editor: Record<string, string> = {
   'vs now: +{added} −{removed}': '현재 대비: +{added} −{removed}',
   'Around this document': '이 문서 주변',
   'Members said': '멤버가 남긴 말',
-  'No member has reacted to this document yet. Members react to saves in their scope (Settings → AI Members).': '아직 이 문서에 반응한 멤버가 없습니다. 멤버는 담당 범위 내 저장에 반응합니다 (설정 → AI 멤버).',
+  'No member has reacted to this document yet. Members react to saves in their scope (Settings → Members).': '아직 이 문서에 반응한 AI 멤버가 없습니다. AI 멤버는 담당 범위 내 저장에 반응합니다 (설정 → 멤버).',
   'Open the remark': '반응 열기',
   'Linked from': '역링크',
   'Nothing links here yet.': '아직 여기로 연결된 링크가 없습니다.',

@@ -14,7 +14,16 @@ const response: MembersResponse = {
   reactionsEnabled: false,
 }
 
-const client = { members: vi.fn(async () => response), saveMembers: vi.fn(async (c: MembersConfig) => ({ config: c })) }
+const people = [
+  { sub: 'g-kim', email: 'kim@onda.kr', name: '김철수', picture: '', firstSeen: 1, lastSeen: Date.UTC(2026, 8, 24, 3), docs: 12 },
+  { sub: 'g-lee', email: 'lee@onda.kr', name: '이소영', picture: '', firstSeen: 1, lastSeen: Date.UTC(2026, 8, 20, 3), docs: 1 },
+]
+const client = {
+  members: vi.fn(async () => response),
+  saveMembers: vi.fn(async (c: MembersConfig) => ({ config: c })),
+  people: vi.fn(async () => people),
+  me: vi.fn(async () => ({ sub: 'g-kim', service: false })),
+}
 vi.mock('@/web/remoteVault', () => ({ currentRemoteVault: () => ({ client }) }))
 
 beforeEach(() => { client.members.mockClear(); client.saveMembers.mockClear() })
@@ -23,7 +32,7 @@ describe('MembersTab', () => {
   it('lists members with their routines and last run, and explains how to take one on', async () => {
     render(<MembersTab />)
     await screen.findByTestId('member-librarian')
-    expect(screen.getByText(/1 member, 1 scheduled routine/)).toBeInTheDocument()
+    expect(screen.getByText(/1 AI member, 1 scheduled routine/)).toBeInTheDocument()
     expect(screen.getByText('/mcp__strata__member name=Librarian')).toBeInTheDocument()
     expect(screen.getByTestId('reactions-status').textContent).toMatch(/off/)
     fireEvent.click(screen.getByTestId('member-toggle-librarian'))
@@ -56,5 +65,16 @@ describe('MembersTab', () => {
     fireEvent.click(screen.getByTestId('members-save'))
     expect(await screen.findByText(/describe the role/)).toBeInTheDocument()
     expect(client.saveMembers).not.toHaveBeenCalled()
+  })
+
+  it('shows the people who signed in above the AI members, marking the viewer', async () => {
+    render(<MembersTab />)
+    const kim = await screen.findByTestId('person-g-kim')
+    expect(kim.textContent).toMatch(/김철수/)
+    expect(kim.textContent).toMatch(/You/)
+    expect(kim.textContent).toMatch(/12 documents/)
+    expect(screen.getByTestId('person-g-lee').textContent).toMatch(/1 document(?!s)/)
+    expect(screen.getByTestId('person-g-lee').textContent).not.toMatch(/You/)
+    expect(screen.getByText('People · 2')).toBeInTheDocument()
   })
 })

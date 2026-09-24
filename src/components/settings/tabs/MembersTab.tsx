@@ -1,15 +1,18 @@
 /**
- * MembersTab — the team's AI members. Each one is a role (a lens on the vault), a scope, a set of
+ * MembersTab — the team: the people who signed in (read-only, from the server's people table) and
+ * the AI members below them.
+ *
+ * AI members: Each one is a role (a lens on the vault), a scope, a set of
  * routines, and its own memory note in _members/. The server stores the definitions; the thinking
  * happens in whichever MCP client takes on the member (`/mcp__strata__member name=…`), or on the
  * server when a document in scope is saved (reactions, needs the API key there). Members never
  * edit team documents: proposals in _agent/ and their own memory note only.
  */
 import { useEffect, useState } from 'react'
-import { Users, Plus, Trash2, Save, Loader2, AlertTriangle, Check, Terminal, ChevronDown, ChevronRight, Zap } from 'lucide-react'
+import { Plus, Trash2, Save, Loader2, AlertTriangle, Check, Terminal, ChevronDown, ChevronRight, Zap, Bot, User } from 'lucide-react'
 import { fieldInputStyle } from '../settingsShared'
 import { currentRemoteVault } from '@/web/remoteVault'
-import type { Member, MembersConfig, MembersResponse, Routine } from '@/web/remoteClient'
+import type { Member, MembersConfig, MembersResponse, Person, Routine } from '@/web/remoteClient'
 import { t, useT } from '@/i18n'
 
 const sectionLabel: React.CSSProperties = {
@@ -59,9 +62,45 @@ function validate(config: MembersConfig): string | null {
   return null
 }
 
+/** The people who signed in: who they are, how much of the vault is theirs, when they were last here. */
+function PeopleSection({ people, me, error }: { people: Person[] | null; me: string | null; error: string | null }) {
+  const t = useT()
+  return (
+    <div>
+      <div style={sectionLabel}>{t('People')}{people ? ` · ${people.length}` : ''}</div>
+      <div style={{ ...card, gap: 0, padding: 0 }} data-testid="people-list">
+        {error && <div style={{ ...hint, padding: 14 }}>{error}</div>}
+        {!error && !people && <div style={{ ...hint, padding: 14 }}>{t('Loading…')}</div>}
+        {people && people.length === 0 && <div style={{ ...hint, padding: 14 }}>{t('Nobody has signed in with Google yet. People appear here after their first sign-in.')}</div>}
+        {people?.map((p, i) => (
+          <div key={p.sub} data-testid={`person-${p.sub}`} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderTop: i ? '1px solid var(--color-border)' : 'none' }}>
+            {p.picture
+              ? <img src={p.picture} alt="" referrerPolicy="no-referrer" style={{ width: 24, height: 24, borderRadius: '50%', flexShrink: 0 }} />
+              : <span style={{ width: 24, height: 24, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-bg-active)' }}><User size={12} color="var(--color-text-muted)" /></span>}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)', display: 'flex', gap: 6, alignItems: 'center' }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                {p.sub === me && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 2, background: 'var(--color-accent)', color: 'var(--color-bg-primary)' }}>{t('You')}</span>}
+              </div>
+              <div style={{ ...hint, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</div>
+            </div>
+            <div style={{ ...hint, textAlign: 'right', whiteSpace: 'nowrap' }}>
+              <div>{p.docs === 1 ? t('{count} document', { count: p.docs }) : t('{count} documents', { count: p.docs })}</div>
+              <div>{t('Last seen {date}', { date: when(p.lastSeen) })}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function MembersTab() {
   const t = useT()
   const client = currentRemoteVault()?.client
+  const [people, setPeople] = useState<Person[] | null>(null)
+  const [peopleError, setPeopleError] = useState<string | null>(null)
+  const [me, setMe] = useState<string | null>(null)
   const [data, setData] = useState<MembersResponse | null>(null)
   const [config, setConfig] = useState<MembersConfig | null>(null)
   const [open, setOpen] = useState<Set<string>>(new Set())
@@ -72,10 +111,17 @@ export default function MembersTab() {
   useEffect(() => {
     if (!client) return
     client.members().then(d => { setData(d); setConfig(d.config) }).catch(e => setMessage({ kind: 'error', text: e instanceof Error ? e.message : String(e) }))
+    client.people().then(setPeople).catch(e => setPeopleError(e instanceof Error ? e.message : String(e)))
+    client.me().then(m => setMe(m.service ? null : m.sub)).catch(() => {})
   }, [client])
 
-  if (!client) return <div style={hint}>{t('AI members live on the team server; connect first (Settings → Server).')}</div>
-  if (!data || !config) return <div style={hint}>{message ? message.text : t('Loading…')}</div>
+  if (!client) return <div style={hint}>{t('Members live on the team server; connect first (Settings → Server).')}</div>
+  if (!data || !config) return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <PeopleSection people={people} me={me} error={peopleError} />
+      <div style={hint}>{message ? message.text : t('Loading…')}</div>
+    </div>
+  )
 
   const update = (next: MembersConfig) => { setConfig(next); setDirty(true); setMessage(null) }
   const setMember = (i: number, patch: Partial<Member>) => update({ ...config, members: config.members.map((m, k) => (k === i ? { ...m, ...patch } : m)) })
@@ -119,10 +165,12 @@ export default function MembersTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18, padding: '2px 0' }}>
+      <PeopleSection people={people} me={me} error={peopleError} />
+
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 2, background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}>
-        <Users size={16} color="var(--color-accent)" />
+        <Bot size={16} color="var(--color-accent)" />
         <div style={{ flex: 1, fontSize: 12, color: 'var(--color-text-primary)', lineHeight: 1.5 }}>
-          {enabled.length === 1 ? t('{count} member', { count: enabled.length }) : t('{count} members', { count: enabled.length })}, {routineCount === 1 ? t('{count} scheduled routine', { count: routineCount }) : t('{count} scheduled routines', { count: routineCount })}. {t('A member reads the vault through its role, keeps its own memory note in')} <code>_members/</code>{t(', and writes proposals into')} <code>_agent/</code> {t('— nothing changes until a person promotes it.')}
+          {enabled.length === 1 ? t('{count} AI member', { count: enabled.length }) : t('{count} AI members', { count: enabled.length })}, {routineCount === 1 ? t('{count} scheduled routine', { count: routineCount }) : t('{count} scheduled routines', { count: routineCount })}. {t('A member reads the vault through its role, keeps its own memory note in')} <code>_members/</code>{t(', and writes proposals into')} <code>_agent/</code> {t('— nothing changes until a person promotes it.')}
         </div>
       </div>
 
@@ -152,7 +200,7 @@ export default function MembersTab() {
 
       <div>
         <div style={{ ...sectionLabel, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>{t('Members')}</span>
+          <span>{t('AI members')}</span>
           <select value="" onChange={e => { if (e.target.value !== '') addMember(e.target.value) }} disabled={config.members.length >= 12} style={{ ...fieldInputStyle, width: 'auto', padding: '3px 6px', fontSize: 11 }} data-testid="members-add">
             <option value="">{t('+ Add member…')}</option>
             {Object.entries(data.templates).map(([key, tpl]) => <option key={key} value={key}>{tpl.name}</option>)}

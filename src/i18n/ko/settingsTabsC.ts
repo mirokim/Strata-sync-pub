@@ -97,7 +97,7 @@ const settingsTabsC: Record<string, string> = {
   'Create or replace a document directly (only when explicitly asked); personal=true keeps it to you': '문서를 직접 생성·교체 (명시적으로 요청받았을 때만). personal=true면 나만 볼 수 있음',
   'Share a personal document with the team, or take back one only you have ever saved': '개인 문서를 팀과 공유하거나, 나만 저장했던 문서를 다시 개인화',
   'What changed since a date — authors, titles, deletions': '특정 날짜 이후 변경 사항 — 작성자, 제목, 삭제',
-  'The AI members (Settings → AI Members), their memory notes and routine runs; the `member` prompt takes one on': 'AI 멤버(설정 → AI 멤버), 멤버의 메모와 루틴 실행 기록; `member` 프롬프트로 멤버 하나를 불러옴',
+  'The team — people who signed in and AI members (Settings → Members) — memory notes and routine runs of the AI members; the `member` prompt takes one on': '팀 — 가입한 사람과 AI 멤버(설정 → 멤버) — AI 멤버의 메모와 루틴 실행 기록; `member` 프롬프트로 AI 멤버 하나를 불러옴',
   'Ask your client things like “what do we know about the stamina system?”, “lint the vault”, or “remember that we decided X” — the last one lands in {tag} as a proposal for a person to promote.': '"스태미나 시스템에 대해 뭘 알고 있어?", "볼트 린트해줘", "우리가 X를 결정했다고 기억해" 같은 걸 클라이언트에 물어보세요 — 마지막 요청은 사람이 승격할 제안으로 {tag}에 남음',
   // AboutTab
   'v{version} · A shared brain for your team': 'v{version} · 팀을 위한 공유 두뇌',

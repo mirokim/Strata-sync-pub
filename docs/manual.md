@@ -8,7 +8,7 @@ Strata Sync는 Claude Code·Codex·Cursor를 **하나의 팀 기억**으로 연�
 
 > **한 사람의 대화가, 팀 전체의 다음 생각이 된다.**
 
-[웹 데모 열기](https://strata-sync-nine.vercel.app) · [MCP 연결하고 시작하기](#31-에이전트-연결--여기가-시작입니다)
+[웹 데모 열기](https://strata-sync-nine.vercel.app) · [MCP 연결하고 시작하기](#31-에이전트-연결--여기가-시작입니다) · [GitHub 저장소](https://github.com/mirokim/Strata-sync-pub)
 
 ### 심사자를 위한 30초 소개
 
@@ -160,8 +160,9 @@ claude mcp add --transport http strata https://<worker>/mcp --header "Authorizat
 - **릴레이**: 작업의 `chain`. 완료되면 다음 사람에게 자동으로.
 - **모순 레이더**(`radar_check`, 저장 시 자동): 팀원이 쓴 문서와 충돌하면 편지함 질문으로.
 
-### AI 멤버
-- 설정 → **AI 멤버**. 역할(사서, 디자이너, 리서처, PM…), 담당 범위(폴더·태그), 루틴(매일/매주), 자기 기억 노트 `_members/<이름> (memory).md`.
+### 멤버 (사람 + AI)
+- 설정 → **멤버**. 위에는 구글로 로그인한 **사람**이 나옵니다 — 이름, 이메일, 마지막으로 저장한 문서 수, 마지막 접속. 누구에게 편지함으로 물을지 여기서 봅니다. `members_list`도 같은 사람 목록을 에이전트에게 줍니다.
+- 아래는 **AI 멤버**. 역할(사서, 디자이너, 리서처, PM…), 담당 범위(폴더·태그), 루틴(매일/매주), 자기 기억 노트 `_members/<이름> (memory).md`.
 - 멤버는 각자의 에이전트에서 돌아갑니다: `/mcp__strata__member name=사서` 프롬프트를 부르면 역할·기억·오늘 할 루틴이 주어집니다. 멤버는 볼트를 정리합니다 — 링크 걸기, 같은 아이디어 합치기, 찾은 것을 문서로 남기기. 사람의 결정이 걸린 일은 제안이나 편지함으로 묻습니다.
 - 서버에 모델 키가 있으면 저장 반응과 레이더가 서버에서 자동으로 돕니다.
 
@@ -183,13 +184,14 @@ claude mcp add --transport http strata https://<worker>/mcp --header "Authorizat
 
 그래프: `graph_lint` · `graph_suggest_links`
 
-AI 멤버: `members_list` · `member_remember`(기억 노트에 적기) · `member_report`(루틴 실행 기록) · 프롬프트 `member`
+멤버: `members_list`(사람과 AI 멤버) · `member_remember`(기억 노트에 적기) · `member_report`(루틴 실행 기록) · 프롬프트 `member`
 
 ---
 
 ## 7. 관리
 
 - **언어·테마·그래프·에디터**: 설정 → 일반. UI는 한국어/English, 기본은 브라우저 언어.
+- **소스 코드**: [https://github.com/mirokim/Strata-sync-pub](https://github.com/mirokim/Strata-sync-pub)
 - **서버 배포**: `cd cloud && npx wrangler deploy`. 웹 앱은 GitHub에 푸시하면 Vercel이 자동 배포합니다.
 - **모델 키**: 저장 반응과 레이더는 서버에 `ANTHROPIC_API_KEY`가 있어야 돕니다 — `cd cloud && npx wrangler secret put ANTHROPIC_API_KEY`. 없으면 멤버는 각자 에이전트에서만 돌고, 레이더는 쉽니다.
 - **팀 토큰**: `wrangler secret put TEAM_TOKEN`. 바꾸면 모두 다시 접속해야 합니다.

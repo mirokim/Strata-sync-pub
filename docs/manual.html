@@ -125,7 +125,7 @@
     <p class="punch">내 AI가 내린 결정, 동료의 AI는 알고 있나요?</p>
     <p class="lede">Claude Code·Codex·Cursor를 <strong>하나의 팀 기억</strong>으로 연결합니다. 대화에서 나온 결정과 근거를 에이전트가 기록하고, 다른 에이전트가 그 맥락을 이어받습니다. 질문은 편지함으로, 다음 작업은 릴레이로.</p>
     <p class="punch">한 사람의 대화가, 팀 전체의 다음 생각이 된다.</p>
-    <p><a class="cta" href="https://strata-sync-nine.vercel.app">웹 데모 열기 ↗</a> <a class="cta secondary" href="#demo">3분 시연 보기 ↓</a></p>
+    <p><a class="cta" href="https://strata-sync-nine.vercel.app">웹 데모 열기 ↗</a> <a class="cta secondary" href="#demo">3분 시연 보기 ↓</a> <a class="cta secondary" href="https://github.com/mirokim/Strata-sync-pub">GitHub 저장소 ↗</a></p>
   </header>
 
   <nav class="toc" aria-label="목차">
@@ -298,9 +298,10 @@ codex mcp login strata</code></pre>
         </ul>
       </div>
       <div class="feature">
-        <h3>AI 멤버</h3>
+        <h3>멤버 (사람 + AI)</h3>
         <ul>
-          <li>설정 → <strong>AI 멤버</strong>. 역할(사서, 디자이너, 리서처, PM…), 담당 범위(폴더·태그), 루틴(매일/매주), 자기 기억 노트 <code>_members/&lt;이름&gt; (memory).md</code>.</li>
+          <li>설정 → <strong>멤버</strong>. 위에는 구글로 로그인한 <strong>사람</strong>이 나옵니다 — 이름, 이메일, 마지막으로 저장한 문서 수, 마지막 접속. 누구에게 편지함으로 물을지 여기서 봅니다. <code>members_list</code>도 같은 사람 목록을 에이전트에게 줍니다.</li>
+          <li>아래는 <strong>AI 멤버</strong>. 역할(사서, 디자이너, 리서처, PM…), 담당 범위(폴더·태그), 루틴(매일/매주), 자기 기억 노트 <code>_members/&lt;이름&gt; (memory).md</code>.</li>
           <li>멤버는 각자의 에이전트에서 돌아갑니다: <code>/mcp__strata__member name=사서</code> 프롬프트를 부르면 역할·기억·오늘 할 루틴이 주어집니다. 멤버는 볼트를 정리합니다 — 링크 걸기, 같은 아이디어 합치기, 찾은 것을 문서로 남기기. 사람의 결정이 걸린 일은 제안이나 편지함으로 묻습니다.</li>
           <li>서버에 모델 키가 있으면 저장 반응과 레이더가 서버에서 자동으로 돕습니다.</li>
         </ul>
@@ -348,7 +349,7 @@ codex mcp login strata</code></pre>
           <dt>graph_suggest_links</dt><dd>이 글이 링크해야 할 문서</dd>
         </dl></div>
         <div class="group"><div class="label">AI 멤버</div><dl>
-          <dt>members_list</dt><dd>멤버와 오늘 할 루틴</dd>
+          <dt>members_list</dt><dd>팀의 사람과 AI 멤버, 오늘 할 루틴</dd>
           <dt>member_remember</dt><dd>기억 노트에 적기</dd>
           <dt>member_report</dt><dd>루틴 실행 기록</dd>
           <dt>member (프롬프트)</dt><dd>역할·기억·루틴을 에이전트에 넘기기</dd>
@@ -360,6 +361,7 @@ codex mcp login strata</code></pre>
       <h2><span class="no">7</span>관리</h2>
       <ul>
         <li><strong>언어·테마·그래프·에디터</strong> — 설정 → 일반. UI는 한국어/English, 기본은 브라우저 언어.</li>
+        <li><strong>소스 코드</strong> — <a href="https://github.com/mirokim/Strata-sync-pub">https://github.com/mirokim/Strata-sync-pub</a></li>
         <li><strong>서버 배포</strong> — <code>cd cloud &amp;&amp; npx wrangler deploy</code>. 웹 앱은 GitHub에 푸시하면 Vercel이 자동 배포합니다.</li>
         <li><strong>모델 키</strong> — 저장 반응과 레이더는 서버에 <code>ANTHROPIC_API_KEY</code>가 있어야 돕니다: <code>cd cloud &amp;&amp; npx wrangler secret put ANTHROPIC_API_KEY</code>. 없으면 멤버는 각자 에이전트에서만 돌고, 레이더는 쉽니다.</li>
         <li><strong>팀 토큰</strong> — <code>wrangler secret put TEAM_TOKEN</code>. 바꾸면 모두 다시 접속해야 합니다.</li>
@@ -386,7 +388,7 @@ codex mcp login strata</code></pre>
     </section>
   </main>
 
-  <footer>Strata Sync · 이 문서의 마크다운 판은 저장소의 <code>docs/manual.md</code>에 있습니다.</footer>
+  <footer>Strata Sync · <a href="https://github.com/mirokim/Strata-sync-pub">GitHub</a> · 이 문서의 마크다운 판은 저장소의 <code>docs/manual.md</code>에 있습니다.</footer>
 </div>
 
 <script>

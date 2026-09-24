@@ -82,7 +82,7 @@ const NAV: NavGroup[] = [
       { id: 'stats',         icon: BarChart2, label: 'Statistics' },
       { id: 'server',        icon: Cloud,     label: 'Server' },
       { id: 'mcp',           icon: Plug,      label: 'MCP' },
-      { id: 'members',       icon: Users,     label: 'AI Members' },
+      { id: 'members',       icon: Users,     label: 'Members' },
       { id: 'vault-manager', icon: HardDrive, label: 'Vault Manager' },
       { id: 'team-sync',     icon: Cloud,     label: 'Team Sync' },
       { id: 'trash',         icon: Trash2,    label: 'Trash' },

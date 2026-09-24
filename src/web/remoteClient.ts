@@ -56,6 +56,8 @@ export interface Member {
   enabled: boolean
   routines: Routine[]
 }
+/** A person who signed in (mirror of cloud/src/people.ts). */
+export interface Person { sub: string; email: string; name: string; picture: string; firstSeen: number; lastSeen: number; docs: number }
 export interface MembersConfig { version: 1; members: Member[] }
 export interface HistoryVersion { etag: string; at: number; author: string; size: number }
 /** Mirrors cloud/src/me.ts MeOverview. */
@@ -278,6 +280,14 @@ export class RemoteClient {
     const res = await this.request(`/v1/history?path=${encodeURIComponent(path)}&etag=${encodeURIComponent(etag)}&diff=1`)
     if (!res.ok) throw new RemoteError(res.status, `history diff failed (${res.status})`)
     return res.json()
+  }
+
+  /** Everyone who signed in, newest activity first. Empty on a server without the people table. */
+  async people(): Promise<Person[]> {
+    const res = await this.request('/v1/people')
+    if (res.status === 404) return []
+    if (!res.ok) throw new RemoteError(res.status, `people failed (${res.status})`)
+    return ((await res.json()) as { people: Person[] }).people
   }
 
   async members(): Promise<MembersResponse> {
