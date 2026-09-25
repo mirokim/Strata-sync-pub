@@ -43,7 +43,7 @@ const TOOLS: [string, string][] = [
   ['inbox_send', 'Ask a teammate (through their agent) a question or hand them a task'],
   ['inbox_list', 'Questions/tasks waiting for you, and the ones you sent'],
   ['inbox_reply', 'Answer a question or report a task result'],
-  ['radar_check', 'Contradiction radar on one document — collisions with what teammates wrote become inbox questions'],
+  ['radar_check · radar_report', 'Contradiction radar on one document — without a server model your own agent judges the closest documents and reports; collisions with what teammates wrote become inbox questions'],
   ['members_list · member_remember · member_report', 'The team — people who signed in and AI members (Settings → Members) — memory notes and routine runs of the AI members; the `member` prompt takes one on'],
 ]
 

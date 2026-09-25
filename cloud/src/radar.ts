@@ -8,8 +8,12 @@
  * a question in the saver's inbox: what collides, with whom, written where. The saver (or their
  * agent) answers it like any other inbox item; the other author sees the pair on their desk too.
  *
- * Runs in the reactions queue after the member reactions, with the same LLM; without
- * ANTHROPIC_API_KEY nothing runs. `_system/radar.json` remembers which version was checked and
+ * Two ways to judge, same questions out:
+ *   - server mode: with ANTHROPIC_API_KEY it runs in the reactions queue after the member
+ *     reactions, on every eligible save (radarCheck);
+ *   - agent mode: without a key, the MCP tool radar_check hands the calling agent the case
+ *     (gatherRadar + radarPrompt), the agent judges with its own model and reports the collisions
+ *     with radar_report, which raises the same inbox questions (raiseConflicts). `_system/radar.json` remembers which version was checked and
  * which pairs were already raised, so a pair is reported once per week at most.
  */
 import { type SyncDeps, type FileRow } from './sync.js'
@@ -100,10 +104,21 @@ export function parseConflicts(text: string, allowed: Set<string>): Conflict[] {
 const pairKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`)
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '\n…' : s)
 
-/** Check one saved document against its neighbourhood; raise inbox questions for real collisions. */
-export async function radarCheck(deps: RadarDeps, job: { path: string; etag?: string }): Promise<RadarOutcome> {
-  const log = deps.log ?? (() => {})
-  const now = (deps.now ?? Date.now)()
+/** What the radar compares: the saved document and the teammates' documents closest to it. */
+export interface RadarCase {
+  path: string
+  row: FileRow
+  title: string
+  body: string
+  candidates: { path: string; row: FileRow; body: string; title: string }[]
+  state: RadarState
+}
+
+/**
+ * Pick the neighbourhood of one saved document. Returns why it was skipped, or the case to judge.
+ * `recheck` ignores "already checked this version" (an agent asked explicitly).
+ */
+export async function gatherRadar(deps: RecallDeps, job: { path: string; etag?: string }, recheck = false): Promise<RadarCase | { status: 'skipped'; reason: string }> {
   const path = job.path.replace(/\\/g, '/')
   if (!isReactablePath(path) || isPersonalPath(path)) return { status: 'skipped', reason: 'path not eligible' }
   const row = await deps.meta.get(path)
@@ -112,7 +127,7 @@ export async function radarCheck(deps: RadarDeps, job: { path: string; etag?: st
   if (row.author === RADAR_AUTHOR || row.author === REACTION_AUTHOR) return { status: 'skipped', reason: 'bot document' }
 
   const state = await readRadarState(deps)
-  if (state.checked[path] === row.etag) return { status: 'skipped', reason: 'already checked this version' }
+  if (!recheck && state.checked[path] === row.etag) return { status: 'skipped', reason: 'already checked this version' }
 
   const bytes = await deps.blobs.get(path)
   if (!bytes) return { status: 'skipped', reason: 'content missing' }
@@ -125,7 +140,7 @@ export async function radarCheck(deps: RadarDeps, job: { path: string; etag?: st
   // Neighbourhood: what the vault already says about the same things, other people's personal docs excluded
   const view = await loadVaultView(deps)
   const { hits } = await fusedSearch(deps, view, `${doc.title}\n${doc.body.slice(0, 800)}`, RADAR_CANDIDATES * 2, new Set([path]))
-  const candidates: { path: string; row: FileRow; body: string; title: string }[] = []
+  const candidates: RadarCase['candidates'] = []
   for (const h of hits) {
     if (candidates.length >= RADAR_CANDIDATES) break
     const p = h.path
@@ -136,43 +151,64 @@ export async function radarCheck(deps: RadarDeps, job: { path: string; etag?: st
     if (body.trim().length < RADAR_MIN_CHARS) continue
     candidates.push({ path: p, row: r, body, title: view.docs.get(p)?.title ?? p })
   }
-  if (candidates.length === 0) {
-    state.checked[path] = row.etag; await writeRadarState(deps, state)
-    return { status: 'checked', candidates: 0, conflicts: [], sent: [] }
-  }
+  return { path, row, title: doc.title, body: doc.body, candidates, state }
+}
 
-  const user = [
-    `# NEW DOCUMENT`, `Path: ${path}`, `Title: ${doc.title}`, `Saved by: ${row.author || 'unknown'} at ${new Date(row.updatedAt).toISOString()}`, '', clip(doc.body, RADAR_DOC_MAX_CHARS), '',
+/** The prompt text: the new document, then each related one with its author and date. */
+export function radarPrompt(c: RadarCase): string {
+  return [
+    `# NEW DOCUMENT`, `Path: ${c.path}`, `Title: ${c.title}`, `Saved by: ${c.row.author || 'unknown'} at ${new Date(c.row.updatedAt).toISOString()}`, '', clip(c.body, RADAR_DOC_MAX_CHARS), '',
     `# RELATED DOCUMENTS`,
-    ...candidates.map(c => [`## ${c.path}`, `Title: ${c.title}`, `Written by: ${c.row.author || 'unknown'} at ${new Date(c.row.updatedAt).toISOString()}`, '', clip(c.body, RADAR_CANDIDATE_MAX_CHARS), ''].join('\n')),
+    ...c.candidates.map(x => [`## ${x.path}`, `Title: ${x.title}`, `Written by: ${x.row.author || 'unknown'} at ${new Date(x.row.updatedAt).toISOString()}`, '', clip(x.body, RADAR_CANDIDATE_MAX_CHARS), ''].join('\n')),
   ].join('\n')
-  const text = await deps.llm({ system: RADAR_SYSTEM, user, maxTokens: 1200, effort: 'medium' })
-  const conflicts = parseConflicts(text, new Set(candidates.map(c => c.path)))
+}
 
-  // One inbox question per collision, to the saver, once per pair per week
+/**
+ * Turn judged collisions into inbox questions to the saver (once per pair per week) and mark the
+ * version checked. Shared by the server's model and by an agent reporting its own judgement.
+ */
+export async function raiseConflicts(deps: SyncDeps & { now?: () => number; log?: (m: string) => void }, c: RadarCase, conflicts: Conflict[]): Promise<string[]> {
+  const log = deps.log ?? (() => {})
+  const now = (deps.now ?? Date.now)()
   const sent: string[] = []
-  for (const c of conflicts) {
-    const key = pairKey(path, c.path)
-    if (state.raised[key] && now - state.raised[key] < RADAR_PAIR_COOLDOWN_MS) continue
-    const other = candidates.find(x => x.path === c.path)!
-    const to = row.author || 'unknown'
-    const title = `${c.severity === 'contradiction' ? '⚡' : '〰'} ${doc.title} ↔ ${other.title}`
+  for (const k of conflicts) {
+    const key = pairKey(c.path, k.path)
+    if (c.state.raised[key] && now - c.state.raised[key] < RADAR_PAIR_COOLDOWN_MS) continue
+    const other = c.candidates.find(x => x.path === k.path)
+    if (!other) continue
+    const to = c.row.author || 'unknown'
+    const title = `${k.severity === 'contradiction' ? '⚡' : '〰'} ${c.title} ↔ ${other.title}`
     const body = [
-      `**${doc.title}** (${row.author}, ${new Date(row.updatedAt).toISOString().slice(0, 10)}) says:`, `> ${c.here}`, '',
-      `**${other.title}** (${other.row.author || 'unknown'}, ${new Date(other.row.updatedAt).toISOString().slice(0, 10)}) says:`, `> ${c.there}`, '',
-      c.note, '',
+      `**${c.title}** (${c.row.author}, ${new Date(c.row.updatedAt).toISOString().slice(0, 10)}) says:`, `> ${k.here}`, '',
+      `**${other.title}** (${other.row.author || 'unknown'}, ${new Date(other.row.updatedAt).toISOString().slice(0, 10)}) says:`, `> ${k.there}`, '',
+      k.note, '',
       `Which one holds? Update the other document, or answer here with why both are right.`,
     ].join('\n')
     const r = await sendInbox({ ...deps, viewer: { sub: 'service', service: true }, author: RADAR_AUTHOR }, {
-      to, toSub: row.authorSub && row.authorSub !== 'service' ? row.authorSub : undefined,
-      kind: 'question', title, body, about: [path, c.path],
+      to, toSub: c.row.authorSub && c.row.authorSub !== 'service' ? c.row.authorSub : undefined,
+      kind: 'question', title, body, about: [c.path, k.path],
     })
-    if ('error' in r) { log(`[radar] inbox failed for ${path}: ${r.error}`); continue }
-    state.raised[key] = now
+    if ('error' in r) { log(`[radar] inbox failed for ${c.path}: ${r.error}`); continue }
+    c.state.raised[key] = now
     sent.push(r.path)
   }
-  state.checked[path] = row.etag
-  await writeRadarState(deps, state)
-  log(`[radar] ${path}: ${candidates.length} candidates, ${conflicts.length} conflict(s), ${sent.length} question(s)`)
-  return { status: 'checked', candidates: candidates.length, conflicts, sent }
+  c.state.checked[c.path] = c.row.etag
+  await writeRadarState(deps, c.state)
+  return sent
+}
+
+/** Server mode: check one saved document with the server's model; raise inbox questions for real collisions. */
+export async function radarCheck(deps: RadarDeps, job: { path: string; etag?: string }): Promise<RadarOutcome> {
+  const log = deps.log ?? (() => {})
+  const c = await gatherRadar(deps, job)
+  if ('status' in c) return c
+  if (c.candidates.length === 0) {
+    c.state.checked[c.path] = c.row.etag; await writeRadarState(deps, c.state)
+    return { status: 'checked', candidates: 0, conflicts: [], sent: [] }
+  }
+  const text = await deps.llm({ system: RADAR_SYSTEM, user: radarPrompt(c), maxTokens: 1200, effort: 'medium' })
+  const conflicts = parseConflicts(text, new Set(c.candidates.map(x => x.path)))
+  const sent = await raiseConflicts(deps, c, conflicts)
+  log(`[radar] ${c.path}: ${c.candidates.length} candidates, ${conflicts.length} conflict(s), ${sent.length} question(s)`)
+  return { status: 'checked', candidates: c.candidates.length, conflicts, sent }
 }

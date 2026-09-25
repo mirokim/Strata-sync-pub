@@ -81,12 +81,56 @@ describe('radarCheck', () => {
     expect(inboxFor(await readInbox(deps, await meta.listSince(0, 1000)), { sub: KIM }, 'Kim').forMe).toEqual([])
   })
 
-  it('radar_check MCP tool needs a server model and reports the outcome', async () => {
-    const noKey = await callTool({ ...deps, author: 'Kim', viewer: { sub: KIM } }, 'radar_check', { path: 'design/새 결정.md' })
-    expect(noKey.isError).toBe(true)
+  it('radar_check MCP tool judges with the server model when there is one', async () => {
     const llm = llmSaying('{"conflicts":[{"path":"design/소음 목표.md","here":"60 dB","there":"65 dB","severity":"tension","note":"목표치 다름"}]}')
     const r = JSON.parse(((await callTool({ ...deps, author: 'Kim', viewer: { sub: KIM }, llm }, 'radar_check', { path: 'design/새 결정.md' })).content[0] as { text: string }).text)
-    expect(r).toMatchObject({ status: 'checked', sent: [expect.stringContaining('_inbox/Kim/')] })
+    expect(r).toMatchObject({ mode: 'server', status: 'checked', sent: [expect.stringContaining('_inbox/Kim/')] })
     expect(r.conflicts[0].severity).toBe('tension')
+  })
+})
+
+describe('agent mode (no model on the server)', () => {
+  const asKim = () => ({ ...deps, viewer: { sub: KIM }, author: 'Kim' })
+
+  it('radar_check hands the agent the case to judge instead of failing', async () => {
+    const r = await callTool(asKim(), 'radar_check', { path: 'design/새 결정.md' })
+    const out = (r.content[0] as { text: string }).text
+    expect(r.isError).toBeFalsy()
+    expect(out).toMatch(/judge this yourself/)
+    expect(out).toContain('# NEW DOCUMENT')
+    expect(out).toContain('design/모터 결정.md')
+    expect(out).toContain('radar_report')
+  })
+
+  it('radar_report turns the agent judgement into inbox questions, once per pair', async () => {
+    const conflicts = [
+      { path: 'design/모터 결정.md', here: '브러시드 모터를 유지한다', there: '흡입 모터는 BLDC 2세대로 간다', severity: 'contradiction', note: '둘 다 참일 수 없다.' },
+      { path: 'design/없는 문서.md', here: 'x', there: 'y' },
+    ]
+    const r = await callTool(asKim(), 'radar_report', { path: 'design/새 결정.md', conflicts })
+    const out = JSON.parse((r.content[0] as { text: string }).text) as { conflicts: number; sent: string[]; ignored?: string[] }
+    expect(out.conflicts).toBe(1)
+    expect(out.sent).toHaveLength(1)
+    expect(out.ignored).toEqual(['design/없는 문서.md'])
+    const inbox = inboxFor(await readInbox(deps, await meta.listSince(0, 1000)), { sub: KIM }, 'Kim')
+    expect(inbox.forMe.map(i => i.title)).toEqual(['⚡ 새 결정 ↔ 모터 결정'])
+    expect(inbox.forMe[0].body).toContain('BLDC')
+    expect((await readRadarState(deps)).checked['design/새 결정.md']).toBeTruthy()
+    // The same pair again within a week is not raised twice
+    const again = JSON.parse(((await callTool(asKim(), 'radar_report', { path: 'design/새 결정.md', conflicts: conflicts.slice(0, 1) })).content[0] as { text: string }).text) as { sent: string[] }
+    expect(again.sent).toEqual([])
+  })
+
+  it('an empty report marks the version checked and asks nobody', async () => {
+    const r = JSON.parse(((await callTool(asKim(), 'radar_report', { path: 'design/포장.md', conflicts: [] })).content[0] as { text: string }).text) as { sent: string[] }
+    expect(r.sent).toEqual([])
+    expect((await readRadarState(deps)).checked['design/포장.md']).toBeTruthy()
+  })
+
+  it('vault_write reminds the agent to run the radar when the server has no model', async () => {
+    const r = JSON.parse(((await callTool(asKim(), 'vault_write', { path: 'design/다른 결정.md', content: '# 다른 결정\n\n본문' })).content[0] as { text: string }).text) as { next?: string }
+    expect(r.next).toMatch(/radar_check/)
+    const withModel = JSON.parse(((await callTool({ ...asKim(), llm: llmSaying('{"conflicts":[]}') }, 'vault_write', { path: 'design/또 다른 결정.md', content: '# 또\n\n본문' })).content[0] as { text: string }).text) as { next?: string }
+    expect(withModel.next).toBeUndefined()
   })
 })

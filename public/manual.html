@@ -241,7 +241,7 @@ codex mcp login strata</code></pre>
         <li>"볼트에서 '소음 목표'에 대해 팀이 아는 걸 모아줘" → <code>vault_recall</code>이 관련 문서·이웃·멤버 메모를 한 묶음으로 가져옵니다.</li>
         <li>일하다가 결정이 나면: "이거 기록해 둬" → 에이전트가 알맞은 폴더에 문서를 만들거나 기존 문서를 고치고, 링크를 겁니다. 이미 있는 문서면 새로 만들지 않고 갱신합니다.</li>
         <li>"이 결정 이가 알아야 하는데" → <code>inbox_send</code>. 이의 에이전트가 다음에 켜질 때 그 사람 맥락으로 답합니다.</li>
-        <li>"방금 쓴 거 뭐랑 충돌해?" → <code>radar_check</code>.</li>
+        <li>"방금 쓴 거 뭐랑 충돌해?" → <code>radar_check</code>. 에이전트가 가까운 문서를 읽고 판단한 뒤 <code>radar_report</code>로 알립니다.</li>
       </ol>
 
       <h3>웹 앱 — 둘러보기</h3>
@@ -261,7 +261,7 @@ codex mcp login strata</code></pre>
         <div class="slot"><div class="when">저장할 때</div><div><p>두 가지가 자동으로 돕습니다.</p>
           <ul>
             <li><strong>AI 멤버 반응</strong> — 그 문서를 담당 범위로 둔 멤버(사서, 디자이너…)가 "이게 뭘 바꾸나 / 어디와 부딪히나 / 질문 하나"를 남깁니다. Brain 패널에 보입니다.</li>
-            <li><strong>모순 레이더</strong> — 서버가 가장 가까운 문서들(다른 사람이 쓴 것 포함)과 비교해서 "동시에 참일 수 없는 것"을 찾으면 편지함에 질문을 넣습니다. "이 문서는 60 dB라는데 박의 문서는 65 dB — 어느 쪽?"</li>
+            <li><strong>모순 레이더</strong> — 결정을 적으면, 그 문서와 가장 가까운 팀 문서들(다른 사람이 쓴 것 포함)을 비교해서 "동시에 참일 수 없는 것"을 찾고 편지함에 질문을 넣습니다. "이 문서는 60 dB라는데 박의 문서는 65 dB — 어느 쪽?" 판단은 <strong>MCP로 연결된 여러분의 AI</strong>가 합니다.</li>
           </ul></div></div>
         <div class="slot"><div class="when">물을 때</div><div><p>슬랙 대신 편지함. "이 파라미터 바꾸면 앱 쪽 영향 있어?"를 이의 이름으로 보내면, 이 또는 이의 에이전트가 다음에 켜질 때 <em>그 사람 맥락</em>으로 답합니다. 작업도 같은 방식으로 넘깁니다.</p></div></div>
         <div class="slot"><div class="when">릴레이</div><div><p>작업에 "다음 사람들"을 적어 두면(박 → 최), 이가 완료하는 순간 서버가 같은 작업을 박 앞으로 만들고 결과를 인용해 붙입니다. 일이 밤새 한 사람 컴퓨터에서 다음 사람 컴퓨터로 걸어갑니다. 모든 단계가 지정된 사람에게 갑니다.</p></div></div>
@@ -294,10 +294,21 @@ codex mcp login strata</code></pre>
           <li><strong>내 책상</strong>(<code>vault_me</code>, 앱의 사람 아이콘, <code>?view=me</code>) — 나에게 온 질문/작업, 내가 물은 것과 답, 내 문서에 온 반응, 내 문서를 인용한 제안, 남들이 최근 바꾼 것, 내 문서.</li>
           <li><strong>편지함</strong>(<code>inbox_send</code> / <code>inbox_list</code> / <code>inbox_reply</code>) — 이름으로 보내는 질문과 작업. 답할 수 있는 건 받는 사람뿐.</li>
           <li><strong>릴레이</strong> — 작업의 <code>chain</code>. 완료되면 다음 사람에게 자동으로.</li>
-          <li><strong>모순 레이더</strong>(<code>radar_check</code>, 저장 시 자동) — 팀원이 쓴 문서와 충돌하면 편지함 질문으로.</li>
+          <li><strong>모순 레이더</strong>(<code>radar_check</code> → <code>radar_report</code>) — 팀원이 쓴 문서와 충돌하면 문서 작성자의 편지함 질문으로. 자세한 흐름은 아래.</li>
         </ul>
       </div>
       <div class="feature">
+        <h3>모순 레이더 — 연결된 AI가 정리합니다</h3>
+        <p>서버에 모델을 두지 않아도 돕니다. 판단은 각자의 에이전트(Claude Code·Codex·Cursor)가 합니다.</p>
+        <ol>
+          <li>에이전트가 <code>vault_write</code>로 결정을 적으면, 결과에 "이 문서로 <code>radar_check</code>를 돌려라"가 붙어 나옵니다.</li>
+          <li><code>radar_check</code>는 서버가 고른 <strong>가장 가까운 팀 문서 최대 6개</strong>를 작성자·날짜와 함께 에이전트에게 줍니다.</li>
+          <li>에이전트가 읽고, 동시에 참일 수 없는 주장·숫자·날짜만 골라 <code>radar_report</code>로 보고합니다. 충돌이 없으면 빈 목록을 보냅니다(이 버전은 검사됨으로 표시).</li>
+          <li>충돌마다 <strong>문서를 쓴 사람의 편지함</strong>에 질문이 갑니다 — 양쪽 인용, 왜 부딪히는지, "어느 쪽이 맞나요?". 같은 쌍은 일주일에 한 번만.</li>
+          <li>받은 사람(또는 그 사람의 에이전트)이 한쪽 문서를 고치거나, 둘 다 맞는 이유를 답합니다.</li>
+        </ol>
+        <p>주제가 다르거나, 더 자세할 뿐이거나, 나중 결정이 예전 결정을 명시적으로 뒤집은 것은 충돌이 아닙니다. 서버에 <code>ANTHROPIC_API_KEY</code>를 넣으면 같은 검사가 저장할 때마다 서버에서 자동으로 돕니다(결과는 똑같이 편지함 질문).</p>
+
         <h3>멤버 (사람 + AI)</h3>
         <ul>
           <li>설정 → <strong>멤버</strong>. 위에는 구글로 로그인한 <strong>사람</strong>이 나옵니다 — 이름, 이메일, 마지막으로 저장한 문서 수, 마지막 접속. 누구에게 편지함으로 물을지 여기서 봅니다. <code>members_list</code>도 같은 사람 목록을 에이전트에게 줍니다.</li>
@@ -342,7 +353,8 @@ codex mcp login strata</code></pre>
           <dt>inbox_send</dt><dd>팀원에게 질문/작업 — <code>chain</code>으로 릴레이</dd>
           <dt>inbox_list</dt><dd>나에게 온 것, 내가 보낸 것</dd>
           <dt>inbox_reply</dt><dd>답하기 / 결과 보고 / 거절</dd>
-          <dt>radar_check</dt><dd>이 문서가 팀의 어떤 문서와 충돌하나</dd>
+          <dt>radar_check</dt><dd>이 문서가 팀의 어떤 문서와 충돌하나 (모델이 없으면 에이전트가 판단)</dd>
+          <dt>radar_report</dt><dd>에이전트가 판단한 충돌을 작성자 편지함 질문으로</dd>
         </dl></div>
         <div class="group"><div class="label">그래프</div><dl>
           <dt>graph_lint</dt><dd>팬텀 링크·고아·다리 문서·클러스터 이동</dd>
@@ -363,7 +375,7 @@ codex mcp login strata</code></pre>
         <li><strong>언어·테마·그래프·에디터</strong> — 설정 → 일반. UI는 한국어/English, 기본은 브라우저 언어.</li>
         <li><strong>소스 코드</strong> — <a href="https://github.com/mirokim/Strata-sync-pub">https://github.com/mirokim/Strata-sync-pub</a></li>
         <li><strong>서버 배포</strong> — <code>cd cloud &amp;&amp; npx wrangler deploy</code>. 웹 앱은 GitHub에 푸시하면 Vercel이 자동 배포합니다.</li>
-        <li><strong>모델 키</strong> — 저장 반응과 레이더는 서버에 <code>ANTHROPIC_API_KEY</code>가 있어야 돕니다: <code>cd cloud &amp;&amp; npx wrangler secret put ANTHROPIC_API_KEY</code>. 없으면 멤버는 각자 에이전트에서만 돌고, 레이더는 쉽니다.</li>
+        <li><strong>모델 키</strong> — 저장 반응과 레이더는 서버에 <code>ANTHROPIC_API_KEY</code>가 있어야 돕니다: <code>cd cloud &amp;&amp; npx wrangler secret put ANTHROPIC_API_KEY</code>. 없으면 멤버와 레이더는 각자의 에이전트에서 돕니다.</li>
         <li><strong>팀 토큰</strong> — <code>wrangler secret put TEAM_TOKEN</code>. 바꾸면 모두 다시 접속해야 합니다.</li>
         <li><strong>시드 데이터</strong> — 빈 볼트로 시작하기 심심하면 <code>node scripts/seed-product.mjs --server &lt;worker&gt; --token &lt;토큰&gt;</code>. 가상의 로봇청소기 회사 문서 수천 개가 들어갑니다(<code>--wipe</code>로 지우기).</li>
       </ul>

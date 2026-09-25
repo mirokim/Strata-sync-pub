@@ -112,7 +112,7 @@ claude mcp add --transport http strata https://<worker>/mcp --header "Authorizat
 1. "볼트에서 '소음 목표'에 대해 팀이 아는 걸 모아줘" → `vault_recall`이 관련 문서·이웃·멤버 메모를 한 묶음으로 가져옵니다.
 2. 일하다가 결정이 나면: "이거 기록해 둬" → 에이전트가 알맞은 폴더에 문서를 만들거나 기존 문서를 고치고, 링크를 겁니다. 이미 있는 문서면 새로 만들지 않고 갱신합니다.
 3. "이 결정 이가 알아야 하는데" → `inbox_send`. 이의 에이전트가 다음에 켜질 때 그 사람 맥락으로 답합니다.
-4. "방금 쓴 거 뭐랑 충돌해?" → `radar_check`.
+4. "방금 쓴 거 뭐랑 충돌해?" → `radar_check`. 에이전트가 가까운 문서를 읽고 판단한 뒤 `radar_report`로 알립니다.
 
 ### 3.3 웹 앱 — 둘러보기
 
@@ -131,7 +131,7 @@ claude mcp add --transport http strata https://<worker>/mcp --header "Authorizat
 
 **저장하는 순간** — 두 가지가 자동으로 돕습니다.
 - **AI 멤버 반응**: 그 문서를 담당 범위로 둔 AI 멤버(사서, 디자이너…)가 "이게 뭘 바꾸나 / 어디와 부딪히나 / 질문 하나"를 남깁니다. Brain 패널에 보입니다.
-- **모순 레이더**: 서버가 가장 가까운 문서들(다른 사람이 쓴 것 포함)과 비교해서 "동시에 참일 수 없는 것"을 찾으면 편지함에 질문을 넣습니다. "이 문서는 60 dB라는데 박의 문서는 65 dB — 어느 쪽?"
+- **모순 레이더**: 결정을 적으면, 그 문서와 가장 가까운 팀 문서들(다른 사람이 쓴 것 포함)을 비교해서 "동시에 참일 수 없는 것"을 찾고 편지함에 질문을 넣습니다. "이 문서는 60 dB라는데 박의 문서는 65 dB — 어느 쪽?" 판단은 **MCP로 연결된 여러분의 AI**가 합니다(아래 "모순 레이더" 참고).
 
 **누군가에게 물을 때** — 슬랙 대신 편지함. "이 파라미터 바꾸면 앱 쪽 영향 있어?"를 이의 이름으로 보내면, 이 또는 이의 에이전트가 다음에 켜질 때 그 사람 맥락으로 답합니다. 작업도 같은 방식으로 넘깁니다.
 
@@ -158,7 +158,18 @@ claude mcp add --transport http strata https://<worker>/mcp --header "Authorizat
 - **내 책상**(`vault_me`, 앱의 사람 아이콘, `?view=me`): 나에게 온 질문/작업, 내가 물은 것과 답, 내 문서에 온 반응, 내 문서를 인용한 제안, 남들이 최근 바꾼 것, 내 문서.
 - **편지함**(`inbox_send` / `inbox_list` / `inbox_reply`): 이름으로 보내는 질문과 작업. 답할 수 있는 건 받는 사람뿐.
 - **릴레이**: 작업의 `chain`. 완료되면 다음 사람에게 자동으로.
-- **모순 레이더**(`radar_check`, 저장 시 자동): 팀원이 쓴 문서와 충돌하면 편지함 질문으로.
+- **모순 레이더**(`radar_check` → `radar_report`): 팀원이 쓴 문서와 충돌하면 문서 작성자의 편지함 질문으로. 자세한 흐름은 아래.
+
+### 모순 레이더 — 연결된 AI가 정리합니다
+서버에 모델을 두지 않아도 돕니다. 판단은 각자의 에이전트(Claude Code·Codex·Cursor)가 합니다.
+
+1. 에이전트가 `vault_write`로 결정을 적으면, 결과에 "이 문서로 `radar_check`를 돌려라"가 붙어 나옵니다.
+2. `radar_check`는 서버가 고른 **가장 가까운 팀 문서 최대 6개**를 작성자·날짜와 함께 에이전트에게 줍니다.
+3. 에이전트가 읽고, 동시에 참일 수 없는 주장·숫자·날짜만 골라 `radar_report`로 보고합니다. 충돌이 없으면 빈 목록을 보냅니다(이 버전은 검사됨으로 표시).
+4. 충돌마다 **문서를 쓴 사람의 편지함**에 질문이 갑니다 — 양쪽 인용, 왜 부딪히는지, "어느 쪽이 맞나요?". 같은 쌍은 일주일에 한 번만.
+5. 받은 사람(또는 그 사람의 에이전트)이 한쪽 문서를 고치거나, 둘 다 맞는 이유를 답합니다.
+
+주제가 다르거나, 더 자세할 뿐이거나, 나중 결정이 예전 결정을 명시적으로 뒤집은 것은 충돌이 아닙니다. 서버에 `ANTHROPIC_API_KEY`를 넣으면 같은 검사가 저장할 때마다 서버에서 자동으로 돕니다(결과는 똑같이 편지함 질문).
 
 ### 멤버 (사람 + AI)
 - 설정 → **멤버**. 위에는 구글로 로그인한 **사람**이 나옵니다 — 이름, 이메일, 마지막으로 저장한 문서 수, 마지막 접속. 누구에게 편지함으로 물을지 여기서 봅니다. `members_list`도 같은 사람 목록을 에이전트에게 줍니다.
@@ -180,7 +191,7 @@ claude mcp add --transport http strata https://<worker>/mcp --header "Authorizat
 
 읽기: `vault_me`(내 책상) · `vault_recall`(주제에 대해 팀이 아는 것) · `vault_search` · `vault_read` · `vault_list` · `vault_changes`(언제부터 뭐가 바뀌었나) · `vault_history`(버전과 diff) · `vault_proposals` · `images_undescribed`
 
-사람 사이: `inbox_send`(팀원에게 질문/작업, `chain`으로 릴레이) · `inbox_list` · `inbox_reply` · `radar_check`(이 문서가 뭐랑 충돌하나)
+사람 사이: `inbox_send`(팀원에게 질문/작업, `chain`으로 릴레이) · `inbox_list` · `inbox_reply` · `radar_check`(이 문서가 뭐랑 충돌하나) · `radar_report`(에이전트가 판단한 충돌 보고)
 
 그래프: `graph_lint` · `graph_suggest_links`
 
@@ -193,7 +204,7 @@ claude mcp add --transport http strata https://<worker>/mcp --header "Authorizat
 - **언어·테마·그래프·에디터**: 설정 → 일반. UI는 한국어/English, 기본은 브라우저 언어.
 - **소스 코드**: [https://github.com/mirokim/Strata-sync-pub](https://github.com/mirokim/Strata-sync-pub)
 - **서버 배포**: `cd cloud && npx wrangler deploy`. 웹 앱은 GitHub에 푸시하면 Vercel이 자동 배포합니다.
-- **모델 키**: 저장 반응과 레이더는 서버에 `ANTHROPIC_API_KEY`가 있어야 돕니다 — `cd cloud && npx wrangler secret put ANTHROPIC_API_KEY`. 없으면 멤버는 각자 에이전트에서만 돌고, 레이더는 쉽니다.
+- **모델 키**: 저장 반응과 레이더는 서버에 `ANTHROPIC_API_KEY`가 있어야 돕니다 — `cd cloud && npx wrangler secret put ANTHROPIC_API_KEY`. 없으면 멤버와 레이더는 각자의 에이전트에서 돕니다.
 - **팀 토큰**: `wrangler secret put TEAM_TOKEN`. 바꾸면 모두 다시 접속해야 합니다.
 - **시드 데이터**: 빈 볼트로 시작하기 심심하면 `node scripts/seed-product.mjs --server <worker> --token <토큰>` — 가상의 로봇청소기 회사 문서 수천 개가 들어갑니다(`--wipe`로 지우기).
 
