@@ -115,7 +115,7 @@ cd cloud && npx vitest run  # 서버
 
 ## 라이선스
 
-MIT
+[MIT](LICENSE)
 
 ---
 
